@@ -116,7 +116,14 @@ public class ApiClient {
 
                 if (statusCode == 1) {
                     System.out.println("✅ Terminal activation confirmed: " + remark);
-                    success = true;
+                    
+                    boolean isActive = json.getBoolean("data");
+                     // Insert the 'isActive' value into the database
+                    boolean insertResult = Helper.updateIsActiveInTerminalConfiguration(isActive);
+
+                    // If insertion was successful, set success to true
+                    success = insertResult;
+
                 } else {
                     System.err.println("⚠ Terminal activation failed: " + remark);
                 }

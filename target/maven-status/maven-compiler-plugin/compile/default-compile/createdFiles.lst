@@ -1,12 +1,13 @@
 com\pointofsale\SystemInfo.class
 com\pointofsale\utils\ApiEndpoints.class
-module-info.class
 com\pointofsale\helper\ApiClient$1.class
-com\pointofsale\TerminalConfirmationDialog.class
-com\pointofsale\helper\ApiClient.class
 com\pointofsale\data\Database.class
 com\pointofsale\helper\ActivationDataInserter.class
 com\pointofsale\App.class
+com\pointofsale\TerminalConfirmationDialog$TerminalInfo.class
+com\pointofsale\LoginView.class
+module-info.class
+com\pointofsale\TerminalConfirmationDialog.class
+com\pointofsale\helper\ApiClient.class
 com\pointofsale\helper\Helper.class
 com\pointofsale\TerminalActivationView.class
-com\pointofsale\TerminalConfirmationDialog$TerminalInfo.class

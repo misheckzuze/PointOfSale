@@ -2,6 +2,7 @@ package com.pointofsale.data;
 
 import java.sql.*;
 import java.io.File;
+import com.pointofsale.helper.Helper;
 
 public class Database {
 
@@ -169,6 +170,8 @@ public class Database {
             stmt.execute(createActivationCodeTable);
 
             System.out.println("✅ All SQLite tables created and initialized at: " + DB_PATH);
+            Helper.insertDefaultAdminIfNotExists(); // ← Insert admin after table creation
+
 
         } catch (SQLException e) {
             System.out.println("❌ Error initializing database: " + e.getMessage());

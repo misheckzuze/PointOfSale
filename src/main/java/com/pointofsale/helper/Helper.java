@@ -231,4 +231,93 @@ public class Helper {
         return activationCode;
     }
 
+    public static boolean updateIsActiveInTerminalConfiguration(boolean isActive) {
+    try (Connection conn = Database.createConnection()) {
+        // Update statement to set IsActive value
+        String query = "UPDATE TerminalConfiguration SET IsActive = ?";
+
+        try (PreparedStatement stmt = conn.prepareStatement(query)) {
+            stmt.setBoolean(1, isActive);
+
+            int rowsAffected = stmt.executeUpdate();
+            return rowsAffected > 0; // Return true if update was successful
+        }
+      } catch (SQLException e) {
+        System.err.println("❌ Failed to update IsActive in TerminalConfiguration: " + e.getMessage());
+        return false;
+       }
+    }
+    
+     public static void insertDefaultAdminIfNotExists() {
+        String checkSql = "SELECT COUNT(*) FROM Users WHERE UserName = ?";
+        String insertSql = "INSERT INTO Users (FirstName, LastName, UserName, Gender, PhoneNumber, EmailAddress, Address, Role, Password) " +
+                           "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+        try (Connection conn = Database.createConnection();
+             PreparedStatement checkStmt = conn.prepareStatement(checkSql);
+             PreparedStatement insertStmt = conn.prepareStatement(insertSql)) {
+
+            checkStmt.setString(1, "admin");
+            var rs = checkStmt.executeQuery();
+            if (rs.next() && rs.getInt(1) == 0) {
+                insertStmt.setString(1, "Admin");
+                insertStmt.setString(2, "User");
+                insertStmt.setString(3, "admin");
+                insertStmt.setString(4, "MALE");
+                insertStmt.setString(5, "0999123456");
+                insertStmt.setString(6, "admin@example.com");
+                insertStmt.setString(7, "Lilongwe");
+                insertStmt.setString(8, "ADMIN");
+                insertStmt.setString(9, "admin123");
+
+                insertStmt.executeUpdate();
+                System.out.println("✅ Default admin user created.");
+            }
+
+        } catch (SQLException e) {
+            System.out.println("❌ Failed to insert default admin user: " + e.getMessage());
+        }
+    }
+     
+   public static boolean isValidUser(String username, String password) {
+    String query = "SELECT * FROM users WHERE username = ? AND password = ?";
+
+    try (var conn = Database.createConnection();
+         var stmt = conn.prepareStatement(query)) {
+
+        stmt.setString(1, username);
+        stmt.setString(2, password);
+
+        try (var rs = stmt.executeQuery()) {
+            return rs.next(); // returns true if user exists
+        }
+
+    } catch (SQLException e) {
+        e.printStackTrace();
+        return false;
+    }
+}
+   
+ public static boolean isTerminalActivated() {
+    String query = "SELECT IsActive FROM TerminalConfiguration LIMIT 1";
+
+    try (var conn = Database.createConnection();
+         var stmt = conn.prepareStatement(query);
+         var rs = stmt.executeQuery()) {
+
+        if (rs.next()) {
+            return rs.getInt("IsActive") == 1;
+        } else {
+            // No terminal configuration yet
+            return false;
+        }
+
+    } catch (SQLException e) {
+        e.printStackTrace();
+        return false;
+    }
+}
+
+
+
 }

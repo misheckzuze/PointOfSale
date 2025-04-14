@@ -14,6 +14,8 @@ import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import com.pointofsale.helper.Helper;
 import com.pointofsale.helper.ApiClient;
+import javafx.application.Platform;
+import javafx.application.Application;
 
 /**
  * A confirmation dialog that appears after successful terminal activation.
@@ -199,7 +201,22 @@ public class TerminalConfirmationDialog {
         apiClient.confirmActivation(xSignature, terminalId, token, success -> {
             if (success) {
                 System.out.println("Terminal activation confirmed!");
-                // You can show the next form or dialog here if needed
+                // Close the current dialog
+                dialogStage.close();
+            
+               // Navigate to the login page
+               Platform.runLater(() -> {
+               // After confirmation, navigate to the login page
+            Platform.runLater(() -> {
+                // Create and show the login view directly
+                Stage loginStage = new Stage();
+                loginStage.setTitle("POS System Login");
+                
+                // Create an instance of LoginView and show it
+                LoginView loginView = new LoginView();
+                loginView.start(loginStage); // Calling start directly on the LoginView
+               });            
+            });
             } else {
                 System.out.println("Failed to confirm activation.");
                 // You can show an error message to the user here
