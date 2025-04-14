@@ -1,0 +1,234 @@
+package com.pointofsale.helper;
+
+import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.Label;
+import javafx.scene.control.TextField;
+import java.net.NetworkInterface;
+import java.net.SocketException;
+import java.util.Enumeration;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import com.pointofsale.data.Database;
+
+
+public class Helper {
+
+    public static void updateActivateButtonState(TextField codeField, CheckBox checkbox, Button activateBtn) {
+        boolean isCodeEntered = !codeField.getText().trim().isEmpty();
+        boolean isAgreed = checkbox.isSelected();
+        activateBtn.setDisable(!(isCodeEntered && isAgreed));
+    }
+
+    public static void handleActivation(TextField codeField, Label statusLabel) {
+        String code = codeField.getText().trim();
+        if (isValidActivationCode(code)) {
+            statusLabel.setText("Activated");
+            statusLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #27ae60; -fx-font-weight: bold;");
+            showAlert("Success", "Terminal activated successfully.", Alert.AlertType.INFORMATION);
+        } else {
+            showAlert("Invalid Code", "Please enter a valid activation code (format: XXXX-XXXX-XXXX-XXXX).", Alert.AlertType.ERROR);
+        }
+    }
+
+    public static boolean isValidActivationCode(String code) {
+        return code.matches("[A-Za-z0-9]{4}(-[A-Za-z0-9]{4}){3}");
+    }
+
+    public static void showAlert(String title, String message, Alert.AlertType type) {
+        Alert alert = new Alert(type);
+        alert.setTitle(title);
+        alert.setHeaderText(null);
+        alert.setContentText(message);
+        alert.showAndWait();
+    }
+
+    // ---- System Info ----
+
+    public static String getOSName() {
+        return System.getProperty("os.name");
+    }
+
+    public static String getOSVersion() {
+        return System.getProperty("os.version");
+    }
+
+    public static String getOSArchitecture() {
+        return System.getProperty("os.arch");
+    }
+
+    public static String getJavaFXVersion() {
+        try {
+            return System.getProperty("javafx.runtime.version");
+        } catch (Exception e) {
+            return "Unknown";
+        }
+    }
+
+    public static String getAppVersion() {
+        return "EIS_POINTOFSALE_V1";
+    }
+
+    public static String getOSBuild() {
+        // OS Build might not be available in all systems, but we try to retrieve it
+        String osBuild = System.getProperty("os.build");
+        return (osBuild != null && !osBuild.isEmpty()) ? osBuild : "Unknown";
+    }
+
+    public static String getMacAddress() {
+        try {
+            // Get the network interfaces and loop through them to find the MAC address
+            Enumeration<NetworkInterface> networks = NetworkInterface.getNetworkInterfaces();
+            while (networks.hasMoreElements()) {
+                NetworkInterface network = networks.nextElement();
+                byte[] mac = network.getHardwareAddress();
+
+                if (mac != null) {
+                    StringBuilder sb = new StringBuilder();
+                    for (int i = 0; i < mac.length; i++) {
+                        sb.append(String.format("%02X", mac[i]));
+                        if (i != mac.length - 1) {
+                            sb.append(":");
+                        }
+                    }
+                    return sb.toString();
+                }
+            }
+        } catch (SocketException e) {
+            e.printStackTrace();
+        }
+        return "Unknown";
+    }
+    
+    public static String computeXSignature(String activationCode, String secretKey) {
+    try {
+        Mac sha512_HMAC = Mac.getInstance("HmacSHA512");
+        SecretKeySpec keySpec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "HmacSHA512");
+        sha512_HMAC.init(keySpec);
+        byte[] hashBytes = sha512_HMAC.doFinal(activationCode.getBytes(StandardCharsets.UTF_8));
+        return Base64.getEncoder().encodeToString(hashBytes);
+      } catch (Exception e) {
+        e.printStackTrace();
+        return null;
+      }
+    }
+    
+   public static String getTerminalSiteName() {
+    String siteName = "";
+    try (Connection conn = Database.createConnection()) {
+        String query = "SELECT Name FROM TerminalSites LIMIT 1";
+        try (PreparedStatement stmt = conn.prepareStatement(query)) {
+            var rs = stmt.executeQuery();
+            if (rs.next()) {
+                siteName = rs.getString("Name");
+            }
+        }
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to fetch Terminal Site: " + e.getMessage());
+    }
+    return siteName;
+}
+   
+   public static String getTin() {
+    String tin = "";
+    try (Connection conn = Database.createConnection()) {
+        String query = "SELECT TIN FROM TaxpayerConfiguration LIMIT 1";
+        try (PreparedStatement stmt = conn.prepareStatement(query)) {
+            var rs = stmt.executeQuery();
+            if (rs.next()) {
+                tin = rs.getString("TIN");
+            }
+        }
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to fetch TIN: " + e.getMessage());
+    }
+    return tin;
+}
+
+   public static String getTerminalLabel() {
+    String label = "";
+    try (Connection conn = Database.createConnection()) {
+        String query = "SELECT Label FROM TerminalConfiguration LIMIT 1";
+        try (PreparedStatement stmt = conn.prepareStatement(query)) {
+            var rs = stmt.executeQuery();
+            if (rs.next()) {
+                label = rs.getString("Label");
+            }
+        }
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to fetch Terminal Label: " + e.getMessage());
+    }
+    return label;
+   }
+   
+    public static String getTerminalId() {
+        String terminalId = "";
+        try (Connection conn = Database.createConnection()) {
+            String query = "SELECT TerminalId FROM ActivatedTerminal LIMIT 1";
+            try (PreparedStatement stmt = conn.prepareStatement(query)) {
+                var rs = stmt.executeQuery();
+                if (rs.next()) {
+                    terminalId = rs.getString("TerminalId");
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("❌ Failed to get Terminal ID: " + e.getMessage());
+        }
+        return terminalId;
+    }
+
+    public static String getSecretKey() {
+        String secretKey = "";
+        try (Connection conn = Database.createConnection()) {
+            String query = "SELECT SecretKey FROM ActivatedTerminal LIMIT 1";
+            try (PreparedStatement stmt = conn.prepareStatement(query)) {
+                var rs = stmt.executeQuery();
+                if (rs.next()) {
+                    secretKey = rs.getString("SecretKey");
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("❌ Failed to get Secret Key: " + e.getMessage());
+        }
+        return secretKey;
+    }
+    
+    public static String getToken() {
+        String token = "";
+        try (Connection conn = Database.createConnection()) {
+            String query = "SELECT JwtToken FROM ActivatedTerminal LIMIT 1";
+            try (PreparedStatement stmt = conn.prepareStatement(query)) {
+                var rs = stmt.executeQuery();
+                if (rs.next()) {
+                    token = rs.getString("JwtToken");
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("❌ Failed to get Secret Key: " + e.getMessage());
+        }
+        return token;
+    }
+
+    public static String getActivationCode() {
+        String activationCode = "";
+        try (Connection conn = Database.createConnection()) {
+            String query = "SELECT ActivationCode FROM ActivationCode LIMIT 1";
+            try (PreparedStatement stmt = conn.prepareStatement(query)) {
+                var rs = stmt.executeQuery();
+                if (rs.next()) {
+                    activationCode = rs.getString("ActivationCode");
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("❌ Failed to get Activation Code: " + e.getMessage());
+        }
+        return activationCode;
+    }
+
+}
