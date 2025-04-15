@@ -9,4 +9,7 @@ public class ApiEndpoints {
     public static final String ACTIVATE_TERMINAL = "/onboarding/activate-terminal";
     public static final String CONFIRM_TERMINAL_ACTIVATION = "/onboarding/terminal-activated-confirmation";
     
+    //Terminal Site Products
+    public static final String GET_TERMINAL_SITE_PRODUCTS = "/utilities/get-terminal-site-products";
+    
 }

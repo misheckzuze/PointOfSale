@@ -308,6 +308,13 @@ public class LoginView extends Application {
             // Navigate to main application screen
             System.out.println("Login successful, navigating to main screen...");
             // You would replace this with actual logic to navigate to the main application
+             // Proceed to SalesDashboard
+            POSDashboard dashboard = new POSDashboard();
+            try {
+                dashboard.start(stage);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
         });
         
         fadeOut.play();
@@ -359,14 +366,6 @@ public class LoginView extends Application {
         alert.setHeaderText("Support Information");
         alert.setContentText("For assistance, please contact our support team at: support@possystem.com or call 1-800-POS-HELP");
         alert.showAndWait();
-    }
-    
-    // Launch a new LoginView using Platform.runLater
-    public static void openLoginView() {
-        Platform.runLater(() -> {
-            // Start the application
-            launch();
-        });
     }
     
     /**

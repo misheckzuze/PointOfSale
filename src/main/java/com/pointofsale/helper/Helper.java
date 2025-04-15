@@ -15,6 +15,7 @@ import java.util.Base64;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import javax.json.JsonObject;
 import com.pointofsale.data.Database;
 
 
@@ -133,6 +134,22 @@ public class Helper {
         System.err.println("❌ Failed to fetch Terminal Site: " + e.getMessage());
     }
     return siteName;
+}
+   
+public static String getTerminalSiteId() {
+    String siteId = "";
+    try (Connection conn = Database.createConnection()) {
+        String query = "SELECT SiteId FROM TerminalSites LIMIT 1";
+        try (PreparedStatement stmt = conn.prepareStatement(query)) {
+            var rs = stmt.executeQuery();
+            if (rs.next()) {
+                siteId = rs.getString("SiteId");
+            }
+        }
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to fetch Terminal Site: " + e.getMessage());
+    }
+    return siteId;
 }
    
    public static String getTin() {
@@ -312,12 +329,39 @@ public class Helper {
             return false;
         }
 
-    } catch (SQLException e) {
+        } catch (SQLException e) {
         e.printStackTrace();
         return false;
+       }
     }
-}
+ public static void insertOrUpdateProduct(JsonObject product) {
+    String sql = "INSERT OR REPLACE INTO Products (" +
+            "ProductCode, ProductName, Description, Quantity, UnitOfMeasure, Price, SiteId, " +
+            "ProductExpiryDate, MinimumStockLevel, TaxRateId, IsProduct) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
+    try (Connection conn = Database.createConnection();
+         PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+        pstmt.setString(1, product.getString("productCode", ""));
+        pstmt.setString(2, product.getString("productName", ""));
+        pstmt.setString(3, product.getString("description", ""));
+        pstmt.setDouble(4, product.getJsonNumber("quantity").doubleValue());
+        pstmt.setString(5, product.getString("unitOfMeasure", ""));
+        pstmt.setDouble(6, product.getJsonNumber("price").doubleValue());
+        pstmt.setString(7, product.getString("siteId", ""));
+        pstmt.setString(8, product.getString("productExpiryDate", null));
+        pstmt.setDouble(9, product.getJsonNumber("minimumStockLevel").doubleValue());
+        pstmt.setString(10, product.getString("taxRateId", ""));
+        pstmt.setInt(11, product.getBoolean("isProduct") ? 1 : 0);
+
+        pstmt.executeUpdate();
+        System.out.println("✅ Inserted/Updated product: " + product.getString("productCode"));
+        } catch (Exception e) {
+        System.err.println("❌ Failed to insert product: " + e.getMessage());
+        e.printStackTrace();
+        }
+}
 
 
 }

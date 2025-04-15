@@ -208,4 +208,63 @@ public class ApiClient {
             return false;
         }
     }
+    
+    public void getTerminalSiteProducts(String tin, String siteId, String bearerToken, Consumer<Boolean> callback) {
+        String url = ApiEndpoints.BASE_URL + ApiEndpoints.GET_TERMINAL_SITE_PRODUCTS;
+
+        JsonObject requestBody = Json.createObjectBuilder()
+            .add("tin", tin)
+            .add("siteId", siteId)
+            .build();
+
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .header("Authorization", "Bearer " + bearerToken)
+            .header("Content-Type", "application/json")
+            .header("Accept", "text/plain")
+            .POST(HttpRequest.BodyPublishers.ofString(requestBody.toString()))
+            .build();
+
+        new Thread(() -> {
+            boolean success = false;
+
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            System.out.println("Status Code: " + response.statusCode());
+            System.out.println("Response Body: " + response.body());
+
+            if (response.statusCode() == 200) {
+                JsonReader reader = Json.createReader(new StringReader(response.body()));
+                JsonObject responseJson = reader.readObject();
+
+                int statusCode = responseJson.getInt("statusCode", 0);
+                if (statusCode == 1) {
+                    JsonArray dataArray = responseJson.getJsonArray("data");
+
+                    for (JsonValue value : dataArray) {
+                        if (value instanceof JsonObject) {
+                            JsonObject product = (JsonObject) value;
+                            Helper.insertOrUpdateProduct(product); // 🧠 Save to SQLite
+                        }
+                    }
+
+                    System.out.println("✅ Products saved to database.");
+                    success = true;
+                } else {
+                    System.err.println("⚠ API Error: " + responseJson.getString("remark", ""));
+                }
+            } else {
+                System.err.println("❌ HTTP Error " + response.statusCode());
+            }
+        } catch (Exception e) {
+            System.err.println("❌ Error fetching/saving products: " + e.getMessage());
+            e.printStackTrace();
+        }
+
+        boolean finalSuccess = success;
+        Platform.runLater(() -> callback.accept(finalSuccess));
+    }).start();
+}
+
 }
