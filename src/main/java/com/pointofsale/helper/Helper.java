@@ -16,6 +16,9 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import javax.json.JsonObject;
+import java.util.List;
+import java.util.ArrayList;
+import com.pointofsale.ProductLookupDialog;
 import com.pointofsale.data.Database;
 
 
@@ -361,7 +364,35 @@ public static String getTerminalSiteId() {
         System.err.println("❌ Failed to insert product: " + e.getMessage());
         e.printStackTrace();
         }
-}
+    }
+
+public static List<ProductLookupDialog.Product> fetchAllProductsFromDB() {
+    List<ProductLookupDialog.Product> products = new ArrayList<>();
+
+    try (Connection conn = Database.createConnection()) {
+        String query = "SELECT ProductCode, ProductName, Description, Price, TaxRateId, Quantity, UnitOfMeasure FROM Products";
+        try (PreparedStatement stmt = conn.prepareStatement(query);
+             var rs = stmt.executeQuery()) {
+
+            while (rs.next()) {
+                String barcode = rs.getString("ProductCode");
+                String name = rs.getString("ProductName");
+                String desc = rs.getString("Description");
+                double price = rs.getDouble("Price");
+                String rate = rs.getString("TaxRateId");
+                double quantity = rs.getDouble("Quantity");
+                String unit = rs.getString("UnitOfMeasure");
+
+                products.add(new ProductLookupDialog.Product(barcode, name, desc, price, rate, quantity, unit));
+            }
+
+        }
+       } catch (SQLException e) {
+        System.err.println("❌ Failed to load product data: " + e.getMessage());
+       }
+
+       return products;
+      }
 
 
 }

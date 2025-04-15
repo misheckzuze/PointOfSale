@@ -307,6 +307,18 @@ public class POSDashboard extends Application {
         Button discountButton = createActionButton("Apply Discount", "#c62828");
         Button quantityButton = createActionButton("Change Quantity", "#ff8f00");
         
+        // Set action to open the Product Lookup dialog
+        lookupButton.setOnAction(e -> {
+          ProductLookupDialog lookupDialog = new ProductLookupDialog(stage);
+          ProductLookupDialog.Product selectedProduct = lookupDialog.showAndSelect();
+
+          if (selectedProduct != null) {
+          // Handle the selected product (add to cart, show details, etc.)
+          System.out.println("Selected product: " + selectedProduct.getName());
+          // TODO: Add logic to handle the selected product
+          }
+        });
+        
         quickActions.getChildren().addAll(scanButton, lookupButton, discountButton, quantityButton);
         
         searchSection.getChildren().addAll(searchTitle, searchBox, quickActions);
