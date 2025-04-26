@@ -34,6 +34,22 @@ public class ActivationDataInserter {
                 stmt.executeUpdate();
                 System.out.println("✅ Inserted TerminalSite: " + siteId);
             }
+            
+            //===GlobalConfiguration===
+            
+            JsonObject globalConfiguration = data
+              .getJsonObject("configuration")
+              .getJsonObject("globalConfiguration");
+
+            int globalId = globalConfiguration.getInt("id");
+            int globalVersionNo = globalConfiguration.getInt("versionNo");
+
+            String insertGlobalConfiguration = "INSERT OR REPLACE INTO GlobalConfiguration (Id, VersionNo) VALUES (?, ?)";
+            try (PreparedStatement stmt = conn.prepareStatement(insertGlobalConfiguration)) {
+            stmt.setInt(1, globalId);
+            stmt.setInt(2, globalVersionNo);
+            stmt.executeUpdate();
+            }
 
             // === TaxRates ===
             JsonArray taxRates = data
@@ -93,16 +109,18 @@ public class ActivationDataInserter {
             String phone = terminalConfig.getString("phoneNumber", "");
             String tradingName = terminalConfig.getString("tradingName", "");
             String addressLine = terminalConfig.getJsonArray("addressLines").getString(0);
+            int versionNo = terminalConfig.getInt("versionNo", 0); 
 
-            String insertConfigSQL = "INSERT OR REPLACE INTO TerminalConfiguration (TerminalId, Label, IsActive, Email, Phone, TradingName, AddressLine) VALUES (?, ?, ?, ?, ?, ?, ?)";
+            String insertConfigSQL = "INSERT OR REPLACE INTO TerminalConfiguration (TerminalId, Label, IsActive, Email, Phone, VersionNo, TradingName, AddressLine) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
             try (PreparedStatement stmt = conn.prepareStatement(insertConfigSQL)) {
                 stmt.setString(1, terminalId);
                 stmt.setString(2, terminalLabel);
                 stmt.setBoolean(3, isActive);
                 stmt.setString(4, email);
                 stmt.setString(5, phone);
-                stmt.setString(6, tradingName);
-                stmt.setString(7, addressLine);
+                stmt.setInt(6, versionNo);
+                stmt.setString(7, tradingName);
+                stmt.setString(8, addressLine);
                 stmt.executeUpdate();
                 System.out.println("✅ Inserted TerminalConfiguration");
             }
@@ -126,16 +144,19 @@ public class ActivationDataInserter {
             String tin = taxpayerConfig.getString("tin", "");
             boolean isVATRegistered = taxpayerConfig.getBoolean("isVATRegistered", false);
             String taxOfficeCode = taxpayerConfig.getString("taxOfficeCode", "");
+            int taxpayerVersionNo = taxpayerConfig.getInt("versionNo", 0); 
+
 
             JsonObject taxOffice = taxpayerConfig.getJsonObject("taxOffice");
             String officeName = taxOffice.getString("name", "");
 
-            String insertTaxpayerSQL = "INSERT OR REPLACE INTO TaxpayerConfiguration (TaxpayerId, TIN, IsVATRegistered, TaxOfficeCode) VALUES (?, ?, ?, ?)";
+            String insertTaxpayerSQL = "INSERT OR REPLACE INTO TaxpayerConfiguration (TaxpayerId, TIN, IsVATRegistered, VersionNo, TaxOfficeCode) VALUES (?, ?, ?, ?, ?)";
             try (PreparedStatement stmt = conn.prepareStatement(insertTaxpayerSQL)) {
                 stmt.setInt(1, taxpayerId);
                 stmt.setString(2, tin);
                 stmt.setBoolean(3, isVATRegistered);
-                stmt.setString(4, taxOfficeCode);
+                stmt.setInt(4, taxpayerVersionNo);
+                stmt.setString(5, taxOfficeCode);
                 stmt.executeUpdate();
                 System.out.println("✅ Inserted TaxpayerConfiguration");
             }

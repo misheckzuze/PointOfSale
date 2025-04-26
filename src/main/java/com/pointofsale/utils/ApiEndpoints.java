@@ -12,4 +12,7 @@ public class ApiEndpoints {
     //Terminal Site Products
     public static final String GET_TERMINAL_SITE_PRODUCTS = "/utilities/get-terminal-site-products";
     
+    //Submit transactions
+    public static final String SUBMIT_TRANSACTIONS = "/sales/submit-sales-transaction";
+    
 }

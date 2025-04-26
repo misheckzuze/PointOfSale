@@ -71,8 +71,12 @@ public class Database {
                     "BuyerTin TEXT," +
                     "TotalVAT REAL," +
                     "OfflineTransactionSignature TEXT," +
-                    "CreatedOn TEXT," +
-                    "SiteId TEXT)";
+                    "SiteId TEXT, " +
+                    "ValidationUrl TEXT, " +
+                    "IsReliefSupply INTEGER, " +
+                    "State INTEGER, " +
+                    "PaymentId TEXT, " +
+                    "AmountPaid REAL)";
             
             String createActivatedTerminalTable = "CREATE TABLE IF NOT EXISTS ActivatedTerminal (" +
                     "TerminalId TEXT PRIMARY KEY, " +   
@@ -93,8 +97,26 @@ public class Database {
                     "IsActive INTEGER, " +
                     "Email TEXT, " +
                     "Phone TEXT, " +
+                    "VersionNo INTEGER NOT NULL, " +
                     "TradingName TEXT, " +
                     "AddressLine TEXT)";
+            
+            String createInvoiceTaxBreakdownTable = "CREATE TABLE IF NOT EXISTS InvoiceTaxBreakDown (" + 
+                    "InvoiceNumber TEXT, " +
+                    "RateID TEXT, " +
+                    "TaxableAmount REAL, " + 
+                    "TaxAmount REAL)";
+            
+            String createPaymentTypeTable = "CREATE TABLE IF NOT EXISTS PaymentType (" + 
+                    "ID INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                    "PaymentId TEXT, " +
+                    "Name TEXT, " +
+                    "AmountPaid REAL)";
+                    
+            
+            String createGloblaConfigurationsTable = "CREATE TABLE IF NOT EXISTS GlobalConfiguration (" +
+                     "Id INTEGER NOT NULL, " +
+                     "VersionNo INTEGER NOT NULL )";
             
             String createOfflineLimitTable = "CREATE TABLE IF NOT EXISTS OfflineLimit (" +
                     "TerminalId TEXT PRIMARY KEY, " +
@@ -106,6 +128,7 @@ public class Database {
                    "TaxpayerId INTEGER PRIMARY KEY, " +
                    "TIN TEXT, " +
                    "IsVATRegistered INTEGER, " +
+                   "VersionNo INTEGER NOT NULL, " +
                    "TaxOfficeCode TEXT)";
             
             String createTaxOfficesTable = "CREATE TABLE IF NOT EXISTS TaxOffices (" +
@@ -118,11 +141,13 @@ public class Database {
                     "Id INTEGER PRIMARY KEY AUTOINCREMENT," +
                     "InvoiceNumber TEXT," +
                     "ProductCode TEXT," +
+                    "Description TEXT," +
                     "Quantity REAL," +
                     "UnitPrice REAL," +
                     "TotalPrice REAL," +
                     "DiscountAmount REAL," +
                     "VATRate REAL," +
+                    "IsProduct INTEGER," +
                     "FOREIGN KEY(InvoiceNumber) REFERENCES Invoices(InvoiceNumber))";
             
             String createDiscountsTable = "CREATE TABLE IF NOT EXISTS Discounts (" +
@@ -164,10 +189,13 @@ public class Database {
             stmt.execute(createVoidReceiptRequestsTable);
             stmt.execute(createActivatedTerminalTable);
             stmt.execute(createTerminalConfigurationTable);
-            stmt.execute(createOfflineLimitTable); 
+            stmt.execute(createOfflineLimitTable);
             stmt.execute(createTaxpayerConfigurationTable);
-            stmt.execute(createTaxOfficesTable);  
+            stmt.execute(createTaxOfficesTable);
             stmt.execute(createActivationCodeTable);
+            stmt.execute(createGloblaConfigurationsTable);
+            stmt.execute(createInvoiceTaxBreakdownTable);
+            stmt.execute(createPaymentTypeTable);
 
             System.out.println("✅ All SQLite tables created and initialized at: " + DB_PATH);
             Helper.insertDefaultAdminIfNotExists(); // ← Insert admin after table creation

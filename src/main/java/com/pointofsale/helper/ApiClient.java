@@ -13,6 +13,19 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Consumer;
 import com.pointofsale.utils.ApiEndpoints;
+import java.sql.SQLException;
+import java.sql.PreparedStatement;
+import com.google.gson.Gson;
+import java.sql.Connection;
+import java.util.List;
+import java.util.function.BiConsumer;
+import com.pointofsale.model.InvoiceSummary;
+import com.pointofsale.model.LineItemDto;
+import com.pointofsale.model.InvoiceHeader;
+import com.pointofsale.model.InvoicePayload;
+import com.pointofsale.model.TaxBreakDown;
+import com.pointofsale.data.Database;
+
 
 public class ApiClient {
 
@@ -262,9 +275,108 @@ public class ApiClient {
             e.printStackTrace();
         }
 
+          boolean finalSuccess = success;
+          Platform.runLater(() -> callback.accept(finalSuccess));
+      }).start();
+    }
+    
+  public void submitTransactions(String payloadJson, String bearerToken, BiConsumer<Boolean, String> callback) {
+    String url = ApiEndpoints.BASE_URL + ApiEndpoints.SUBMIT_TRANSACTIONS;
+
+    HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .header("Authorization", "Bearer " + bearerToken)
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(payloadJson))
+            .build();
+
+    new Thread(() -> {
+        boolean success = false;
+        String validationUrl = "";
+
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            System.out.println("📨 Submitting Transactions...");
+            System.out.println("Status Code: " + response.statusCode());
+            System.out.println("Response Body: " + response.body());
+
+            if (response.statusCode() == 200) {
+                JsonReader reader = Json.createReader(new StringReader(response.body()));
+                JsonObject json = reader.readObject();
+
+                int statusCode = json.getInt("statusCode", 0);
+                String remark = json.getString("remark", "");
+
+                if (statusCode == 1) {
+                    success = true;
+                    if (json.containsKey("data")) {
+                        JsonObject data = json.getJsonObject("data");
+                        validationUrl = data.getString("validationURL", "");
+                    }
+                    System.out.println("✅ Transactions submitted successfully: " + remark);
+                } else {
+                    System.err.println("⚠️ Submission failed: " + remark);
+                }
+            } else {
+                System.err.println("❌ HTTP error while submitting: " + response.statusCode());
+            }
+        } catch (Exception e) {
+            System.err.println("❌ Error during transaction submission: " + e.getMessage());
+            e.printStackTrace();
+        }
+
+        String finalValidationUrl = validationUrl;
         boolean finalSuccess = success;
-        Platform.runLater(() -> callback.accept(finalSuccess));
+        Platform.runLater(() -> callback.accept(finalSuccess, finalValidationUrl));
     }).start();
 }
+  
+  public void retryPendingTransactions() {
+    String query = "SELECT * FROM Invoices WHERE State = 0";
+
+    try (Connection connection = Database.createConnection();
+         PreparedStatement stmt = connection.prepareStatement(query);
+         var rs = stmt.executeQuery()) {
+
+        while (rs.next()) {
+            String invoiceNumber = rs.getString("InvoiceNumber");
+
+            InvoiceHeader header = Helper.getInvoiceHeader(invoiceNumber);
+            List<LineItemDto> lineItems = Helper.getLineItems(invoiceNumber);
+            InvoiceSummary invoiceSummary = new InvoiceSummary();
+            List<TaxBreakDown> taxBreakdowns = Helper.generateTaxBreakdown(lineItems);
+            invoiceSummary.setTaxBreakDown(taxBreakdowns);
+            invoiceSummary.setTotalVAT(lineItems.stream().mapToDouble(LineItemDto::getTotalVAT).sum());
+            invoiceSummary.setInvoiceTotal(lineItems.stream().mapToDouble(LineItemDto::getTotal).sum());
+            invoiceSummary.setOfflineSignature("");
+
+
+            // 4. Put everything into the payload
+            InvoicePayload payload = new InvoicePayload();
+            payload.setInvoiceHeader(header);
+            payload.setInvoiceLineItems(lineItems);
+            payload.setInvoiceSummary(invoiceSummary);
+            Gson gson = new Gson();
+            String jsonPayload = gson.toJson(payload);
+            String token = Helper.getToken();
+
+            ApiClient apiClient = new ApiClient();
+            apiClient.submitTransactions(jsonPayload, token, (success, returnedValidationUrl) -> {
+                if (success) {
+                    Helper.updateValidationUrl(invoiceNumber, returnedValidationUrl);
+                    Helper.markAsTransmitted(invoiceNumber);
+                    System.out.println("✅ Auto-resend success for: " + invoiceNumber);
+                } else {
+                    System.err.println("❌ Auto-resend failed for: " + invoiceNumber);
+                }
+            });
+        }
+
+    } catch (SQLException e) {
+        System.err.println("❌ Error fetching pending transactions: " + e.getMessage());
+    }
+}
+
 
 }

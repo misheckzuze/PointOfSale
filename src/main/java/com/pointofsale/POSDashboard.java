@@ -1,5 +1,6 @@
 package com.pointofsale;
 
+import com.pointofsale.helper.ApiClient;
 import javafx.application.Application;
 import javafx.beans.property.SimpleDoubleProperty;
 import javafx.beans.property.SimpleIntegerProperty;
@@ -8,25 +9,39 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.effect.DropShadow;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.*;
+import java.time.LocalDate;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
+import com.pointofsale.model.Session;
+import com.pointofsale.model.InvoiceSummary;
+import com.pointofsale.model.InvoiceDetails;
 import javafx.scene.text.Text;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 import javafx.animation.FadeTransition;
 import javafx.application.Platform;
+import com.pointofsale.model.Product;
+import com.pointofsale.model.LineItemDto;
+import com.pointofsale.model.InvoiceHeader;
+import com.pointofsale.model.InvoicePayload;
+import com.pointofsale.model.TaxBreakDown;
 import java.text.NumberFormat;
 import java.time.LocalDateTime;
+import com.pointofsale.helper.Helper;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.Locale;
 
 public class POSDashboard extends Application {
@@ -34,18 +49,29 @@ public class POSDashboard extends Application {
     // Main application components
     private Stage stage;
     private BorderPane root;
-    private TableView<CartItem> cartTable;
+    private TableView<Product> cartTable;
     private Label totalAmountLabel;
+    private Label taxValueLabel;
+    private Label subtotalValueLabel;
     private TextField barcodeField;
     private Label dateTimeLabel;
     private Label cashierNameLabel;
+    private Label changeValueLabel;
+    private TextField cashAmountField;
+    private Button processPaymentButton;
+    private Label taxLabel;
     private ComboBox<String> paymentMethodComboBox;
+    private double cartDiscountAmount = 0.0;
+    private double cartDiscountPercent = 0.0;
+    private Label discountValueLabel;
     
     // Sample data
-    private ObservableList<CartItem> cartItems;
+    private ObservableList<Product> cartItems;
     private double totalAmount = 0.0;
-    private String currentCashier = "John Doe";
-    private String receiptNumber = "R-29871";
+    private String currentCashier = Session.firstName + " " + Session.lastName;
+    private String role = Session.role;
+    private String receiptNumber =  generateNewReceiptNumber();
+
 
     @Override
     public void start(Stage primaryStage) {
@@ -89,8 +115,9 @@ public class POSDashboard extends Application {
         topBar.setAlignment(Pos.CENTER_LEFT);
         topBar.setStyle("-fx-background-color: white; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);");
         
+        String tradingName = Helper.getTrading();
         // Logo/System name
-        Label systemLabel = new Label("POS SYSTEM");
+        Label systemLabel = new Label(tradingName);
         systemLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #1a237e;");
         
         // Separator
@@ -132,7 +159,7 @@ public class POSDashboard extends Application {
         
         // Cashier details
         VBox cashierDetails = new VBox(2);
-        Label cashierLabel = new Label("Cashier:");
+        Label cashierLabel = new Label(role);
         cashierLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: #757575;");
         cashierNameLabel = new Label(currentCashier);
         cashierNameLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #333333;");
@@ -155,30 +182,55 @@ public class POSDashboard extends Application {
      * Creates the sidebar with main navigation options
      */
     private VBox createSidebar() {
-        VBox sidebar = new VBox();
-        sidebar.setPrefWidth(220);
-        sidebar.setStyle("-fx-background-color: linear-gradient(from 0% 0% to 100% 100%, #1a237e, #3949ab); -fx-padding: 0;");
-        
-        // Create the menu items
-        sidebar.getChildren().add(createSidebarHeader());
-        sidebar.getChildren().add(createSidebarMenuItem("New Sale", true));
-        sidebar.getChildren().add(createSidebarMenuItem("Products", false));
-        sidebar.getChildren().add(createSidebarMenuItem("Transactions", false));
-        sidebar.getChildren().add(createSidebarMenuItem("Customers", false));
-        sidebar.getChildren().add(createSidebarMenuItem("Reports", false));
-        sidebar.getChildren().add(createSidebarMenuItem("Settings", false));
-        
-        // Add spacer to push help to bottom
-        Region spacer = new Region();
-        VBox.setVgrow(spacer, Priority.ALWAYS);
-        sidebar.getChildren().add(spacer);
-        
-        // Help and support
-        sidebar.getChildren().add(createSidebarMenuItem("Help & Support", false));
-        
-        return sidebar;
-    }
+    VBox sidebar = new VBox();
+    sidebar.setPrefWidth(220);
+    sidebar.setStyle("-fx-background-color: linear-gradient(from 0% 0% to 100% 100%, #1a237e, #3949ab); -fx-padding: 0;");
     
+    // Create the menu items
+    sidebar.getChildren().add(createSidebarHeader());
+    sidebar.getChildren().add(createSidebarMenuItem("New Sale", true));
+    
+    // Add event handler for Products menu item
+    HBox productsMenuItem = createSidebarMenuItem("Products", false);
+    productsMenuItem.setOnMouseClicked(event -> {
+        try {
+            // Close the current window
+            Stage currentStage = (Stage) sidebar.getScene().getWindow();
+            currentStage.close();
+            
+            // Open the Product Management screen
+            new ProductManagement().start(new Stage());
+        } catch (Exception e) {
+            e.printStackTrace();
+            showAlert("Navigation Error", "Failed to open Product Management screen.");
+        }
+    });
+    sidebar.getChildren().add(productsMenuItem);
+    
+    sidebar.getChildren().add(createSidebarMenuItem("Transactions", false));
+    sidebar.getChildren().add(createSidebarMenuItem("Customers", false));
+    sidebar.getChildren().add(createSidebarMenuItem("Reports", false));
+    sidebar.getChildren().add(createSidebarMenuItem("Settings", false));
+    
+    // Add spacer to push help to bottom
+    Region spacer = new Region();
+    VBox.setVgrow(spacer, Priority.ALWAYS);
+    sidebar.getChildren().add(spacer);
+    
+    // Help and support
+    sidebar.getChildren().add(createSidebarMenuItem("Help & Support", false));
+    
+    return sidebar;
+}
+
+// You may need to add this helper method if it doesn't exist already
+private void showAlert(String title, String message) {
+    Alert alert = new Alert(Alert.AlertType.ERROR);
+    alert.setTitle(title);
+    alert.setHeaderText(null);
+    alert.setContentText(message);
+    alert.showAndWait();
+}
     /**
      * Creates the header for the sidebar
      */
@@ -307,15 +359,102 @@ public class POSDashboard extends Application {
         Button discountButton = createActionButton("Apply Discount", "#c62828");
         Button quantityButton = createActionButton("Change Quantity", "#ff8f00");
         
+        discountButton.setOnAction(e -> applyDiscount());
+        
+        // Add this event handler to the quantityButton after it's created
+       quantityButton.setOnAction(e -> {
+          // Check if an item is selected in the cart
+          Product selectedProduct = cartTable.getSelectionModel().getSelectedItem();
+    
+          if (selectedProduct == null) {
+             // Show alert if no item is selected
+             Alert alert = new Alert(Alert.AlertType.WARNING);
+             alert.setTitle("No Item Selected");
+             alert.setHeaderText(null);
+             alert.setContentText("Please select a product from the cart to change its quantity.");
+             alert.showAndWait();
+            return;
+           }
+    
+           // Create a dialog to get the new quantity
+           TextInputDialog dialog = new TextInputDialog(String.valueOf(selectedProduct.getQuantity()));
+           dialog.setTitle("Change Quantity");
+           dialog.setHeaderText("Product: " + selectedProduct.getName());
+           dialog.setContentText("Enter new quantity:");
+    
+           // Set the dialog to only accept numbers
+           TextField quantityField = dialog.getEditor();
+           quantityField.textProperty().addListener((observable, oldValue, newValue) -> {
+           if (!newValue.matches("\\d*")) {
+             quantityField.setText(newValue.replaceAll("[^\\d]", ""));
+            }
+        });
+    
+            // Handle the result
+           dialog.showAndWait().ifPresent(result -> {
+           try {
+            int newQuantity = Integer.parseInt(result);
+            
+            if (newQuantity > 0) {
+                // Update the product quantity
+                selectedProduct.setQuantity(newQuantity);
+                
+                // Refresh the table to show updated quantities and totals
+                cartTable.refresh();
+                updateTotals();
+            } else if (newQuantity == 0) {
+                // Remove the item if quantity is set to zero
+                removeItemFromCart(selectedProduct);
+            } else {
+                // Show error for negative quantity
+                Alert alert = new Alert(Alert.AlertType.ERROR);
+                alert.setTitle("Invalid Quantity");
+                alert.setHeaderText(null);
+                alert.setContentText("Quantity must be greater than or equal to 0.");
+                alert.showAndWait();
+            }
+            } catch (NumberFormatException ex) {
+            // Handle invalid input
+            Alert alert = new Alert(Alert.AlertType.ERROR);
+            alert.setTitle("Invalid Input");
+            alert.setHeaderText(null);
+            alert.setContentText("Please enter a valid number.");
+            alert.showAndWait();
+           }
+        });
+    });
+        
         // Set action to open the Product Lookup dialog
         lookupButton.setOnAction(e -> {
           ProductLookupDialog lookupDialog = new ProductLookupDialog(stage);
-          ProductLookupDialog.Product selectedProduct = lookupDialog.showAndSelect();
+          Product selectedProduct = lookupDialog.showAndSelect();
 
           if (selectedProduct != null) {
           // Handle the selected product (add to cart, show details, etc.)
           System.out.println("Selected product: " + selectedProduct.getName());
-          // TODO: Add logic to handle the selected product
+          // Check if the product already exists in the cart
+          boolean found = false;
+          for (Product item : cartItems) {
+            if (item.getBarcode().equals(selectedProduct.getBarcode())) {
+                // If product exists, increase the quantity
+                item.increaseQuantity();
+                found = true;
+                break;
+            }
+           }
+
+            // If the product doesn't exist in the cart, add the new product
+           if (!found) {
+            cartItems.add(selectedProduct);
+          }
+
+           // Update the cart table and totals
+           cartTable.refresh();
+           updateTotals(); // Assuming this method updates the cart totals
+
+           // Optionally, clear the barcode field and refocus
+           barcodeField.clear();
+           barcodeField.requestFocus();
           }
         });
         
@@ -354,18 +493,27 @@ public class POSDashboard extends Application {
         VBox.setVgrow(cartTable, Priority.ALWAYS);
         
         // Define table columns
-        TableColumn<CartItem, Integer> idCol = new TableColumn<>("ID");
-        idCol.setCellValueFactory(new PropertyValueFactory<>("id"));
-        idCol.setPrefWidth(60);
+        TableColumn<Product, Integer> idCol = new TableColumn<>("Barcode");
+        idCol.setCellValueFactory(new PropertyValueFactory<>("barcode"));
+        idCol.setPrefWidth(95);
         
-        TableColumn<CartItem, String> nameCol = new TableColumn<>("Product Name");
+        TableColumn<Product, String> nameCol = new TableColumn<>("Product Name");
         nameCol.setCellValueFactory(new PropertyValueFactory<>("name"));
-        nameCol.setPrefWidth(250);
+        nameCol.setPrefWidth(200);
         
-        TableColumn<CartItem, Double> priceCol = new TableColumn<>("Price");
+       TableColumn<Product, String> rateCol = new TableColumn<>("Tax Rate");
+       rateCol.setCellValueFactory(new PropertyValueFactory<>("taxRate"));
+       rateCol.setPrefWidth(60);
+
+       TableColumn<Product, String> unitCol = new TableColumn<>("Unit of Measure");
+       unitCol.setCellValueFactory(new PropertyValueFactory<>("unitOfMeasure"));
+       unitCol.setPrefWidth(250);
+
+        
+        TableColumn<Product, Double> priceCol = new TableColumn<>("Price");
         priceCol.setCellValueFactory(new PropertyValueFactory<>("price"));
-        priceCol.setPrefWidth(100);
-        priceCol.setCellFactory(col -> new TableCell<CartItem, Double>() {
+        priceCol.setPrefWidth(120);
+        priceCol.setCellFactory(col -> new TableCell<Product, Double>() {
             @Override
             protected void updateItem(Double price, boolean empty) {
                 super.updateItem(price, empty);
@@ -377,14 +525,14 @@ public class POSDashboard extends Application {
             }
         });
         
-        TableColumn<CartItem, Integer> qtyCol = new TableColumn<>("Qty");
+        TableColumn<Product, Double> qtyCol = new TableColumn<>("Qty");
         qtyCol.setCellValueFactory(new PropertyValueFactory<>("quantity"));
         qtyCol.setPrefWidth(70);
         
-        TableColumn<CartItem, Double> totalCol = new TableColumn<>("Total");
+        TableColumn<Product, Double> totalCol = new TableColumn<>("Total");
         totalCol.setCellValueFactory(new PropertyValueFactory<>("total"));
-        totalCol.setPrefWidth(120);
-        totalCol.setCellFactory(col -> new TableCell<CartItem, Double>() {
+        totalCol.setPrefWidth(140);
+        totalCol.setCellFactory(col -> new TableCell<Product, Double>() {
             @Override
             protected void updateItem(Double total, boolean empty) {
                 super.updateItem(total, empty);
@@ -396,15 +544,15 @@ public class POSDashboard extends Application {
             }
         });
         
-        TableColumn<CartItem, Void> actionCol = new TableColumn<>("Action");
+        TableColumn<Product, Void> actionCol = new TableColumn<>("Action");
         actionCol.setPrefWidth(100);
-        actionCol.setCellFactory(col -> new TableCell<CartItem, Void>() {
+        actionCol.setCellFactory(col -> new TableCell<Product, Void>() {
             private final Button deleteButton = new Button("Remove");
             
             {
                 deleteButton.setStyle("-fx-background-color: #c62828; -fx-text-fill: white; -fx-cursor: hand; -fx-background-radius: 3px;");
                 deleteButton.setOnAction(event -> {
-                    CartItem item = getTableView().getItems().get(getIndex());
+                    Product item = getTableView().getItems().get(getIndex());
                     removeItemFromCart(item);
                 });
             }
@@ -420,7 +568,7 @@ public class POSDashboard extends Application {
             }
         });
         
-        cartTable.getColumns().addAll(idCol, nameCol, priceCol, qtyCol, totalCol, actionCol);
+        cartTable.getColumns().addAll(idCol, nameCol,rateCol, unitCol, priceCol, qtyCol, totalCol, actionCol);
         
         cartSection.getChildren().addAll(cartHeader, cartTable);
         
@@ -432,159 +580,204 @@ public class POSDashboard extends Application {
     }
     
     /**
-     * Creates the checkout panel on the right side
-     */
-    private VBox createCheckoutPanel() {
-        VBox checkoutPanel = new VBox(15);
-        checkoutPanel.setPrefWidth(300);
-        checkoutPanel.setPadding(new Insets(20, 20, 20, 0));
-        
-        // Create card panel with shadow effect
-        VBox card = new VBox(15);
-        card.setPadding(new Insets(20));
-        card.setStyle("-fx-background-color: white; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
-                    "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 10, 0, 0, 4);");
-        
-        // Payment summary title
-        Label summaryTitle = new Label("Payment Summary");
-        summaryTitle.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #424242;");
-        
-        // Separator
-        Separator separator = new Separator();
-        
-        // Subtotal section
-        GridPane summaryGrid = new GridPane();
-        summaryGrid.setVgap(12);
-        summaryGrid.setHgap(10);
-        
-        int row = 0;
-        
-        // Add subtotal row
-        Label subtotalLabel = new Label("Subtotal:");
-        subtotalLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #757575;");
-        Label subtotalValueLabel = new Label(formatCurrency(0.0));
-        subtotalValueLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #424242; -fx-font-weight: bold;");
-        summaryGrid.add(subtotalLabel, 0, row);
-        summaryGrid.add(subtotalValueLabel, 1, row);
-        row++;
-        
-        // Add discount row
-        Label discountLabel = new Label("Discount:");
-        discountLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #757575;");
-        Label discountValueLabel = new Label(formatCurrency(0.0));
-        discountValueLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #c62828; -fx-font-weight: bold;");
-        summaryGrid.add(discountLabel, 0, row);
-        summaryGrid.add(discountValueLabel, 1, row);
-        row++;
-        
-        // Add tax row
-        Label taxLabel = new Label("Tax (10%):");
-        taxLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #757575;");
-        Label taxValueLabel = new Label(formatCurrency(0.0));
-        taxValueLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #424242; -fx-font-weight: bold;");
-        summaryGrid.add(taxLabel, 0, row);
-        summaryGrid.add(taxValueLabel, 1, row);
-        row++;
-        
-        // Add separator for total
-        Separator totalSeparator = new Separator();
-        GridPane.setColumnSpan(totalSeparator, 2);
-        summaryGrid.add(totalSeparator, 0, row);
-        row++;
-        
-        // Add total row
-        Label totalLabel = new Label("Total:");
-        totalLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #424242;");
-        totalAmountLabel = new Label(formatCurrency(0.0));
-        totalAmountLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #1a237e;");
-        summaryGrid.add(totalLabel, 0, row);
-        summaryGrid.add(totalAmountLabel, 1, row);
-        
-        // Column constraints to push values to the right
-        ColumnConstraints col1 = new ColumnConstraints();
-        col1.setHgrow(Priority.ALWAYS);
-        
-        ColumnConstraints col2 = new ColumnConstraints();
-        col2.setHalignment(javafx.geometry.HPos.RIGHT);
-        
-        summaryGrid.getColumnConstraints().addAll(col1, col2);
-        
-        // Payment method selector
-        VBox paymentMethodBox = new VBox(8);
-        Label paymentMethodLabel = new Label("Payment Method");
-        paymentMethodLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #424242;");
-        
-        paymentMethodComboBox = new ComboBox<>();
-        paymentMethodComboBox.getItems().addAll("Cash", "Credit Card", "Debit Card", "Mobile Payment");
-        paymentMethodComboBox.setValue("Cash");
-        paymentMethodComboBox.setPrefWidth(Double.MAX_VALUE);
-        paymentMethodComboBox.setPrefHeight(40);
-        paymentMethodComboBox.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px;");
-        
-        paymentMethodBox.getChildren().addAll(paymentMethodLabel, paymentMethodComboBox);
-        
-        // Cash amount (visible only for cash payment)
-        VBox cashAmountBox = new VBox(8);
-        Label cashAmountLabel = new Label("Cash Amount");
-        cashAmountLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #424242;");
-        
-        TextField cashAmountField = new TextField();
-        cashAmountField.setPromptText("Enter amount");
-        cashAmountField.setPrefHeight(40);
-        cashAmountField.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
-                              "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;");
-        
-        cashAmountBox.getChildren().addAll(cashAmountLabel, cashAmountField);
-        
-        // Process payment button
-        Button processPaymentButton = new Button("PROCESS PAYMENT");
-        processPaymentButton.setPrefHeight(50);
-        processPaymentButton.setPrefWidth(Double.MAX_VALUE);
+ * Creates the checkout panel on the right side
+ */
+private VBox createCheckoutPanel() {
+    VBox checkoutPanel = new VBox(15);
+    checkoutPanel.setPrefWidth(300);
+    checkoutPanel.setPadding(new Insets(20, 20, 20, 0));
+    
+    // Create card panel with shadow effect
+    VBox card = new VBox(15);
+    card.setPadding(new Insets(20));
+    card.setStyle("-fx-background-color: white; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+                "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 10, 0, 0, 4);");
+    
+    // Payment summary title
+    Label summaryTitle = new Label("Payment Summary");
+    summaryTitle.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #424242;");
+    
+    // Separator
+    Separator separator = new Separator();
+    
+    // Customer Information section
+    VBox customerInfoBox = new VBox(8);
+    Label customerInfoLabel = new Label("Customer Information");
+    customerInfoLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #424242;");
+    
+    // Customer name field
+    TextField customerNameField = new TextField();
+    customerNameField.setPromptText("Enter customer name");
+    customerNameField.setPrefHeight(35);
+    customerNameField.setStyle("-fx-font-size: 13px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+                          "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;");
+    
+    // TIN field
+    TextField tinField = new TextField();
+    tinField.setPromptText("Enter Tax Identification Number");
+    tinField.setPrefHeight(35);
+    tinField.setStyle("-fx-font-size: 13px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+                   "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;");
+    
+    customerInfoBox.getChildren().addAll(customerInfoLabel, customerNameField, tinField);
+    
+    // Subtotal section
+    GridPane summaryGrid = new GridPane();
+    summaryGrid.setVgap(12);
+    summaryGrid.setHgap(10);
+    
+    int row = 0;
+    
+    // Add subtotal row
+    Label subtotalLabel = new Label("Subtotal:");
+    subtotalLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #757575;");
+    subtotalValueLabel = new Label(formatCurrency(0.0));
+    subtotalValueLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #424242; -fx-font-weight: bold;");
+    summaryGrid.add(subtotalLabel, 0, row);
+    summaryGrid.add(subtotalValueLabel, 1, row);
+    row++;
+    
+    // Add discount row
+    Label discountLabel = new Label("Discount:");
+    discountLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #757575;");
+    discountValueLabel = new Label(formatCurrency(0.0));
+    discountValueLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #c62828; -fx-font-weight: bold;");
+    summaryGrid.add(discountLabel, 0, row);
+    summaryGrid.add(discountValueLabel, 1, row);
+    row++;
+    
+    // Add tax row
+    taxLabel = new Label("Tax (16.5%):");
+    taxLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #757575;");
+    taxValueLabel = new Label(formatCurrency(0.0));
+    taxValueLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #424242; -fx-font-weight: bold;");
+    summaryGrid.add(taxLabel, 0, row);
+    summaryGrid.add(taxValueLabel, 1, row);
+    row++;
+    
+    // Add separator for total
+    Separator totalSeparator = new Separator();
+    GridPane.setColumnSpan(totalSeparator, 2);
+    summaryGrid.add(totalSeparator, 0, row);
+    row++;
+    
+    // Add total row
+    Label totalLabel = new Label("Total:");
+    totalLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #424242;");
+    totalAmountLabel = new Label(formatCurrency(0.0));
+    totalAmountLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #1a237e;");
+    summaryGrid.add(totalLabel, 0, row);
+    summaryGrid.add(totalAmountLabel, 1, row);
+    
+    // Column constraints to push values to the right
+    ColumnConstraints col1 = new ColumnConstraints();
+    col1.setHgrow(Priority.ALWAYS);
+    
+    ColumnConstraints col2 = new ColumnConstraints();
+    col2.setHalignment(javafx.geometry.HPos.RIGHT);
+    
+    summaryGrid.getColumnConstraints().addAll(col1, col2);
+    
+    // Payment method selector
+    VBox paymentMethodBox = new VBox(8);
+    Label paymentMethodLabel = new Label("Payment Method");
+    paymentMethodLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #424242;");
+    
+    paymentMethodComboBox = new ComboBox<>();
+    paymentMethodComboBox.getItems().addAll("Cash", "Credit Card", "Debit Card", "Mobile Payment");
+    paymentMethodComboBox.setValue("Cash");
+    paymentMethodComboBox.setPrefWidth(Double.MAX_VALUE);
+    paymentMethodComboBox.setPrefHeight(40);
+    paymentMethodComboBox.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px;");
+    
+    paymentMethodBox.getChildren().addAll(paymentMethodLabel, paymentMethodComboBox);
+    
+    // Cash amount (visible only for cash payment)
+    VBox cashAmountBox = new VBox(8);
+    Label cashAmountLabel = new Label("Cash Amount");
+    cashAmountLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #424242;");
+    
+    cashAmountField = new TextField();
+    cashAmountField.setPromptText("Enter amount");
+    cashAmountField.setPrefHeight(40);
+    cashAmountField.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+                          "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;");
+    
+    // Add change display
+    Label changeLabel = new Label("Change:");
+    changeLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #424242;");
+    
+    changeValueLabel = new Label(formatCurrency(0.0));
+    changeValueLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #009688;");
+    
+    HBox changeBox = new HBox(10);
+    changeBox.setAlignment(Pos.CENTER_LEFT);
+    changeBox.getChildren().addAll(changeLabel, changeValueLabel);
+    Region spacer = new Region();
+    HBox.setHgrow(spacer, Priority.ALWAYS);
+    changeBox.getChildren().add(0, spacer);
+    
+    // Add real-time change calculation when cash amount changes
+     cashAmountField.textProperty().addListener((observable, oldValue, newValue) -> {
+    // Validate input to allow only numbers and decimal points
+       if (!newValue.matches("\\d*\\.?\\d*")) {
+          cashAmountField.setText(oldValue);
+        } else {
+        updateChangeCalculation();
+        }
+    });    
+    cashAmountBox.getChildren().addAll(cashAmountLabel, cashAmountField, changeBox);
+    
+    // Process payment button
+    processPaymentButton = new Button("PROCESS PAYMENT");
+    processPaymentButton.setPrefHeight(50);
+    processPaymentButton.setPrefWidth(Double.MAX_VALUE);
+    processPaymentButton.setDisable(true); // Initially disabled
+    processPaymentButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; " +
+                               "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: hand; " +
+                               "-fx-background-radius: 5px;");
+    
+    // Add hover effect
+    processPaymentButton.setOnMouseEntered(e -> 
+        processPaymentButton.setStyle("-fx-background-color: #3949ab; -fx-text-fill: white; " +
+                                   "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: hand; " +
+                                   "-fx-background-radius: 5px;")
+    );
+    
+    processPaymentButton.setOnMouseExited(e -> 
         processPaymentButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; " +
                                    "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: hand; " +
-                                   "-fx-background-radius: 5px;");
-        
-        // Add hover effect
-        processPaymentButton.setOnMouseEntered(e -> 
-            processPaymentButton.setStyle("-fx-background-color: #3949ab; -fx-text-fill: white; " +
-                                       "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: hand; " +
-                                       "-fx-background-radius: 5px;")
-        );
-        
-        processPaymentButton.setOnMouseExited(e -> 
-            processPaymentButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; " +
-                                       "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: hand; " +
-                                       "-fx-background-radius: 5px;")
-        );
-        
-        processPaymentButton.setOnAction(e -> processPayment());
-        
-        // Additional customer actions panel
-        VBox customerActionsPanel = new VBox(10);
-        customerActionsPanel.setPadding(new Insets(20, 0, 0, 0));
-        
-        Label customerActionsTitle = new Label("Customer Actions");
-        customerActionsTitle.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #424242;");
-        
-        Button addCustomerButton = createSecondaryActionButton("Add Customer");
-        Button addNoteButton = createSecondaryActionButton("Add Note");
-        Button holdSaleButton = createSecondaryActionButton("Hold Sale");
-        Button printReceiptButton = createSecondaryActionButton("Print Preview");
-        
-        customerActionsPanel.getChildren().addAll(customerActionsTitle, addCustomerButton, addNoteButton, holdSaleButton, printReceiptButton);
-        
-        // Add all elements to the card
-        card.getChildren().addAll(summaryTitle, separator, summaryGrid, paymentMethodBox, cashAmountBox, processPaymentButton);
-        
-        // Add card and customer actions to checkout panel
-        checkoutPanel.getChildren().addAll(card, customerActionsPanel);
-        
-        // Make sure the sidebar and panel stay at the top
-        VBox.setVgrow(card, Priority.NEVER);
-        VBox.setVgrow(customerActionsPanel, Priority.NEVER);
-        
-        return checkoutPanel;
-    }
+                                   "-fx-background-radius: 5px;")
+    );
+    
+    processPaymentButton.setOnAction(e -> processPayment());
+    
+    // Additional customer actions panel
+    VBox customerActionsPanel = new VBox(10);
+    customerActionsPanel.setPadding(new Insets(20, 0, 0, 0));
+    
+    Label customerActionsTitle = new Label("Customer Actions");
+    customerActionsTitle.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #424242;");
+    
+    Button addCustomerButton = createSecondaryActionButton("Add Customer");
+    Button addNoteButton = createSecondaryActionButton("Add Note");
+    Button holdSaleButton = createSecondaryActionButton("Hold Sale");
+    Button printReceiptButton = createSecondaryActionButton("Print Preview");
+    
+    customerActionsPanel.getChildren().addAll(customerActionsTitle, addCustomerButton, addNoteButton, holdSaleButton, printReceiptButton);
+    
+    // Add all elements to the card
+    card.getChildren().addAll(summaryTitle, separator, customerInfoBox, summaryGrid, paymentMethodBox, cashAmountBox, processPaymentButton);
+    
+    // Add card and customer actions to checkout panel
+    checkoutPanel.getChildren().addAll(card, customerActionsPanel);
+    
+    // Make sure the sidebar and panel stay at the top
+    VBox.setVgrow(card, Priority.NEVER);
+    VBox.setVgrow(customerActionsPanel, Priority.NEVER);
+    
+    return checkoutPanel;
+}
     
     /**
      * Creates a styled action button for quick actions
@@ -618,60 +811,47 @@ public class POSDashboard extends Application {
     /**
      * Adds a product to the cart based on barcode input
      */
-    private void addProductToCart() {
-        String barcode = barcodeField.getText().trim();
-        
-        if (barcode.isEmpty()) {
-            showAlert("Error", "Please enter a product barcode or search term.");
-            return;
-        }
-        
-        // For demonstration, add sample products
-        CartItem newItem;
-        
-        // Simulate different products based on input
-        if (barcode.equalsIgnoreCase("apple") || barcode.equals("1001")) {
-            newItem = new CartItem(1001, "Fresh Apple", 1.25, 1);
-        } else if (barcode.equalsIgnoreCase("water") || barcode.equals("1002")) {
-            newItem = new CartItem(1002, "Mineral Water 500ml", 1.50, 1);
-        } else if (barcode.equalsIgnoreCase("bread") || barcode.equals("1003")) {
-            newItem = new CartItem(1003, "Whole Grain Bread", 3.75, 1);
-        } else if (barcode.equalsIgnoreCase("milk") || barcode.equals("1004")) {
-            newItem = new CartItem(1004, "Organic Milk 1L", 2.99, 1);
-        } else {
-            // Generic product for any other input
-            newItem = new CartItem(1000 + cartItems.size(), "Product " + barcode, 10.00, 1);
-        }
-        
-        // Check if item already exists in cart
-        boolean found = false;
-        for (CartItem item : cartItems) {
-            if (item.getId() == newItem.getId()) {
-                // Increase quantity
-                item.setQuantity(item.getQuantity() + 1);
-                item.updateTotal();
-                found = true;
-                break;
-            }
-        }
-        
-        // Add new item if not found
-       if (!found) {
-       cartItems.add(newItem);
-       }
+   private void addProductToCart() {
+    String barcode = barcodeField.getText().trim();
 
-      // Update cart and totals
-      cartTable.refresh();
-      updateTotals();
-      barcodeField.clear();
-      barcodeField.requestFocus();
-        
+    if (barcode.isEmpty()) {
+        showAlert("Error", "Please enter a product barcode or search term.");
+        return;
     }
-    
+
+    // Fetch product from DB
+    Product newItem = Helper.fetchProductByBarcode(barcode);
+
+    if (newItem == null) {
+        showAlert("Error", "Product not found for barcode: " + barcode);
+        return;
+    }
+
+    // Check if item already exists in cart
+    boolean found = false;
+    for (Product item : cartItems) {
+        if (item.getBarcode().equals(newItem.getBarcode())) {
+            item.setQuantity(item.getQuantity() + 1);
+            item.updateTotal();
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        cartItems.add(newItem);
+    }
+
+    cartTable.refresh();
+    updateTotals();
+    barcodeField.clear();
+    barcodeField.requestFocus();
+}
+
     /**
      * Removes an item from the cart
      */
-    private void removeItemFromCart(CartItem item) {
+    private void removeItemFromCart(Product item) {
         cartItems.remove(item);
         updateTotals();
     }
@@ -692,29 +872,99 @@ public class POSDashboard extends Application {
         }
     }
     
-    /**
-     * Updates the total amounts in the checkout panel
-     */
-    private void updateTotals() {
-        // Calculate subtotal
-        double subtotal = 0.0;
-        for (CartItem item : cartItems) {
-            subtotal += item.getTotal();
-        }
-        
-        // Calculate tax and total
-        double tax = subtotal * 0.10; // 10% tax
-        double total = subtotal + tax;
-        
-        // Update labels in the checkout panel
-        totalAmount = total;
-        totalAmountLabel.setText(formatCurrency(total));
-        
-        // Update item count in cart header
-        int itemCount = cartItems.size();
-        ((Label) ((HBox) ((VBox) cartTable.getParent()).getChildren().get(0)).getChildren().get(1))
-            .setText("(" + itemCount + " item" + (itemCount == 1 ? "" : "s") + ")");
+   /**
+ * Updates the total amounts in the checkout panel and refreshes the change calculation
+ */
+private void updateTotals() {
+    double subtotal = 0.0;
+    double totalTax = 0.0;
+    int totalQuantity = 0;
+    double itemLevelDiscountTotal = 0.0;
+
+    for (Product item : cartItems) {
+        double itemPrice = item.getPrice();
+        double itemQuantity = item.getQuantity();
+        double itemSubtotal = itemPrice * itemQuantity;
+
+        // Calculate item-level discount from originalPrice
+        double originalPrice = item.getOriginalPrice();
+        double discountPerItem = (originalPrice - itemPrice) * itemQuantity;
+        itemLevelDiscountTotal += discountPerItem;
+
+        // Get tax rate from DB using TaxRate ID
+        double taxRate = Helper.getTaxRateById(item.getTaxRate());
+        boolean isVATRegistered = Helper.isVATRegistered();
+        double itemVAT = isVATRegistered ? (itemSubtotal * taxRate) / (100 + taxRate) : 0;
+
+        subtotal += itemSubtotal;
+        totalTax += itemVAT;
+        totalQuantity += itemQuantity;
     }
+
+    // Cart-level discount
+    double cartLevelDiscount = 0.0;
+    if (cartDiscountPercent > 0) {
+        cartLevelDiscount = subtotal * (cartDiscountPercent / 100.0);
+    } else if (cartDiscountAmount > 0) {
+        cartLevelDiscount = Math.min(cartDiscountAmount, subtotal);
+    }
+
+    double totalDiscount = itemLevelDiscountTotal + cartLevelDiscount;
+    double total = subtotal - cartLevelDiscount;
+
+    // Update UI
+    subtotalValueLabel.setText(formatCurrency(subtotal - totalTax)); 
+    taxLabel.setText("VAT Amount:");
+    taxValueLabel.setText(formatCurrency(totalTax));
+    discountValueLabel.setText(formatCurrency(totalDiscount));
+    totalAmountLabel.setText(formatCurrency(total));
+
+    totalAmount = total;
+
+    ((Label) ((HBox) ((VBox) cartTable.getParent()).getChildren().get(0)).getChildren().get(1))
+        .setText("(" + totalQuantity + " item" + (totalQuantity == 1 ? "" : "s") + ")");
+
+    updateChangeCalculation();
+}
+
+
+/**
+ * Updates the change calculation and payment button state
+ */
+private void updateChangeCalculation() {
+    // Get the cash amount from the text field
+    String cashText = cashAmountField.getText();
+    double cashAmount = 0.0;
+    
+    try {
+        if (!cashText.isEmpty()) {
+            cashAmount = Double.parseDouble(cashText);
+        }
+    } catch (NumberFormatException e) {
+        // Invalid input, treat as zero
+    }
+    
+    // Calculate change
+    double change = cashAmount - totalAmount;
+    
+    // Update change label
+    changeValueLabel.setText(formatCurrency(Math.max(0, change)));
+    
+    // Enable/disable process payment button based on whether customer has provided enough cash
+    boolean isSufficientPayment = cashAmount >= totalAmount && totalAmount > 0;
+    processPaymentButton.setDisable(!isSufficientPayment);
+    
+    // Optionally change the button style when disabled
+    if (isSufficientPayment) {
+        processPaymentButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; " +
+                                  "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: hand; " +
+                                  "-fx-background-radius: 5px;");
+    } else {
+        processPaymentButton.setStyle("-fx-background-color: #9e9e9e; -fx-text-fill: white; " +
+                                  "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: default; " +
+                                  "-fx-background-radius: 5px;");
+    }
+}
     
     /**
      * Processes the payment
@@ -733,39 +983,287 @@ public class POSDashboard extends Application {
                           formatCurrency(totalAmount) + "...");
         alert.showAndWait();
         
-        // Show payment success and generate new receipt
-        alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setTitle("Payment Complete");
-        alert.setHeaderText("Payment Successful!");
-        alert.setContentText("Payment of " + formatCurrency(totalAmount) + " was processed successfully.\n\n" +
-                          "Receipt #" + receiptNumber + " has been printed.");
-        alert.showAndWait();
+       // 1. Create and populate the invoice header
+       InvoiceHeader invoiceHeader = new InvoiceHeader();
+       invoiceHeader.setInvoiceNumber(generateNewReceiptNumber());
+       invoiceHeader.setInvoiceDateTime(LocalDateTime.now().toString());
+       invoiceHeader.setSellerTIN(Helper.getTin());
+       invoiceHeader.setBuyerTIN("");
+       invoiceHeader.setBuyerAuthorizationCode("");
+       invoiceHeader.setSiteId(Helper.getTerminalSiteId());
+       invoiceHeader.setGlobalConfigVersion(Helper.getGlobalVersion());
+       invoiceHeader.setTaxpayerConfigVersion(Helper.getTaxpayerVersion());
+       invoiceHeader.setTerminalConfigVersion(Helper.getTerminalVersion());
+       invoiceHeader.setReliefSupply(false);
+       invoiceHeader.setVat5CertificateDetails(null);
+       invoiceHeader.setPaymentMethod("Cash");
+
+    // 2. Convert products to line items
+    List<LineItemDto> lineItems = new ArrayList<>();
+    for (Product product : cartItems) {
+       LineItemDto lineItemDto = Helper.convertProductToLineItemDto(product);
+       lineItems.add(lineItemDto);
+    }
+
+        // 3. Build invoice summary
+       InvoiceSummary invoiceSummary = new InvoiceSummary();
+       List<TaxBreakDown> taxBreakdowns = Helper.generateTaxBreakdown(lineItems);
+       invoiceSummary.setTaxBreakDown(taxBreakdowns);
+       invoiceSummary.setTotalVAT(lineItems.stream().mapToDouble(LineItemDto::getTotalVAT).sum());
+       invoiceSummary.setInvoiceTotal(lineItems.stream().mapToDouble(LineItemDto::getTotal).sum());
+       invoiceSummary.setOfflineSignature("");
+
+       // 4. Put everything into the payload
+       InvoicePayload payload = new InvoicePayload();
+       payload.setInvoiceHeader(invoiceHeader);
+       payload.setInvoiceLineItems(lineItems);
+       payload.setInvoiceSummary(invoiceSummary);
         
+      double totalVAT = invoiceSummary.getTotalVAT();
+      String offlineSignature = invoiceSummary.getOfflineSignature();
+      String validationUrl = ""; 
+      boolean isTransmitted = false; 
+      String paymentId = paymentMethodComboBox.getValue();
+      double amountPaid = totalAmount;
+
+    // Save locally before transmitting
+     boolean saveSuccess = Helper.saveTransaction(
+       invoiceHeader,
+       lineItems,
+       taxBreakdowns,
+       totalAmount,
+       totalVAT,
+       offlineSignature,
+       validationUrl,
+       isTransmitted,
+       paymentId,
+       amountPaid
+    );
+
+   if (saveSuccess) {
+      System.out.println("✅ Transaction saved locally.");
+   } else {
+    System.err.println("⚠️ Failed to save transaction locally.");
+   }
+
+
+       // Step 5: Convert to JSON
+       Gson gson = new Gson();
+       String jsonPayload = gson.toJson(payload);
+       String bearerToken = Helper.getToken();
+
+       // Step 6: Submit the request
+       ApiClient apiClient = new ApiClient();
+       apiClient.submitTransactions(jsonPayload, bearerToken, (success, returnedValidationUrl) -> {
+       Platform.runLater(() -> {
+       if (success) {
+       
+        Helper.updateValidationUrl(invoiceHeader.getInvoiceNumber(), returnedValidationUrl);
+        Alert successAlert = new Alert(Alert.AlertType.INFORMATION);
+        successAlert.setTitle("Transaction Status");
+        successAlert.setHeaderText("🎉 Transaction Processed!");
+        successAlert.setContentText("The transaction was processed successfully.");
+        successAlert.showAndWait();
+
+        Helper.markAsTransmitted(invoiceHeader.getInvoiceNumber());
+        } else {
+        Alert failureAlert = new Alert(Alert.AlertType.ERROR);
+        failureAlert.setTitle("Transaction Status");
+        failureAlert.setHeaderText("🚨 Processing Failed!");
+        failureAlert.setContentText("Transaction failed. Saved locally for later sync.");
+        failureAlert.showAndWait();
+        }
+
+        });
+      });
         // Reset cart and generate new receipt number
         cartItems.clear();
+        cashAmountField.clear();
         updateTotals();
         generateNewReceiptNumber();
     }
     
     /**
-     * Generates a new receipt number
-     */
-    private void generateNewReceiptNumber() {
-        // Generate a semi-random receipt number for demonstration
-        int randomDigits = (int) (Math.random() * 10000);
-        receiptNumber = "R-" + String.format("%05d", randomDigits);
-        
-        // Update the receipt number in the top bar
-        ((Label) ((VBox) ((HBox) root.getTop()).getChildren().get(2)).getChildren().get(1))
-            .setText(receiptNumber);
+      * Generates a new receipt number
+    */
+    public String generateNewReceiptNumber() {
+    long taxpayerId = Helper.getTaxpayerId();
+    int terminalPosition = Helper.getTerminalPosition();
+    LocalDate transactionDate = LocalDate.now();
+    long transactionCount = 0;
+
+    InvoiceDetails lastDetails = Helper.getLastInvoiceDetails();
+
+    if (lastDetails != null) {
+        String[] parts = lastDetails.getInvoiceNumber().split("-");
+        if (parts.length == 4) {
+            transactionCount = Helper.base64ToBase10(parts[3]) + 1;
+        }
+    }
+
+    return Helper.generateReceiptNumber(taxpayerId, terminalPosition, transactionDate, transactionCount);
+}
+
+private void applyDiscount() {
+    // Check if we have items in the cart
+    if (cartItems.isEmpty()) {
+        showAlert("No Items", "Please add items to the cart before applying a discount.");
+        return;
+    }
+
+    // Get the selected product (for item-specific discount)
+    Product selectedProduct = cartTable.getSelectionModel().getSelectedItem();
+    
+    // Create the discount dialog
+    Dialog<ButtonType> dialog = new Dialog<>();
+    dialog.setTitle("Apply Discount");
+    dialog.setHeaderText(selectedProduct != null ? 
+        "Apply discount to: " + selectedProduct.getName() : 
+        "Apply discount to entire cart");
+    
+    // Set up the dialog pane with the app's style
+    DialogPane dialogPane = dialog.getDialogPane();
+    dialogPane.setStyle("-fx-background-color: white; -fx-padding: 20px;");
+    dialogPane.getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+    
+    // Create discount type options
+    VBox content = new VBox(15);
+    content.setPadding(new Insets(10));
+    
+    // Radio buttons for discount type
+    ToggleGroup discountTypeGroup = new ToggleGroup();
+    RadioButton percentageOption = new RadioButton("Percentage Discount");
+    percentageOption.setToggleGroup(discountTypeGroup);
+    percentageOption.setSelected(true);
+    
+    RadioButton amountOption = new RadioButton("Fixed Amount Discount");
+    amountOption.setToggleGroup(discountTypeGroup);
+    
+    // Input field for discount value
+    TextField discountValueField = new TextField();
+    discountValueField.setPromptText("Enter discount value");
+    discountValueField.setPrefHeight(35);
+    discountValueField.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px; " +
+                            "-fx-border-radius: 5px; -fx-border-color: #e0e0e0; " +
+                            "-fx-border-width: 1px; -fx-background-color: white;");
+
+    // Only allow numbers and decimal points in the text field
+    discountValueField.textProperty().addListener((observable, oldValue, newValue) -> {
+        if (!newValue.matches("\\d*\\.?\\d*")) {
+            discountValueField.setText(oldValue);
+        }
+    });
+    
+    // Scope options (only show if an item is selected)
+    VBox scopeBox = new VBox(10);
+    ToggleGroup scopeGroup = new ToggleGroup();
+    RadioButton itemOption = new RadioButton("Apply to selected item only");
+    RadioButton cartOption = new RadioButton("Apply to entire cart");
+    
+    itemOption.setToggleGroup(scopeGroup);
+    cartOption.setToggleGroup(scopeGroup);
+    
+    if (selectedProduct != null) {
+        itemOption.setSelected(true);
+        scopeBox.getChildren().addAll(new Label("Discount Scope:"), itemOption, cartOption);
+    } else {
+        cartOption.setSelected(true);
     }
     
+    content.getChildren().addAll(
+        new Label("Discount Type:"), 
+        percentageOption, 
+        amountOption,
+        new Label("Discount Value:"),
+        discountValueField
+    );
+    
+    if (selectedProduct != null) {
+        content.getChildren().add(scopeBox);
+    }
+    
+    dialogPane.setContent(content);
+    
+    // Show dialog and process the result
+    dialog.showAndWait().ifPresent(result -> {
+        if (result == ButtonType.OK) {
+            try {
+                double discountValue = Double.parseDouble(discountValueField.getText());
+                boolean isPercentage = percentageOption.isSelected();
+                
+                if (discountValue <= 0) {
+                    showAlert("Invalid Discount", "Please enter a discount value greater than zero.");
+                    return;
+                }
+                
+                // Cap percentage discount at 100%
+                if (isPercentage && discountValue > 100) {
+                    discountValue = 100;
+                }
+                
+                if (selectedProduct != null && itemOption.isSelected()) {
+                    // Apply discount to specific item
+                    applyDiscountToItem(selectedProduct, discountValue, isPercentage);
+                } else {
+                    // Apply discount to entire cart
+                    applyDiscountToCart(discountValue, isPercentage);
+                }
+                
+                // Update totals to reflect discount
+                updateTotals();
+                
+            } catch (NumberFormatException ex) {
+                showAlert("Invalid Input", "Please enter a valid number for the discount value.");
+            }
+        }
+    });
+}
+
+// Method to apply discount to a specific item
+private void applyDiscountToItem(Product product, double discountValue, boolean isPercentage) {
+    double originalPrice = product.getOriginalPrice();
+    if (originalPrice == 0) {
+        // If original price isn't set, store it now
+        originalPrice = product.getPrice();
+        product.setOriginalPrice(originalPrice);
+    }
+    
+    if (isPercentage) {
+        double discountAmount = originalPrice * (discountValue / 100.0);
+        product.setPrice(originalPrice - discountAmount);
+        product.setDiscountPercent(discountValue);
+        product.setDiscountAmount(0);
+    } else {
+        // Ensure discount doesn't exceed item price
+        double safeDicountAmount = Math.min(discountValue, originalPrice);
+        product.setPrice(originalPrice - safeDicountAmount);
+        product.setDiscountAmount(safeDicountAmount);
+        product.setDiscountPercent(0);
+    }
+    
+    product.updateTotal();
+    cartTable.refresh();
+}
+
+// Method to apply discount to the entire cart
+private void applyDiscountToCart(double discountValue, boolean isPercentage) {
+    if (isPercentage) {
+        cartDiscountPercent = discountValue;
+        cartDiscountAmount = 0;
+    } else {
+        cartDiscountAmount = discountValue;
+        cartDiscountPercent = 0;
+    }
+}
+
+    
     /**
-     * Formats a number as currency
-     */
+       * Formats a number as Malawi Kwacha currency
+    */
     private String formatCurrency(double amount) {
-        NumberFormat currencyFormatter = NumberFormat.getCurrencyInstance(Locale.US);
-        return currencyFormatter.format(amount);
+      Locale malawiLocale = new Locale.Builder().setLanguage("en").setRegion("MW").build();
+      NumberFormat currencyFormatter = NumberFormat.getCurrencyInstance(malawiLocale);
+      return currencyFormatter.format(amount);
     }
     
     /**
@@ -816,75 +1314,34 @@ public class POSDashboard extends Application {
      * Handles the logout action
      */
     private void handleLogout() {
-        // Confirm before logout
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.setTitle("Logout");
-        alert.setHeaderText("Confirm Logout");
-        alert.setContentText("Are you sure you want to logout?");
-        
-        if (alert.showAndWait().get() == ButtonType.OK) {
-            // In a real application, this would redirect to the login screen
-            showAlert("Logout", "You have been logged out successfully.");
-            stage.close();
+    // Confirm before logout
+    Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+    alert.setTitle("Logout");
+    alert.setHeaderText("Confirm Logout");
+    alert.setContentText("Are you sure you want to logout?");
+
+    if (alert.showAndWait().get() == ButtonType.OK) {
+        try {
+            // Close current stage
+            Stage currentStage = (Stage) stage.getScene().getWindow();
+            currentStage.close();
+
+            // Restart application with LoginView
+            Platform.runLater(() -> {
+                try {
+                    new LoginView().start(new Stage());
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            showAlert("Error", "Unable to return to login screen.");
         }
     }
-    
-    /**
-     * Shows an alert dialog with the given title and message
-     */
-    private void showAlert(String title, String message) {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setTitle(title);
-        alert.setHeaderText(null);
-        alert.setContentText(message);
-        alert.showAndWait();
-    }
-    
-    /**
-     * Inner class for cart item data
-     */
-    public static class CartItem {
-        private final SimpleIntegerProperty id;
-        private final SimpleStringProperty name;
-        private final SimpleDoubleProperty price;
-        private final SimpleIntegerProperty quantity;
-        private final SimpleDoubleProperty total;
-        
-        public CartItem(int id, String name, double price, int quantity) {
-            this.id = new SimpleIntegerProperty(id);
-            this.name = new SimpleStringProperty(name);
-            this.price = new SimpleDoubleProperty(price);
-            this.quantity = new SimpleIntegerProperty(quantity);
-            this.total = new SimpleDoubleProperty(price * quantity);
-        }
-        
-        public void updateTotal() {
-            this.total.set(this.price.get() * this.quantity.get());
-        }
-        
-        // Getters and setters
-        public int getId() { return id.get(); }
-        public void setId(int id) { this.id.set(id); }
-        
-        public String getName() { return name.get(); }
-        public void setName(String name) { this.name.set(name); }
-        
-        public double getPrice() { return price.get(); }
-        public void setPrice(double price) { 
-            this.price.set(price);
-            updateTotal();
-        }
-        
-        public int getQuantity() { return quantity.get(); }
-        public void setQuantity(int quantity) { 
-            this.quantity.set(quantity);
-            updateTotal();
-        }
-        
-        public double getTotal() { return total.get(); }
-    }
-    
-    // Main method for testing the dashboard
+}
+         
     public static void main(String[] args) {
         launch(args);
     }

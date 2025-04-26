@@ -18,7 +18,10 @@ import javafx.scene.shape.Circle;
 import javafx.scene.shape.Rectangle;
 import javafx.stage.Modality;
 import com.pointofsale.helper.Helper;
+import com.pointofsale.model.Product;
 import javafx.stage.Stage;
+import java.text.NumberFormat;
+import java.util.Locale;
 import javafx.stage.StageStyle;
 import javafx.util.Duration;
 
@@ -344,7 +347,7 @@ private VBox createTableArea() {
             if (empty || price == null) {
                 setText(null);
             } else {
-                setText(String.format("$%.2f", price));
+                setText(formatCurrency(price));
             }
         }
     });
@@ -514,6 +517,15 @@ private VBox createTableArea() {
                                    "-fx-background-radius: 5;")
         );
         
+        addToCartButton.setOnAction(e -> {
+           if (selectedProduct != null) {
+           stage.close(); // showAndSelect() will return selectedProduct
+           } else {
+           Alert alert = new Alert(Alert.AlertType.WARNING, "Please select a product before adding to cart.");
+            alert.showAndWait();
+           }
+        });
+
         Button viewDetailsButton = new Button("Full Details");
         viewDetailsButton.setPrefHeight(35);
         viewDetailsButton.setPrefWidth(120);
@@ -646,7 +658,7 @@ private VBox createTableArea() {
         // Index 3 is the description title
         ((Label) detailsBox.getChildren().get(4)).setText(selectedProduct.getDescription());
         // Index 5 is a separator
-        ((Label) detailsBox.getChildren().get(6)).setText("Price: $" + String.format("%.2f", selectedProduct.getPrice()));
+        ((Label) detailsBox.getChildren().get(6)).setText("Price: " + formatCurrency(selectedProduct.getPrice()));
         ((Label) detailsBox.getChildren().get(7)).setText("Tax Rate: " + selectedProduct.getTaxRate());
         ((Label) detailsBox.getChildren().get(8)).setText("Quantity: " + selectedProduct.getQuantity() + " units");
         ((Label) detailsBox.getChildren().get(9)).setText("Unit of Measure: " + selectedProduct.getUnitOfMeasure());
@@ -674,34 +686,13 @@ private VBox createTableArea() {
         // Return the selected product
         return selectedProduct;
     }
-    
-    public static class Product {
-       private String barcode;
-       private String name;
-       private String description;
-       private double price;
-       private String taxRate;
-       private double quantity;
-       private String unitOfMeasure;
-
-       public  Product(String barcode, String name, String description, double price, String taxRate, double quantity, String unitOfMeasure) {
-        this.barcode = barcode;
-        this.name = name;
-        this.description = description;
-        this.price = price;
-        this.taxRate = taxRate;
-        this.quantity = quantity;
-        this.unitOfMeasure = unitOfMeasure;
-       }
-       
-        // Getters
-    public String getBarcode() { return barcode; }
-    public String getName() { return name; }
-    public String getDescription() { return description; }
-    public double getPrice() { return price; }
-    public double getQuantity() { return quantity; }
-    public String getUnitOfMeasure() { return unitOfMeasure; }
-    public String getTaxRate() { return taxRate; }
-    
+/**
+       * Formats a number as Malawi Kwacha currency
+    */
+    private String formatCurrency(double amount) {
+      Locale malawiLocale = new Locale.Builder().setLanguage("en").setRegion("MW").build();
+      NumberFormat currencyFormatter = NumberFormat.getCurrencyInstance(malawiLocale);
+      return currencyFormatter.format(amount);
     }
+
 }

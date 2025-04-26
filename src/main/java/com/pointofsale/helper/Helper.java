@@ -11,14 +11,25 @@ import java.util.Enumeration;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.time.temporal.ChronoField;
 import java.util.Base64;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import javax.json.JsonObject;
+import com.pointofsale.model.Product;
+import com.pointofsale.model.TaxRates;
+import com.pointofsale.model.InvoiceDetails;
+import com.pointofsale.model.Session;
+import com.pointofsale.model.InvoiceHeader;
+import com.pointofsale.model.TaxBreakDown;
+import com.pointofsale.model.LineItemDto;
+import java.time.LocalDateTime;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.List;
 import java.util.ArrayList;
-import com.pointofsale.ProductLookupDialog;
 import com.pointofsale.data.Database;
 
 
@@ -170,6 +181,22 @@ public static String getTerminalSiteId() {
     }
     return tin;
 }
+   public static int getTaxpayerId() {
+    int taxpayerId = 0;
+    try (Connection conn = Database.createConnection()) {
+        String query = "SELECT TaxpayerId FROM TaxpayerConfiguration LIMIT 1";
+        try (PreparedStatement stmt = conn.prepareStatement(query)) {
+            var rs = stmt.executeQuery();
+            if (rs.next()) {
+                taxpayerId = rs.getInt("TaxpayerId");
+            }
+        }
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to fetch TIN: " + e.getMessage());
+    }
+    return taxpayerId;
+}
+
 
    public static String getTerminalLabel() {
     String label = "";
@@ -250,6 +277,55 @@ public static String getTerminalSiteId() {
         }
         return activationCode;
     }
+    
+    public static int getTaxpayerVersion() {
+    int version = 0;
+    try (Connection conn = Database.createConnection()) {
+        String query = "SELECT VersionNo FROM TaxpayerConfiguration LIMIT 1";
+        try (PreparedStatement stmt = conn.prepareStatement(query)) {
+            var rs = stmt.executeQuery();
+            if (rs.next()) {
+                version = rs.getInt("VersionNo");
+            }
+        }
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to get Taxpayer Version: " + e.getMessage());
+    }
+    return version;
+    }
+    
+    public static int getTerminalVersion() {
+    int version = 0;
+    try (Connection conn = Database.createConnection()) {
+        String query = "SELECT VersionNo FROM TerminalConfiguration LIMIT 1";
+        try (PreparedStatement stmt = conn.prepareStatement(query)) {
+            var rs = stmt.executeQuery();
+            if (rs.next()) {
+                version = rs.getInt("VersionNo");
+            }
+        }
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to get Terminal Version: " + e.getMessage());
+    }
+    return version;
+}
+    
+  public static int getGlobalVersion() {
+    int version = 0;
+    try (Connection conn = Database.createConnection()) {
+        String query = "SELECT VersionNo FROM GlobalConfiguration LIMIT 1";
+        try (PreparedStatement stmt = conn.prepareStatement(query)) {
+            var rs = stmt.executeQuery();
+            if (rs.next()) {
+                version = rs.getInt("VersionNo");
+            }
+        }
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to get Global Version: " + e.getMessage());
+    }
+    return version;
+}
+
 
     public static boolean updateIsActiveInTerminalConfiguration(boolean isActive) {
     try (Connection conn = Database.createConnection()) {
@@ -337,6 +413,27 @@ public static String getTerminalSiteId() {
         return false;
        }
     }
+ 
+    public static String getTrading() {
+        String trading = "";
+        String query = "SELECT TradingName FROM TerminalConfiguration LIMIT 1";
+
+        try (var conn = Database.createConnection();
+           var stmt = conn.prepareStatement(query);
+           var rs = stmt.executeQuery()) {
+
+           if (rs.next()) {
+              trading = rs.getString("TradingName");
+            }
+
+        } catch (SQLException e) {
+          e.printStackTrace();
+        }
+
+        return trading;
+    }
+
+ 
  public static void insertOrUpdateProduct(JsonObject product) {
     String sql = "INSERT OR REPLACE INTO Products (" +
             "ProductCode, ProductName, Description, Quantity, UnitOfMeasure, Price, SiteId, " +
@@ -366,11 +463,11 @@ public static String getTerminalSiteId() {
         }
     }
 
-public static List<ProductLookupDialog.Product> fetchAllProductsFromDB() {
-    List<ProductLookupDialog.Product> products = new ArrayList<>();
+public static List<Product> fetchAllProductsFromDB() {
+    List<Product> products = new ArrayList<>();
 
     try (Connection conn = Database.createConnection()) {
-        String query = "SELECT ProductCode, ProductName, Description, Price, TaxRateId, Quantity, UnitOfMeasure FROM Products";
+        String query = "SELECT ProductCode, ProductName, Description, Price, TaxRateId, Quantity, UnitOfMeasure, IsProduct FROM Products";
         try (PreparedStatement stmt = conn.prepareStatement(query);
              var rs = stmt.executeQuery()) {
 
@@ -382,17 +479,466 @@ public static List<ProductLookupDialog.Product> fetchAllProductsFromDB() {
                 String rate = rs.getString("TaxRateId");
                 double quantity = rs.getDouble("Quantity");
                 String unit = rs.getString("UnitOfMeasure");
+                boolean isProduct = rs.getInt("IsProduct") == 1; // Assuming IsProduct is stored as 1 (true) or 0 (false)
 
-                products.add(new ProductLookupDialog.Product(barcode, name, desc, price, rate, quantity, unit));
+                // Create the Product object with the updated constructor
+                products.add(new Product(barcode, name, desc, price, rate, quantity, unit, isProduct));
             }
 
         }
-       } catch (SQLException e) {
+    } catch (SQLException e) {
         System.err.println("❌ Failed to load product data: " + e.getMessage());
-       }
+    }
 
-       return products;
+    return products;
+}
+
+public static Product fetchProductByBarcode(String barcode) {
+    try (Connection conn = Database.createConnection()) {
+        String query = "SELECT ProductCode, ProductName, Description, Price, TaxRateId, Quantity, UnitOfMeasure, IsProduct FROM Products WHERE ProductCode = ?";
+        try (PreparedStatement stmt = conn.prepareStatement(query)) {
+            stmt.setString(1, barcode);
+            try (var rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    boolean isProduct = rs.getInt("IsProduct") == 1; // SQLite uses 0/1 for boolean
+                    return new Product(
+                        rs.getString("ProductCode"),
+                        rs.getString("ProductName"),
+                        rs.getString("Description"),
+                        rs.getDouble("Price"),
+                        rs.getString("TaxRateId"),
+                        rs.getDouble("Quantity"),
+                        rs.getString("UnitOfMeasure"),
+                        isProduct
+                    );
+                }
+            }
+        }
+    } catch (SQLException e) {
+        System.err.println("❌ Error fetching product: " + e.getMessage());
+    }
+    return null;
+}
+
+
+public static void loadUserDetails() {
+    String query = "SELECT FirstName, LastName, Role FROM users WHERE UserName = ? AND Password = ?";
+
+    try (var conn = Database.createConnection();
+         var stmt = conn.prepareStatement(query)) {
+
+        stmt.setString(1, Session.currentUsername);
+        stmt.setString(2, Session.currentPassword);
+
+        try (var rs = stmt.executeQuery()) {
+            if (rs.next()) {
+                Session.firstName = rs.getString("FirstName");
+                Session.lastName = rs.getString("LastName");
+                Session.role = rs.getString("Role");
+            }
+        }
+
+        } catch (SQLException e) {
+        e.printStackTrace();
+        }
+    }
+
+    public static String generateReceiptNumber(long taxpayerId, int terminalPosition, LocalDate transactionDate, long transactionCount) {
+       long julianDate = toJulianDate(transactionDate);
+
+       String base64Taxpayer = base10ToBase64(taxpayerId);
+       String base64Position = base10ToBase64(terminalPosition);
+       String base64Julian = base10ToBase64(julianDate);
+       String base64Count = base10ToBase64(transactionCount);
+
+        return base64Taxpayer + "-" + base64Position + "-" + base64Julian + "-" + base64Count;
+   }
+    
+     public static long toJulianDate(LocalDate date) {
+        return date.getLong(ChronoField.YEAR) * 1000 + date.getDayOfYear();
+    }
+
+    public static String base10ToBase64(long number) {
+       String base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+       StringBuilder result = new StringBuilder();
+
+      if (number == 0) return "A";
+
+      while (number > 0) {
+        int remainder = (int) (number % 64);
+        result.insert(0, base64Chars.charAt(remainder));
+        number /= 64;
       }
 
+      return result.toString();
+    }
+
+    public static int getTerminalPosition() {
+    int terminalPosition = -1; // default if not found
+
+    try (Connection conn = Database.createConnection()) {
+        String query = "SELECT TerminalPosition FROM ActivatedTerminal";
+        try (PreparedStatement stmt = conn.prepareStatement(query)) {
+            var rs = stmt.executeQuery();
+            if (rs.next()) {
+                terminalPosition = rs.getInt("TerminalPosition");
+            }
+        }
+        } catch (SQLException e) {
+          System.err.println("❌ Failed to fetch Terminal Position: " + e.getMessage());
+        }
+
+         return terminalPosition;
+    }
+    
+    public static InvoiceDetails getLastInvoiceDetails() {
+    InvoiceDetails invoiceDetails = null;
+
+    String query = "SELECT InvoiceNumber, InvoiceDateTime FROM Invoices ORDER BY InvoiceDateTime DESC LIMIT 1";
+
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(query);
+         var rs = stmt.executeQuery()) {
+
+        if (rs.next()) {
+            invoiceDetails = new InvoiceDetails();
+            invoiceDetails.setInvoiceNumber(rs.getString("InvoiceNumber"));
+            invoiceDetails.setInvoiceDateTime(LocalDateTime.parse(rs.getString("InvoiceDateTime")));
+        } else {
+            System.out.println("ℹ️ No records found in Invoices.");
+        }
+        } catch (SQLException e) {
+        System.err.println("❌ Error fetching last invoice: " + e.getMessage());
+        }
+
+        return invoiceDetails;
+    }
+    
+    public static long convertSequentialToBase10(String invoiceNumber) {
+    if (invoiceNumber == null || !invoiceNumber.contains("-")) return 0;
+
+    String[] parts = invoiceNumber.split("-");
+    if (parts.length != 4) return 0;
+
+    try {
+        return base64ToBase10(parts[3]);
+       } catch (Exception e) {
+        System.err.println("❌ Failed to decode invoice serial: " + e.getMessage());
+        return 0;
+       }
+   }
+
+   public static long base64ToBase10(String base64) {
+    byte[] decoded = Base64.getUrlDecoder().decode(base64);
+    long result = 0;
+    for (byte b : decoded) {
+        result = (result << 8) + (b & 0xFF);
+    }
+    return result;
+}
+   
+public static double getTaxRateById(String taxRateId) {
+    double rate = 0.0;
+
+    String query = "SELECT Rate FROM TaxRates WHERE Id = ?";
+
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(query)) {
+
+        stmt.setString(1, taxRateId);
+        try (var rs = stmt.executeQuery()) {
+            if (rs.next()) {
+                rate = rs.getDouble("Rate");
+            } else {
+                System.out.println("⚠️ No tax rate found for ID: " + taxRateId);
+            }
+        }
+    } catch (SQLException e) {
+        System.err.println("❌ Error fetching tax rate: " + e.getMessage());
+    }
+
+    return rate;
+}
+
+public static List<TaxRates> getTaxRates() {
+   List<TaxRates> taxRates = new ArrayList<>();
+
+    try (Connection conn = Database.createConnection()) {
+         String query = "SELECT Id, Rate FROM TaxRates";
+        try (PreparedStatement stmt = conn.prepareStatement(query);
+             var rs = stmt.executeQuery()) {
+
+            while (rs.next()) {
+                 String taxRateId = rs.getString("Id");
+                double rate = rs.getDouble("Rate");
+                taxRates.add(new TaxRates (taxRateId, rate));
+            }
+
+        }
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to load product data: " + e.getMessage());
+    }
+
+    return taxRates ;
+}
+
+
+public static boolean isVATRegistered() {
+    String query = "SELECT IsVATRegistered FROM TaxpayerConfiguration LIMIT 1";
+
+    try (var conn = Database.createConnection();
+         var stmt = conn.prepareStatement(query);
+         var rs = stmt.executeQuery()) {
+
+        if (rs.next()) {
+            return rs.getInt("IsVATRegistered") == 1;
+        } else {
+            // No terminal configuration yet
+            return false;
+        }
+
+        } catch (SQLException e) {
+        e.printStackTrace();
+        return false;
+       }
+    }
+
+   
+ public static LineItemDto convertProductToLineItemDto(Product product) {
+    double unitPrice = product.getPrice();
+    double quantity = product.getQuantity();
+    double discount = product.getDiscount();
+    double total = unitPrice * quantity;
+
+    String taxRateId = product.getTaxRate();
+    double taxRate = getTaxRateById(taxRateId);
+    
+    boolean isVATRegistered = isVATRegistered();
+      
+    double totalVAT = isVATRegistered ? (total * taxRate) / (100 + taxRate) : 0;
+
+    return new LineItemDto(
+        product.getBarcode(),
+        product.getDescription(),
+        unitPrice,
+        quantity,
+        discount,
+        total,
+        Math.round(totalVAT * 100.0) / 100.0,
+        taxRateId
+    );
+}
+
+
+public static List<TaxBreakDown> generateTaxBreakdown(List<LineItemDto> lineItems) {
+        Map<String, TaxBreakDown> taxBreakdownMap = new HashMap<>();
+
+        for (LineItemDto item : lineItems) {
+            double taxableAmount = item.getTotal() - item.getTotalVAT();
+            double taxAmount = item.getTotalVAT();
+            String rateId = item.getTaxRateId();
+
+            if (taxBreakdownMap.containsKey(rateId)) {
+                TaxBreakDown existing = taxBreakdownMap.get(rateId);
+                existing.setTaxableAmount(existing.getTaxableAmount() + taxableAmount);
+                existing.setTaxAmount(existing.getTaxAmount() + taxAmount);
+            } else {
+                TaxBreakDown newBreakdown = new TaxBreakDown();
+                newBreakdown.setRateId(rateId);
+                newBreakdown.setTaxableAmount(taxableAmount);
+                newBreakdown.setTaxAmount(taxAmount);
+
+                taxBreakdownMap.put(rateId, newBreakdown);
+            }
+        }
+
+        return new ArrayList<>(taxBreakdownMap.values());
+    }
+
+public static boolean saveTransaction(
+        InvoiceHeader invoice,
+        List<LineItemDto> lineItems,
+        List<TaxBreakDown> taxBreakdowns,
+        double total,
+        double totalVAT,
+        String offlineSignature,
+        String validationUrl,
+        boolean isTransmitted,
+        String paymentId,
+        double amountPaid
+) {
+    if (amountPaid == 0) {
+        amountPaid = total;
+    }
+
+    String insertInvoiceQuery = "INSERT INTO Invoices (InvoiceNumber, InvoiceDateTime, InvoiceTotal, SellerTin, BuyerTin, TotalVAT, OfflineSignature, ValidationUrl, IsReliefSupply, State, PaymentId, AmountPaid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    String insertLineItemQuery = "INSERT INTO LineItems (ProductCode, Description, UnitPrice, Quantity, InvoiceNumber, TaxRateID, Discount, IsProduct) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+    String insertTaxBreakdownQuery = "INSERT INTO InvoiceTaxBreakDown (InvoiceNumber, RateID, TaxableAmount, TaxAmount) VALUES (?, ?, ?, ?)";
+    String updateProductQuery = "UPDATE Products SET Quantity = ? WHERE ProductCode = ?";
+    String insertPaymentTypeQuery = "INSERT INTO PaymentType (PaymentId, Name, AmountPaid) VALUES (?, ?, ?)";
+
+    try (Connection connection = Database.createConnection()) {
+        connection.setAutoCommit(false);
+
+        try (
+            PreparedStatement invoiceStmt = connection.prepareStatement(insertInvoiceQuery);
+            PreparedStatement paymentStmt = connection.prepareStatement(insertPaymentTypeQuery);
+            PreparedStatement lineItemStmt = connection.prepareStatement(insertLineItemQuery);
+            PreparedStatement updateProductStmt = connection.prepareStatement(updateProductQuery);
+            PreparedStatement taxBreakdownStmt = connection.prepareStatement(insertTaxBreakdownQuery)
+        ) {
+            // Insert Invoice
+            invoiceStmt.setString(1, invoice.getInvoiceNumber());
+            invoiceStmt.setString(2, invoice.getInvoiceDateTime());
+            invoiceStmt.setDouble(3, total);
+            invoiceStmt.setString(4, invoice.getSellerTIN());
+            invoiceStmt.setString(5, invoice.getBuyerTIN());
+            invoiceStmt.setDouble(6, totalVAT);
+            invoiceStmt.setString(7, offlineSignature);
+            invoiceStmt.setString(8, validationUrl);
+            invoiceStmt.setBoolean(9, invoice.isReliefSupply());
+            invoiceStmt.setInt(10, isTransmitted ? 1 : 0);
+            invoiceStmt.setString(11, paymentId);
+            invoiceStmt.setDouble(12, amountPaid);
+            invoiceStmt.executeUpdate();
+
+            // Insert Payment Info
+            paymentStmt.setString(1, paymentId);
+            paymentStmt.setString(2, "CASH");
+            paymentStmt.setDouble(3, amountPaid);
+            paymentStmt.executeUpdate();
+
+            // Insert LineItems + Update Product Quantity
+            for (LineItemDto item : lineItems) {
+                if (item.isProduct()) {
+                    double currentQty = getProductQuantity(item.getProductCode());
+                    double newQty = currentQty - item.getQuantity();
+                    updateProductStmt.setDouble(1, newQty);
+                    updateProductStmt.setString(2, item.getProductCode());
+                    updateProductStmt.executeUpdate();
+                }
+
+                lineItemStmt.setString(1, item.getProductCode());
+                lineItemStmt.setString(2, item.getDescription());
+                lineItemStmt.setDouble(3, item.getUnitPrice());
+                lineItemStmt.setDouble(4, item.getQuantity());
+                lineItemStmt.setString(5, invoice.getInvoiceNumber());
+                lineItemStmt.setString(6, item.getTaxRateId());
+                lineItemStmt.setDouble(7, item.getDiscount());
+                lineItemStmt.setBoolean(8, item.isProduct());
+                lineItemStmt.executeUpdate();
+            }
+
+            // Insert Tax Breakdown
+            for (TaxBreakDown tax : taxBreakdowns) {
+                taxBreakdownStmt.setString(1, invoice.getInvoiceNumber());
+                taxBreakdownStmt.setString(2, tax.getRateId());
+                taxBreakdownStmt.setDouble(3, tax.getTaxableAmount());
+                taxBreakdownStmt.setDouble(4, tax.getTaxAmount());
+                taxBreakdownStmt.executeUpdate();
+            }
+
+            connection.commit();
+            return true;
+
+        } catch (SQLException ex) {
+            connection.rollback();
+            System.err.println("❌ Error during transaction save: " + ex.getMessage());
+            return false;
+        }
+    } catch (SQLException e) {
+        System.err.println("❌ DB Connection error: " + e.getMessage());
+        return false;
+    }
+}
+
+public static double getProductQuantity(String productCode) {
+    try (Connection conn = Database.createConnection()) {
+        String query = "SELECT Quantity FROM Products WHERE ProductCode = ?";
+        try (PreparedStatement stmt = conn.prepareStatement(query)) {
+            stmt.setString(1, productCode);
+            try (var rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getDouble("Quantity");
+                }
+            }
+        }
+    } catch (SQLException e) {
+        System.err.println("❌ Error fetching product quantity: " + e.getMessage());
+    }
+    return 0.0;
+}
+public static void markAsTransmitted(String invoiceNumber) {
+    try (Connection connection = Database.createConnection()) {
+        String updateQuery = "UPDATE Invoices SET State = 1 WHERE InvoiceNumber = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(updateQuery)) {
+            stmt.setString(1, invoiceNumber);
+            stmt.executeUpdate();
+        }
+    } catch (SQLException e) {
+        System.err.println("❌ Error updating transmission state: " + e.getMessage());
+    }
+}
+
+public static void updateValidationUrl(String invoiceNumber, String validationUrl) {
+    try (Connection connection = Database.createConnection()) {
+        String updateQuery = "UPDATE Invoices SET ValidationUrl = ? WHERE InvoiceNumber = ?"; 
+        try (PreparedStatement stmt = connection.prepareStatement(updateQuery)) {
+            stmt.setString(1, validationUrl);
+            stmt.setString(2, invoiceNumber);
+            stmt.executeUpdate();
+        }
+    } catch (SQLException e) {
+        System.err.println("❌ Error updating validation URL: " + e.getMessage());
+    }
+}
+
+public static InvoiceHeader getInvoiceHeader(String invoiceNumber) {
+    InvoiceHeader invoiceHeader = new InvoiceHeader();
+    invoiceHeader.setInvoiceNumber(invoiceNumber);
+    invoiceHeader.setInvoiceDateTime(LocalDateTime.now().toString());
+    invoiceHeader.setSellerTIN(getTin());
+    invoiceHeader.setBuyerTIN("");
+    invoiceHeader.setBuyerAuthorizationCode("");
+    invoiceHeader.setSiteId(getTerminalSiteId());
+    invoiceHeader.setGlobalConfigVersion(getGlobalVersion());
+    invoiceHeader.setTaxpayerConfigVersion(getTaxpayerVersion());
+    invoiceHeader.setTerminalConfigVersion(getTerminalVersion());
+    invoiceHeader.setReliefSupply(false);
+    invoiceHeader.setVat5CertificateDetails(null);
+    invoiceHeader.setPaymentMethod("Cash"); // or dynamically based on your use case
+    return invoiceHeader;
+}
+
+public static List<LineItemDto> getLineItems(String invoiceNumber) {
+    List<LineItemDto> items = new ArrayList<>();
+
+    String query = "SELECT ProductCode, Description, UnitPrice, Quantity, TaxRateID, Discount, IsProduct " +
+                   "FROM LineItems WHERE InvoiceNumber = ?";
+
+    try (Connection connection = Database.createConnection();
+         PreparedStatement stmt = connection.prepareStatement(query)) {
+
+        stmt.setString(1, invoiceNumber);
+        var rs = stmt.executeQuery();
+
+        while (rs.next()) {
+            LineItemDto item = new LineItemDto(); 
+            item.setProductCode(rs.getString("ProductCode"));
+            item.setDescription(rs.getString("Description"));
+            item.setUnitPrice(rs.getDouble("UnitPrice"));
+            item.setQuantity(rs.getDouble("Quantity"));
+            item.setTaxRateId(rs.getString("TaxRateID"));
+            item.setDiscount(rs.getDouble("Discount"));
+            item.setIsProduct(rs.getBoolean("IsProduct"));
+            items.add(item);
+        }
+
+    } catch (SQLException ex) {
+        System.err.println("❌ Error fetching line items: " + ex.getMessage());
+    }
+
+    return items;
+}
 
 }

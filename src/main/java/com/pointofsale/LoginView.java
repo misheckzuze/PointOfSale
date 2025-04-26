@@ -19,6 +19,7 @@ import javafx.stage.Stage;
 import javafx.util.Duration;
 import java.io.InputStream;
 import javafx.scene.control.Alert;
+import com.pointofsale.model.Session;
 import javafx.scene.control.Alert.AlertType;
 
 import com.pointofsale.helper.Helper;
@@ -174,7 +175,7 @@ public class LoginView extends Application {
         mainContent.setSpacing(15);
         
         // Welcome header
-        Label welcomeLabel = new Label("Welcome Back");
+        Label welcomeLabel = new Label("Welcome");
         welcomeLabel.setStyle("-fx-font-size: 32px; -fx-font-weight: bold; -fx-text-fill: #1a237e;");
         
         // Instruction text
@@ -292,35 +293,20 @@ public class LoginView extends Application {
           alert.showAndWait();
         } else {
           // Successful login
-          Alert alert = new Alert(AlertType.INFORMATION);
-          alert.setTitle("Login Successful");
-          alert.setHeaderText(null);
-          alert.setContentText("Login successful!");
-          alert.showAndWait();
-        
-        // Simulate successful login with fade transition
-          FadeTransition fadeOut = new FadeTransition(Duration.millis(1000), loginButton);
-          fadeOut.setFromValue(1.0);
-          fadeOut.setToValue(0.7);
-          fadeOut.setCycleCount(1);
-        
-          fadeOut.setOnFinished(event -> {
-            // Navigate to main application screen
-            System.out.println("Login successful, navigating to main screen...");
-            // You would replace this with actual logic to navigate to the main application
-             // Proceed to SalesDashboard
+          Session.currentUsername = username;
+          Session.currentPassword = password;
+
+          Helper.loadUserDetails();
+          
+           // Proceed to SalesDashboard
             POSDashboard dashboard = new POSDashboard();
             try {
                 dashboard.start(stage);
             } catch (Exception ex) {
                 ex.printStackTrace();
             }
-        });
-        
-        fadeOut.play();
         }
-    });
-        
+    });     
         
         // Contact support text
         HBox supportBox = new HBox();
