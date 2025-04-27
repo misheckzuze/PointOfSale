@@ -906,7 +906,7 @@ public static InvoiceHeader getInvoiceHeader(String invoiceNumber) {
     invoiceHeader.setTerminalConfigVersion(getTerminalVersion());
     invoiceHeader.setReliefSupply(false);
     invoiceHeader.setVat5CertificateDetails(null);
-    invoiceHeader.setPaymentMethod("Cash"); // or dynamically based on your use case
+    invoiceHeader.setPaymentMethod("Cash"); 
     return invoiceHeader;
 }
 

@@ -206,8 +206,22 @@ public class POSDashboard extends Application {
         }
     });
     sidebar.getChildren().add(productsMenuItem);
+    HBox transactionsMenuItem = createSidebarMenuItem("Transactions", false);
+    transactionsMenuItem.setOnMouseClicked(event -> {
+        try {
+            // Close the current window
+            Stage currentStage = (Stage) sidebar.getScene().getWindow();
+            currentStage.close();
+            
+            // Open the Product Management screen
+            new TransactionsView().start(new Stage());
+        } catch (Exception e) {
+            e.printStackTrace();
+            showAlert("Navigation Error", "Failed to open Product Management screen.");
+        }
+    });
+    sidebar.getChildren().add(transactionsMenuItem);
     
-    sidebar.getChildren().add(createSidebarMenuItem("Transactions", false));
     sidebar.getChildren().add(createSidebarMenuItem("Customers", false));
     sidebar.getChildren().add(createSidebarMenuItem("Reports", false));
     sidebar.getChildren().add(createSidebarMenuItem("Settings", false));
