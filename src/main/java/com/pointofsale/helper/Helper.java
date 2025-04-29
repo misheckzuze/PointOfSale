@@ -1,7 +1,7 @@
 package com.pointofsale.helper;
 
-import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import java.util.function.Consumer;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
@@ -16,7 +16,9 @@ import java.time.temporal.ChronoField;
 import java.util.Base64;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import javafx.scene.control.Alert;
 import java.sql.SQLException;
+import javafx.scene.control.ButtonType;
 import javax.json.JsonObject;
 import com.pointofsale.model.Product;
 import com.pointofsale.model.TaxRates;
@@ -28,6 +30,7 @@ import com.pointofsale.model.LineItemDto;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.HashMap;
+import javafx.application.Platform;
 import java.util.List;
 import java.util.ArrayList;
 import com.pointofsale.data.Database;
@@ -771,7 +774,7 @@ public static boolean saveTransaction(
         amountPaid = total;
     }
 
-    String insertInvoiceQuery = "INSERT INTO Invoices (InvoiceNumber, InvoiceDateTime, InvoiceTotal, SellerTin, BuyerTin, TotalVAT, OfflineSignature, ValidationUrl, IsReliefSupply, State, PaymentId, AmountPaid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    String insertInvoiceQuery = "INSERT INTO Invoices (InvoiceNumber, InvoiceDateTime, InvoiceTotal, SellerTin, BuyerTin, TotalVAT, OfflineTransactionSignature, ValidationUrl, IsReliefSupply, State, PaymentId, AmountPaid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     String insertLineItemQuery = "INSERT INTO LineItems (ProductCode, Description, UnitPrice, Quantity, InvoiceNumber, TaxRateID, Discount, IsProduct) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
     String insertTaxBreakdownQuery = "INSERT INTO InvoiceTaxBreakDown (InvoiceNumber, RateID, TaxableAmount, TaxAmount) VALUES (?, ?, ?, ?)";
     String updateProductQuery = "UPDATE Products SET Quantity = ? WHERE ProductCode = ?";
@@ -939,6 +942,137 @@ public static List<LineItemDto> getLineItems(String invoiceNumber) {
     }
 
     return items;
+}
+
+public static void createTerminalBlockingReasonsTable() {
+    String createTableSQL = 
+    "CREATE TABLE IF NOT EXISTS TerminalBlockingReasons (\n" +
+    "    Id INTEGER PRIMARY KEY AUTOINCREMENT,\n" +
+    "    TerminalId TEXT NOT NULL,\n" +
+    "    BlockingReason TEXT NOT NULL,\n" +
+    "    IsUnblocked BOOLEAN NOT NULL,\n" +
+    "    CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP\n" +
+    ");";
+
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(createTableSQL)) {
+        stmt.execute();
+        System.out.println("✅ TerminalBlockingReasons table ensured.");
+    } catch (SQLException e) {
+        System.err.println("❌ Table creation failed: " + e.getMessage());
+    }
+}
+
+public static void saveBlockingReason(String terminalId, String reason, boolean isUnblocked) {
+    String insertSQL = "INSERT INTO TerminalBlockingReasons (TerminalId, BlockingReason, IsUnblocked, CreatedAt) " +
+                   "VALUES (?, ?, ?, datetime('now'));";
+
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(insertSQL)) {
+        stmt.setString(1, terminalId);
+        stmt.setString(2, reason);
+        stmt.setBoolean(3, isUnblocked);
+        stmt.executeUpdate();
+        System.out.println("✅ Blocking reason saved.");
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to save blocking reason: " + e.getMessage());
+    }
+}
+
+public static String getBlockingReason(String terminalId) {
+    String query = "SELECT BlockingReason FROM TerminalBlockingReasons WHERE TerminalId = ? ORDER BY CreatedAt DESC LIMIT 1";
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(query)) {
+        stmt.setString(1, terminalId);
+        var rs = stmt.executeQuery();
+        if (rs.next()) return rs.getString("BlockingReason");
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to fetch blocking reason: " + e.getMessage());
+    }
+    return null;
+}
+
+public static void deleteBlockingReason(String terminalId) {
+    String deleteSQL = "DELETE FROM TerminalBlockingReasons WHERE TerminalId = ?";
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(deleteSQL)) {
+        stmt.setString(1, terminalId);
+        stmt.executeUpdate();
+        System.out.println("✅ Blocking reason deleted.");
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to delete blocking reason: " + e.getMessage());
+    }
+}
+
+public static void checkAndHandleTerminalBlocking(Consumer<Boolean> onCheckComplete) {
+    String terminalId = getTerminalId();
+    String bearerToken = getToken();
+    final boolean[] isUnblocked = {true};
+
+    ApiClient apiClient = new ApiClient();
+
+    apiClient.checkIfTerminalIsBlocked(terminalId, bearerToken, checkResult -> {
+        if (checkResult == null || checkResult.isUnblocked == null) {
+            String existingReason = getBlockingReason(terminalId);
+            isUnblocked[0] = existingReason == null;
+        } else {
+            isUnblocked[0] = checkResult.isUnblocked;
+        }
+
+        if (!isUnblocked[0]) {
+            createTerminalBlockingReasonsTable();
+            String existingReason = getBlockingReason(terminalId);
+
+            if (existingReason == null) {
+                apiClient.fetchBlockingMessage(terminalId, bearerToken, blockingInfo -> {
+                    if (blockingInfo != null) {
+                        if (blockingInfo.isBlocked) {
+                            String reason = blockingInfo.blockingReason != null
+                                    ? blockingInfo.blockingReason
+                                    : "No reason provided by server.";
+
+                            saveBlockingReason(terminalId, reason, false);
+
+                            Platform.runLater(() -> {
+                                Alert alert = new Alert(Alert.AlertType.WARNING,
+                                        "Terminal is blocked. Reason: " + reason, ButtonType.OK);
+                                alert.setTitle("Terminal Blocked");
+                                alert.showAndWait();
+                            });
+
+                            onCheckComplete.accept(false); // block payment
+                        } else {
+                            // Terminal is NOT blocked, override incorrect isUnblocked==false
+                            deleteBlockingReason(terminalId);
+                            onCheckComplete.accept(true); // allow payment
+                        }
+                    } else {
+                        Platform.runLater(() -> {
+                            Alert alert = new Alert(Alert.AlertType.WARNING,
+                                    "Unable to verify terminal status. Please check your connection and try again.",
+                                    ButtonType.OK);
+                            alert.setTitle("Connection Error");
+                            alert.showAndWait();
+                        });
+
+                        onCheckComplete.accept(false); // block payment
+                    }
+                });
+            } else {
+                Platform.runLater(() -> {
+                    Alert alert = new Alert(Alert.AlertType.WARNING,
+                            "Terminal is blocked. Reason: " + existingReason, ButtonType.OK);
+                    alert.setTitle("Terminal Blocked");
+                    alert.showAndWait();
+                });
+
+                onCheckComplete.accept(false); // block payment
+            }
+        } else {
+            deleteBlockingReason(terminalId);
+            onCheckComplete.accept(true); // allow payment
+        }
+    });
 }
 
 }

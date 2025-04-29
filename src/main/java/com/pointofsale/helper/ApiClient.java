@@ -18,9 +18,15 @@ import java.sql.PreparedStatement;
 import com.google.gson.Gson;
 import java.sql.Connection;
 import java.util.List;
+import java.time.Duration;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.function.BiConsumer;
 import com.pointofsale.model.InvoiceSummary;
+import com.pointofsale.model.TerminalBlockingInfo;
+import com.pointofsale.model.TerminalBlockingResponse;
 import com.pointofsale.model.LineItemDto;
+import com.pointofsale.model.TerminalUnblockStatusResponse;
+import com.pointofsale.model.CheckResult;
 import com.pointofsale.model.InvoiceHeader;
 import com.pointofsale.model.InvoicePayload;
 import com.pointofsale.model.TaxBreakDown;
@@ -186,6 +192,104 @@ public class ApiClient {
         System.out.println("JSON payload created: " + jsonString);
         return jsonString;
     }
+    
+    public void fetchBlockingMessage(String terminalId, String bearerToken,  Consumer<TerminalBlockingInfo> onResult) {
+    System.out.println("Starting fetchBlockingMessage...");
+
+    new Thread(() -> {
+        try {
+            String json = createTerminalIdPayload(terminalId);
+            String url = ApiEndpoints.BASE_URL + ApiEndpoints.TERMINAL_BLOCKING_MESSAGE;
+
+            System.out.println("Sending request to: " + url);
+            System.out.println("Request payload: " + json);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + bearerToken)
+                    .header("Accept", "text/plain")
+                    .timeout(Duration.ofSeconds(30))
+                    .POST(HttpRequest.BodyPublishers.ofString(json))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            System.out.println("Received response. Status code: " + response.statusCode());
+            System.out.println("Response body: " + response.body());
+
+            TerminalBlockingInfo result = null;
+
+            if (response.statusCode() == 200) {
+                ObjectMapper mapper = new ObjectMapper();
+                TerminalBlockingResponse blockingResponse = mapper.readValue(response.body(), TerminalBlockingResponse.class);
+                result = blockingResponse.data;
+            }
+
+            TerminalBlockingInfo finalResult = result;
+            Platform.runLater(() -> onResult.accept(finalResult));
+
+        } catch (Exception e) {
+            System.err.println("Exception during fetchBlockingMessage: " + e.getMessage());
+            e.printStackTrace();
+            Platform.runLater(() -> onResult.accept(null));
+        }
+    }).start();
+}
+    
+    public void checkIfTerminalIsBlocked(String terminalId, String bearerToken, Consumer<CheckResult> onResult) {
+    System.out.println("Starting checkIfTerminalIsBlocked...");
+
+    new Thread(() -> {
+        try {
+            String json = createTerminalIdPayload(terminalId);
+            String url = ApiEndpoints.BASE_URL + ApiEndpoints.CHECK_TERMINAL_UNBLOCK_STATUS;
+
+            System.out.println("Sending request to: " + url);
+            System.out.println("Request payload: " + json);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + bearerToken)
+                    .header("Accept", "text/plain")
+                    .timeout(Duration.ofSeconds(30))
+                    .POST(HttpRequest.BodyPublishers.ofString(json))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            System.out.println("Received response. Status code: " + response.statusCode());
+            System.out.println("Response body: " + response.body());
+
+            CheckResult result = null;
+
+            if (response.statusCode() == 200) {
+                ObjectMapper mapper = new ObjectMapper();
+                TerminalUnblockStatusResponse statusResponse = 
+                        mapper.readValue(response.body(), TerminalUnblockStatusResponse.class);
+                result = statusResponse.data;  // or statusResponse.data if public field
+            }
+
+            CheckResult finalResult = result;
+            Platform.runLater(() -> onResult.accept(finalResult));
+
+        } catch (Exception e) {
+            System.err.println("Exception during checkIfTerminalIsBlocked: " + e.getMessage());
+            e.printStackTrace();
+            Platform.runLater(() -> onResult.accept(null));
+        }
+    }).start();
+}
+
+
+    
+    private String createTerminalIdPayload(String terminalId) {
+    JsonObject payload = Json.createObjectBuilder()
+            .add("terminalId", terminalId)
+            .build();
+    return payload.toString();
+}
 
     private boolean isActivationSuccessful(String responseBody, String code) {
         System.out.println("Checking if activation was successful...");

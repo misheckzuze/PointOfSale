@@ -143,6 +143,8 @@ public class Database {
                     "ProductCode TEXT," +
                     "Description TEXT," +
                     "Quantity REAL," +
+                    "TaxRateID TEXT, " +
+                    "Discount REAL, " +
                     "UnitPrice REAL," +
                     "TotalPrice REAL," +
                     "DiscountAmount REAL," +

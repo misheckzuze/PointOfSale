@@ -15,4 +15,8 @@ public class ApiEndpoints {
     //Submit transactions
     public static final String SUBMIT_TRANSACTIONS = "/sales/submit-sales-transaction";
     
+    //Terminal Blocking
+    public static final String TERMINAL_BLOCKING_MESSAGE = "/utilities/get-terminal-blocking-message";
+    public static final String CHECK_TERMINAL_UNBLOCK_STATUS = "/utilities/check-terminal-unblock-status";
+    
 }

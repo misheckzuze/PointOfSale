@@ -1,4 +1,6 @@
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\TaxBreakDown.java
+C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\TerminalBlockingInfo.java
+C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\TerminalBlockingResponse.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\module-info.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\App.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\ProductLookupDialog.java
@@ -6,6 +8,7 @@ C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\POSDas
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\LineItemDto.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\LoginView.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\Session.java
+C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\ApiError.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\TerminalConfirmationDialog.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\TaxRates.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\TransactionsView.java
@@ -15,11 +18,13 @@ C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\InvoiceDetails.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\SystemInfo.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\helper\ActivationDataInserter.java
+C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\CheckResult.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\Product.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\utils\ApiEndpoints.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\InvoiceHeader.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\helper\Helper.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\InvoiceSummary.java
+C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\TerminalUnblockStatusResponse.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\data\Database.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\helper\ApiClient.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\TerminalActivationView.java

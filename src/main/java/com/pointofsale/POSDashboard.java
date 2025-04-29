@@ -41,6 +41,7 @@ import java.time.LocalDateTime;
 import com.pointofsale.helper.Helper;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import javafx.scene.Node;
 import java.util.ArrayList;
 import java.util.Locale;
 
@@ -60,6 +61,7 @@ public class POSDashboard extends Application {
     private TextField cashAmountField;
     private Button processPaymentButton;
     private Label taxLabel;
+    private Node currentContent;
     private ComboBox<String> paymentMethodComboBox;
     private double cartDiscountAmount = 0.0;
     private double cartDiscountPercent = 0.0;
@@ -85,7 +87,7 @@ public class POSDashboard extends Application {
      * Creates the entire dashboard with all components
      */
     private void createDashboard() {
-        // Initialize cart items list
+        // Initialize cart items list if needed
         cartItems = FXCollections.observableArrayList();
         
         // Create main layout
@@ -95,15 +97,58 @@ public class POSDashboard extends Application {
         // Set up the different regions of the dashboard
         root.setTop(createTopBar());
         root.setLeft(createSidebar());
-        root.setCenter(createMainContent());
-        root.setRight(createCheckoutPanel());
+        
+        // Load the default content (Sales Dashboard)
+        loadSalesDashboard();
         
         // Create scene and set to stage
         Scene scene = new Scene(root, 1280, 800);
         stage.setScene(scene);
-        stage.setTitle("POS System - Sales Dashboard");
+        stage.setTitle("POS System");
         stage.setMaximized(true);
     }
+    
+     // Methods to load different content areas
+    private void loadSalesDashboard() {
+        // Clear current right panel (checkout) if any
+        root.setRight(createCheckoutPanel());
+        
+        // Load sales dashboard content
+        Node salesContent = createMainContent(); // Your existing method for sales dashboard
+        setContent(salesContent);
+        stage.setTitle("POS System - Sales Dashboard");
+    }
+    
+private void loadProductsManagement() {
+    // Clear checkout panel when switching to non-sales views
+    root.setRight(null);
+    
+    // Create product management content
+    ProductManagement productManagement = new ProductManagement();
+    Node productsContent = productManagement.createContent();
+    
+    // Set the content
+    setContent(productsContent);
+    stage.setTitle("POS System - Products Management");
+}
+private void loadTransactions() {
+    // Clear checkout panel when switching to non-sales views
+    root.setRight(null);
+    
+    // Create product management content
+    TransactionsView transactions = new TransactionsView();
+    Node productsContent = transactions.getView();
+    
+    // Set the content
+    setContent(productsContent);
+    stage.setTitle("POS System - Transactions");
+}
+    
+    // Helper method to set content
+    private void setContent(Node content) {
+        this.currentContent = content;
+        root.setCenter(content);
+    }  
     
     /**
      * Creates the top bar with system info and cashier details
@@ -188,40 +233,20 @@ public class POSDashboard extends Application {
     
     // Create the menu items
     sidebar.getChildren().add(createSidebarHeader());
-    sidebar.getChildren().add(createSidebarMenuItem("New Sale", true));
+   // Sales dashboard menu item
+    HBox salesMenuItem = createSidebarMenuItem("New Sale", true);
+    salesMenuItem.setOnMouseClicked(event -> loadSalesDashboard());
+    sidebar.getChildren().add(salesMenuItem);
     
-    // Add event handler for Products menu item
+    // Products menu item
     HBox productsMenuItem = createSidebarMenuItem("Products", false);
-    productsMenuItem.setOnMouseClicked(event -> {
-        try {
-            // Close the current window
-            Stage currentStage = (Stage) sidebar.getScene().getWindow();
-            currentStage.close();
-            
-            // Open the Product Management screen
-            new ProductManagement().start(new Stage());
-        } catch (Exception e) {
-            e.printStackTrace();
-            showAlert("Navigation Error", "Failed to open Product Management screen.");
-        }
-    });
+    productsMenuItem.setOnMouseClicked(event -> loadProductsManagement());
     sidebar.getChildren().add(productsMenuItem);
-    HBox transactionsMenuItem = createSidebarMenuItem("Transactions", false);
-    transactionsMenuItem.setOnMouseClicked(event -> {
-        try {
-            // Close the current window
-            Stage currentStage = (Stage) sidebar.getScene().getWindow();
-            currentStage.close();
-            
-            // Open the Product Management screen
-            new TransactionsView().start(new Stage());
-        } catch (Exception e) {
-            e.printStackTrace();
-            showAlert("Navigation Error", "Failed to open Product Management screen.");
-        }
-    });
-    sidebar.getChildren().add(transactionsMenuItem);
     
+    HBox transactionsMenuItem = createSidebarMenuItem("Transactions", false);
+    transactionsMenuItem.setOnMouseClicked(event -> loadTransactions());
+    sidebar.getChildren().add(transactionsMenuItem);
+      
     sidebar.getChildren().add(createSidebarMenuItem("Customers", false));
     sidebar.getChildren().add(createSidebarMenuItem("Reports", false));
     sidebar.getChildren().add(createSidebarMenuItem("Settings", false));
@@ -983,7 +1008,15 @@ private void updateChangeCalculation() {
     /**
      * Processes the payment
      */
-    private void processPayment() {
+private void processPayment() {
+    Helper.checkAndHandleTerminalBlocking(isAllowed -> {
+        if (isAllowed) {
+            Platform.runLater(this::proceedWithPayment);
+        }
+    });
+}
+
+    private void proceedWithPayment() {
         if (cartItems.isEmpty()) {
             showAlert("Error", "Cart is empty. Please add items before processing payment.");
             return;
@@ -1068,6 +1101,7 @@ private void updateChangeCalculation() {
 
        // Step 6: Submit the request
        ApiClient apiClient = new ApiClient();
+       
        apiClient.submitTransactions(jsonPayload, bearerToken, (success, returnedValidationUrl) -> {
        Platform.runLater(() -> {
        if (success) {
@@ -1104,7 +1138,7 @@ private void updateChangeCalculation() {
     long taxpayerId = Helper.getTaxpayerId();
     int terminalPosition = Helper.getTerminalPosition();
     LocalDate transactionDate = LocalDate.now();
-    long transactionCount = 0;
+    long transactionCount = 3;
 
     InvoiceDetails lastDetails = Helper.getLastInvoiceDetails();
 

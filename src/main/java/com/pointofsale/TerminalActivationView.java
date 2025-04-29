@@ -306,14 +306,13 @@ public class TerminalActivationView extends Application {
                        tin,
                        label
                     );
+                    
+                     Stage currentStage = (Stage) activateTerminalBtn.getScene().getWindow();
                 
-                    TerminalConfirmationDialog dialog = new TerminalConfirmationDialog(
-                      (Stage) activateTerminalBtn.getScene().getWindow(),
-                      info
-                    );
+                    TerminalConfirmationDialog dialog = new TerminalConfirmationDialog(currentStage, info);
                 
-                dialog.showAndWait();
-                    statusValueLabel.setTextFill(javafx.scene.paint.Color.GREEN);
+                    dialog.showAndWait();
+                    currentStage.close();
                 } else {
                     statusValueLabel.setText("Activation Failed");
                     statusValueLabel.setTextFill(javafx.scene.paint.Color.RED);

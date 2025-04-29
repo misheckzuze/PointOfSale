@@ -1,6 +1,5 @@
 package com.pointofsale;
 
-import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
@@ -12,17 +11,15 @@ import javafx.collections.ObservableList;
 import javafx.collections.transformation.FilteredList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.Scene;
+import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
-import javafx.scene.effect.DropShadow;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
-import javafx.stage.Stage;
 import javafx.util.Callback;
 
 import java.text.NumberFormat;
@@ -33,7 +30,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.function.Predicate;
 
-public class TransactionsView extends Application {
+public class TransactionsView {
 
     // Mock InvoiceDetails class for demo purposes
     public static class InvoiceDetails {
@@ -82,25 +79,15 @@ public class TransactionsView extends Application {
     private Label totalValueLabel;
     private Label totalTaxLabel;
 
-    @Override
-    public void start(Stage primaryStage) {
-        primaryStage.setTitle("Transactions History");
-        
+    public Node getView() {
         // Initialize components
         initializeComponents();
         
         // Load initial transaction data
         loadTransactions();
         
-        // Create the main layout
-        BorderPane root = new BorderPane();
-        root.setLeft(createSidebar());
-        root.setCenter(createMainContent());
-        
-        // Set the scene
-        Scene scene = new Scene(root, 1200, 800);
-        primaryStage.setScene(scene);
-        primaryStage.show();
+        // Return the main content
+        return createMainContent();
     }
     
     private void initializeComponents() {
@@ -118,139 +105,7 @@ public class TransactionsView extends Application {
         statusFilterComboBox.setValue("All");
     }
 
-    protected VBox createSidebar() {
-        VBox sidebar = new VBox();
-        sidebar.setPrefWidth(220);
-        sidebar.setStyle("-fx-background-color: linear-gradient(from 0% 0% to 100% 100%, #1a237e, #3949ab); -fx-padding: 0;");
-        
-        // Create the menu items
-        sidebar.getChildren().add(createSidebarHeader());
-        
-        // Add event handler for Sales menu item
-        HBox salesMenuItem = createSidebarMenuItem("New Sale", false);
-        salesMenuItem.setOnMouseClicked(event -> {
-            try {
-                // Close the current window
-                Stage currentStage = (Stage) sidebar.getScene().getWindow();
-                currentStage.close();
-                
-                // Normally would open the POS Dashboard
-                showAlert("Navigation", "Navigating to POS Dashboard");
-            } catch (Exception e) {
-                e.printStackTrace();
-                showAlert("Navigation Error", "Failed to open POS Dashboard.");
-            }
-        });
-        sidebar.getChildren().add(salesMenuItem);
-
-        // Add event handler for Products menu item
-        HBox productsMenuItem = createSidebarMenuItem("Products", false);
-        productsMenuItem.setOnMouseClicked(event -> {
-            try {
-                // Close the current window
-                Stage currentStage = (Stage) sidebar.getScene().getWindow();
-                currentStage.close();
-                
-                // Normally would open the Product Management screen
-                showAlert("Navigation", "Navigating to Product Management");
-            } catch (Exception e) {
-                e.printStackTrace();
-                showAlert("Navigation Error", "Failed to open Product Management screen.");
-            }
-        });
-        sidebar.getChildren().add(productsMenuItem);
-        
-        // Transactions menu item (selected)
-        sidebar.getChildren().add(createSidebarMenuItem("Transactions", true));
-        
-        // Add event handler for Customers menu item
-        HBox customersMenuItem = createSidebarMenuItem("Customers", false);
-        sidebar.getChildren().add(customersMenuItem);
-        
-        // Add event handler for Reports menu item
-        HBox reportsMenuItem = createSidebarMenuItem("Reports", false);
-        reportsMenuItem.setOnMouseClicked(event -> {
-            try {
-                // Close the current window
-                Stage currentStage = (Stage) sidebar.getScene().getWindow();
-                currentStage.close();
-                
-                // Normally would open the Reports screen
-                showAlert("Navigation", "Navigating to Reports View");
-            } catch (Exception e) {
-                e.printStackTrace();
-                showAlert("Navigation Error", "Failed to open Reports screen.");
-            }
-        });
-        sidebar.getChildren().add(reportsMenuItem);
-        
-        // Add event handler for Settings menu item
-        HBox settingsMenuItem = createSidebarMenuItem("Settings", false);
-        settingsMenuItem.setOnMouseClicked(event -> {
-            try {
-                // Close the current window
-                Stage currentStage = (Stage) sidebar.getScene().getWindow();
-                currentStage.close();
-                
-                // Normally would open the Settings screen
-                showAlert("Navigation", "Navigating to Settings View");
-            } catch (Exception e) {
-                e.printStackTrace();
-                showAlert("Navigation Error", "Failed to open Settings screen.");
-            }
-        });
-        sidebar.getChildren().add(settingsMenuItem);
-        
-        // Add spacer to push help to bottom
-        Region spacer = new Region();
-        VBox.setVgrow(spacer, Priority.ALWAYS);
-        sidebar.getChildren().add(spacer);
-        
-        // Help and support
-        sidebar.getChildren().add(createSidebarMenuItem("Help & Support", false));
-        
-        return sidebar;
-    }
-
-    // Method to create sidebar header
-    private VBox createSidebarHeader() {
-        VBox header = new VBox(10);
-        header.setPadding(new Insets(20));
-        header.setAlignment(Pos.CENTER);
-        header.setStyle("-fx-background-color: #1a237e;");
-        
-        Label title = new Label("POS SYSTEM");
-        title.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: white;");
-        
-        Label subtitle = new Label("Transactions Module");
-        subtitle.setStyle("-fx-font-size: 12px; -fx-text-fill: #e0e0e0;");
-        
-        header.getChildren().addAll(title, subtitle);
-        return header;
-    }
-    
-    // Method to create sidebar menu item
-    private HBox createSidebarMenuItem(String text, boolean selected) {
-        HBox menuItem = new HBox(15);
-        menuItem.setPadding(new Insets(12, 15, 12, 20));
-        menuItem.setAlignment(Pos.CENTER_LEFT);
-        
-        if (selected) {
-            menuItem.setStyle("-fx-background-color: rgba(255, 255, 255, 0.15); -fx-cursor: hand;");
-        } else {
-            menuItem.setStyle("-fx-background-color: transparent; -fx-cursor: hand;");
-            menuItem.setOnMouseEntered(e -> menuItem.setStyle("-fx-background-color: rgba(255, 255, 255, 0.1); -fx-cursor: hand;"));
-            menuItem.setOnMouseExited(e -> menuItem.setStyle("-fx-background-color: transparent; -fx-cursor: hand;"));
-        }
-        
-        Label label = new Label(text);
-        label.setStyle("-fx-font-size: 14px; -fx-text-fill: white;");
-        
-        menuItem.getChildren().add(label);
-        return menuItem;
-    }
-
-    protected Pane createMainContent() {
+    private Pane createMainContent() {
         VBox mainContent = new VBox(20);
         mainContent.setPadding(new Insets(20));
 
@@ -355,43 +210,42 @@ public class TransactionsView extends Application {
     }
     
     private HBox createStatsSection() {
-    HBox statsSection = new HBox(15);
-    statsSection.setPadding(new Insets(0, 0, 10, 0));
-    
-    // Total transactions card
-    VBox transactionsCard = createStatCard("Total Transactions", "0", "receipt", "#3949ab");
-    
-    // Check if the second child is a VBox before casting
-    if (transactionsCard.getChildren().size() > 1 && transactionsCard.getChildren().get(1) instanceof VBox) {
-        totalTransactionsLabel = (Label) ((VBox) transactionsCard.getChildren().get(1)).getChildren().get(0);
-    } else {
-        System.err.println("Error: Expected VBox, but found " + transactionsCard.getChildren().get(1).getClass());
+        HBox statsSection = new HBox(15);
+        statsSection.setPadding(new Insets(0, 0, 10, 0));
+        
+        // Total transactions card
+        VBox transactionsCard = createStatCard("Total Transactions", "0", "receipt", "#3949ab");
+        
+        // Check if the second child is a VBox before casting
+        if (transactionsCard.getChildren().size() > 1 && transactionsCard.getChildren().get(1) instanceof VBox) {
+            totalTransactionsLabel = (Label) ((VBox) transactionsCard.getChildren().get(1)).getChildren().get(0);
+        } else {
+            System.err.println("Error: Expected VBox, but found " + transactionsCard.getChildren().get(1).getClass());
+        }
+        
+        // Total value card
+        VBox valueCard = createStatCard("Total Value", formatCurrency(0), "money", "#00796b");
+        if (valueCard.getChildren().size() > 1 && valueCard.getChildren().get(1) instanceof VBox) {
+            totalValueLabel = (Label) ((VBox) valueCard.getChildren().get(1)).getChildren().get(0);
+        }
+        
+        // Total tax card
+        VBox taxCard = createStatCard("Total Tax", formatCurrency(0), "tax", "#c62828");
+        if (taxCard.getChildren().size() > 1 && taxCard.getChildren().get(1) instanceof VBox) {
+            totalTaxLabel = (Label) ((VBox) taxCard.getChildren().get(1)).getChildren().get(0);
+        }
+        
+        // Average transaction card
+        VBox avgCard = createStatCard("Average Transaction", formatCurrency(0), "chart", "#ff8f00");
+        
+        statsSection.getChildren().addAll(transactionsCard, valueCard, taxCard, avgCard);
+        HBox.setHgrow(transactionsCard, Priority.ALWAYS);
+        HBox.setHgrow(valueCard, Priority.ALWAYS);
+        HBox.setHgrow(taxCard, Priority.ALWAYS);
+        HBox.setHgrow(avgCard, Priority.ALWAYS);
+        
+        return statsSection;
     }
-    
-    // Total value card
-    VBox valueCard = createStatCard("Total Value", formatCurrency(0), "money", "#00796b");
-    if (valueCard.getChildren().size() > 1 && valueCard.getChildren().get(1) instanceof VBox) {
-        totalValueLabel = (Label) ((VBox) valueCard.getChildren().get(1)).getChildren().get(0);
-    }
-    
-    // Total tax card
-    VBox taxCard = createStatCard("Total Tax", formatCurrency(0), "tax", "#c62828");
-    if (taxCard.getChildren().size() > 1 && taxCard.getChildren().get(1) instanceof VBox) {
-        totalTaxLabel = (Label) ((VBox) taxCard.getChildren().get(1)).getChildren().get(0);
-    }
-    
-    // Average transaction card
-    VBox avgCard = createStatCard("Average Transaction", formatCurrency(0), "chart", "#ff8f00");
-    
-    statsSection.getChildren().addAll(transactionsCard, valueCard, taxCard, avgCard);
-    HBox.setHgrow(transactionsCard, Priority.ALWAYS);
-    HBox.setHgrow(valueCard, Priority.ALWAYS);
-    HBox.setHgrow(taxCard, Priority.ALWAYS);
-    HBox.setHgrow(avgCard, Priority.ALWAYS);
-    
-    return statsSection;
-}
-
     
     private VBox createStatCard(String title, String value, String icon, String color) {
         VBox card = new VBox(5);
@@ -676,7 +530,24 @@ public class TransactionsView extends Application {
         int transactionCount = filteredTransactions.size();
         double totalValue = 0;
         double totalTax = 0;
-    
+        
+        for (InvoiceDetails invoice : filteredTransactions) {
+            totalValue += invoice.getInvoiceTotal();
+            totalTax += invoice.getTotalVat();
+        }
+        
+        // Update statistics labels
+        if (totalTransactionsLabel != null) {
+            totalTransactionsLabel.setText(String.valueOf(transactionCount));
+        }
+        
+        if (totalValueLabel != null) {
+            totalValueLabel.setText(formatCurrency(totalValue));
+        }
+        
+        if (totalTaxLabel != null) {
+            totalTaxLabel.setText(formatCurrency(totalTax));
+        }
     }
     
     private void viewTransaction(InvoiceDetails invoice) {
@@ -990,8 +861,5 @@ public class TransactionsView extends Application {
         alert.setContentText(message);
         alert.showAndWait();
     }
-    
-    public static void main(String[] args) {
-        launch(args);
-    }
+
 }

@@ -1,39 +1,37 @@
 package com.pointofsale;
 
 import com.pointofsale.helper.Helper;
+import com.pointofsale.helper.ApiClient;
 import com.pointofsale.model.Product;
-import javafx.application.Application;
+import com.pointofsale.model.TaxRates;
+
 import javafx.beans.property.SimpleStringProperty;
+import javafx.beans.property.ReadOnlyStringWrapper;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.collections.transformation.FilteredList;
 import javafx.collections.transformation.SortedList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.Scene;
+import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.*;
-import javafx.stage.Stage;
 import javafx.util.Callback;
-import javafx.beans.property.ReadOnlyStringWrapper;
-import com.pointofsale.model.TaxRates;
-import java.util.List;
-import com.pointofsale.helper.ApiClient;
+
 import java.text.NumberFormat;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
-public class ProductManagement extends Application {
+public class ProductManagement {
 
     private TableView<Product> productTable;
     private ObservableList<Product> productData;
     private TextField searchField;
     private ComboBox<String> categoryFilter;
     private ComboBox<String> taxRateFilter;
-    private Stage stage;
-    private BorderPane root;
     private List<TaxRates> taxRates;
 
     // Stats counters
@@ -42,84 +40,18 @@ public class ProductManagement extends Application {
     private Label outOfStockLabel;
     private Label lowStockLabel;
 
-    @Override
-    public void start(Stage primaryStage) {
-        this.stage = primaryStage;
-        createProductManagementScreen();
-        stage.setTitle("POS System - Product Management");
-        stage.setMaximized(true);
-        stage.show();
-    }
-
-    private void createProductManagementScreen() {
-        // Initialize the main layout
-        root = new BorderPane();
-        root.setStyle("-fx-background-color: #f5f5f7;");
-
+    /**
+     * Creates and returns the product management content to be displayed
+     * @return The root node containing all product management UI
+     */
+    public Node createContent() {
         // Load products from the database
         productData = FXCollections.observableArrayList(Helper.fetchAllProductsFromDB());
-
-        // Setup the layout
-        root.setTop(createTopBar());
-        root.setCenter(createMainContent());
-
-        // Create scene and set to stage
-        Scene scene = new Scene(root, 1280, 800);
-        stage.setScene(scene);
-    }
-
-    private HBox createTopBar() {
-        HBox topBar = new HBox();
-        topBar.setPadding(new Insets(15, 25, 15, 25));
-        topBar.setSpacing(20);
-        topBar.setAlignment(Pos.CENTER_LEFT);
-        topBar.setStyle("-fx-background-color: white; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);");
-
-        // Title
-        Label titleLabel = new Label("Product Management");
-        titleLabel.setStyle("-fx-font-size: 22px; -fx-font-weight: bold; -fx-text-fill: #1a237e;");
-
-        // Back button
-        Button backButton = new Button("Back to Dashboard");
-        backButton.setStyle("-fx-background-color: transparent; -fx-text-fill: #3949ab; -fx-font-weight: bold; -fx-cursor: hand;");
-        backButton.setOnAction(e -> navigateBack());
-
-        // Add spacer to push elements to the right
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-
-        // Add product button
-        Button addProductButton = new Button("+ Fetch Products");
-        addProductButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; " +
-                "-fx-font-size: 14px; -fx-font-weight: bold; -fx-cursor: hand; " +
-                "-fx-background-radius: 5px; -fx-padding: 8px 15px;");
-        String token = Helper.getToken();
-String tin = Helper.getTin();
-String siteId = Helper.getTerminalSiteId();
-
-addProductButton.setOnAction(e -> {
-    ApiClient apiClient = new ApiClient();
-    
-    apiClient.getTerminalSiteProducts(tin, siteId, token, productsFetched -> {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setTitle("Product Fetch Status");
-
-        if (productsFetched) {
-            alert.setAlertType(Alert.AlertType.INFORMATION);
-            alert.setHeaderText("✅ Success");
-            alert.setContentText("Products fetched and saved successfully.");
-        } else {
-            alert.setAlertType(Alert.AlertType.ERROR);
-            alert.setHeaderText("⚠ Failed");
-            alert.setContentText("Failed to fetch products.");
-        }
-
-        alert.showAndWait();
-    });
-});
-
-        topBar.getChildren().addAll(backButton, titleLabel, spacer, addProductButton);
-        return topBar;
+        
+        // Create main content container
+        VBox mainContent = createMainContent();
+        
+        return mainContent;
     }
 
     private VBox createMainContent() {
@@ -159,7 +91,7 @@ addProductButton.setOnAction(e -> {
         
         // Low Stock Card
         VBox lowStock = createStatsCard("Low Stock", "0", "#ff8f00");
-        lowStockLabel =(Label) lowStock.getChildren().get(1);
+        lowStockLabel = (Label) lowStock.getChildren().get(1);
         
         // Update stats
         updateProductStats();
@@ -230,10 +162,10 @@ addProductButton.setOnAction(e -> {
         taxRateFilter.getItems().add("All Tax Rates");
         taxRates = Helper.getTaxRates();
 
-       // Add only the tax rate IDs to the combo box
-       for (TaxRates taxRate : taxRates) {
-       taxRateFilter.getItems().add(taxRate.getTaxRateId());
-       }
+        // Add only the tax rate IDs to the combo box
+        for (TaxRates taxRate : taxRates) {
+            taxRateFilter.getItems().add(taxRate.getTaxRateId());
+        }
 
         taxRateFilter.setValue("All Tax Rates");
         taxRateFilter.setOnAction(e -> filterProducts());
@@ -270,12 +202,47 @@ addProductButton.setOnAction(e -> {
         exportButton.setStyle("-fx-background-color: transparent; -fx-border-color: #3949ab; " +
                 "-fx-text-fill: #3949ab; -fx-cursor: hand; -fx-background-radius: 5px; -fx-border-radius: 5px;");
         
+        // Add Product button
+        Button addProductButton = new Button("+ Fetch Products");
+        addProductButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; " +
+                "-fx-font-size: 14px; -fx-font-weight: bold; -fx-cursor: hand; " +
+                "-fx-background-radius: 5px; -fx-padding: 8px 15px;");
+        
+        String token = Helper.getToken();
+        String tin = Helper.getTin();
+        String siteId = Helper.getTerminalSiteId();
+
+        addProductButton.setOnAction(e -> {
+            ApiClient apiClient = new ApiClient();
+            
+            apiClient.getTerminalSiteProducts(tin, siteId, token, productsFetched -> {
+                Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                alert.setTitle("Product Fetch Status");
+
+                if (productsFetched) {
+                    alert.setAlertType(Alert.AlertType.INFORMATION);
+                    alert.setHeaderText("✅ Success");
+                    alert.setContentText("Products fetched and saved successfully.");
+                    
+                    // Refresh the product data after fetching
+                    productData.setAll(Helper.fetchAllProductsFromDB());
+                    updateProductStats();
+                } else {
+                    alert.setAlertType(Alert.AlertType.ERROR);
+                    alert.setHeaderText("⚠ Failed");
+                    alert.setContentText("Failed to fetch products.");
+                }
+
+                alert.showAndWait();
+            });
+        });
+        
         // Import button
         Button importButton = new Button("Import");
         importButton.setStyle("-fx-background-color: transparent; -fx-border-color: #3949ab; " +
                 "-fx-text-fill: #3949ab; -fx-cursor: hand; -fx-background-radius: 5px; -fx-border-radius: 5px;");
 
-        tableHeader.getChildren().addAll(tableTitle, headerSpacer, importButton, exportButton);
+        tableHeader.getChildren().addAll(tableTitle, headerSpacer, importButton, exportButton, addProductButton);
 
         // Create product table
         productTable = new TableView<>();
@@ -392,9 +359,8 @@ addProductButton.setOnAction(e -> {
         });
 
         TableColumn<Product, String> productTypeCol = new TableColumn<>("Type");
-       productTypeCol.setCellValueFactory(cellData ->
-    new ReadOnlyStringWrapper(cellData.getValue().isProduct() ? "Product" : "Service"));
-
+        productTypeCol.setCellValueFactory(cellData ->
+            new ReadOnlyStringWrapper(cellData.getValue().isProduct() ? "Product" : "Service"));
         productTypeCol.setPrefWidth(80);
 
         TableColumn<Product, Void> actionsCol = new TableColumn<>("Actions");
@@ -415,15 +381,6 @@ addProductButton.setOnAction(e -> {
             if (e.getCode() == KeyCode.ENTER) {
                 filterProducts();
             }
-        });
-
-        // Pagination (for large datasets)
-        Pagination pagination = new Pagination((productData.size() / 20) + 1, 0);
-        pagination.setPageFactory(pageIndex -> {
-            int fromIndex = pageIndex * 20;
-            int toIndex = Math.min(fromIndex + 20, productData.size());
-            productTable.setItems(FXCollections.observableArrayList(productData.subList(fromIndex, toIndex)));
-            return productTable;
         });
 
         tableSection.getChildren().addAll(tableHeader, productTable);
@@ -450,7 +407,7 @@ addProductButton.setOnAction(e -> {
 
                         editBtn.setOnAction(event -> {
                             Product product = getTableView().getItems().get(getIndex());
-                          
+                            // Implement edit functionality
                         });
 
                         deleteBtn.setOnAction(event -> {
@@ -509,8 +466,8 @@ addProductButton.setOnAction(e -> {
             }
 
             if (!taxRateText.equals("All Tax Rates")) {
-               String productTaxRateId = product.getTaxRate();
-               matchesTaxRate = productTaxRateId.equals(taxRateText);
+                String productTaxRateId = product.getTaxRate();
+                matchesTaxRate = productTaxRateId.equals(taxRateText);
             }
             return matchesSearch && matchesCategory && matchesTaxRate;
         });
@@ -528,28 +485,28 @@ addProductButton.setOnAction(e -> {
     }
 
     private void updateProductStats() {
-    int total = productData.size();
-    int active = 0;
-    int outOfStockCount = 0;
-    int lowStock = 0;
+        int total = productData.size();
+        int active = 0;
+        int outOfStockCount = 0;
+        int lowStock = 0;
 
-    for (Product product : productData) {
-        double quantity = product.getQuantity();
+        for (Product product : productData) {
+            double quantity = product.getQuantity();
 
-        if (quantity >= 10) {
-            active++;
-        } else if (quantity > 0 && quantity < 10) {
-            lowStock++;
-        } else if (quantity == 0) {
-            outOfStockCount++;
+            if (quantity >= 10) {
+                active++;
+            } else if (quantity > 0 && quantity < 10) {
+                lowStock++;
+            } else if (quantity == 0) {
+                outOfStockCount++;
+            }
         }
-    }
 
-    totalProductsLabel.setText(String.valueOf(total));
-    activeProductsLabel.setText(String.valueOf(active + lowStock));
-    outOfStockLabel.setText(String.valueOf(outOfStockCount));
-    lowStockLabel.setText(String.valueOf(lowStock));
-}
+        totalProductsLabel.setText(String.valueOf(total));
+        activeProductsLabel.setText(String.valueOf(active + lowStock));
+        outOfStockLabel.setText(String.valueOf(outOfStockCount));
+        lowStockLabel.setText(String.valueOf(lowStock));
+    }
         
     private void showDiscountDialog(Product product) {
         Dialog<ButtonType> dialog = new Dialog<>();
@@ -711,26 +668,13 @@ addProductButton.setOnAction(e -> {
                 return "Exempt (0%)";
         }
     }
+    
     /**
-       * Formats a number as Malawi Kwacha currency
-    */
+     * Formats a number as Malawi Kwacha currency
+     */
     private String formatCurrency(double amount) {
-      Locale malawiLocale = new Locale.Builder().setLanguage("en").setRegion("MW").build();
-      NumberFormat currencyFormatter = NumberFormat.getCurrencyInstance(malawiLocale);
-      return currencyFormatter.format(amount);
-    }
-    
-    
-    private void navigateBack() {
-       
-        // Close current window
-        stage.close();
-            
-        // Return to dashboard
-        new POSDashboard().start(new Stage());
-    }
-    
-    public static void main(String[] args) {
-        launch(args);
+        Locale malawiLocale = new Locale.Builder().setLanguage("en").setRegion("MW").build();
+        NumberFormat currencyFormatter = NumberFormat.getCurrencyInstance(malawiLocale);
+        return currencyFormatter.format(amount);
     }
 }
