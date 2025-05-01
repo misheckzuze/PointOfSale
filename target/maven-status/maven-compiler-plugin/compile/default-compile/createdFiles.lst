@@ -18,6 +18,7 @@ com\pointofsale\model\InvoiceDetails.class
 com\pointofsale\LoginView.class
 com\pointofsale\TransactionsView.class
 com\pointofsale\TerminalConfirmationDialog.class
+com\pointofsale\EscPosReceiptPrinter.class
 com\pointofsale\ProductManagement.class
 com\pointofsale\POSDashboard$1.class
 com\pointofsale\helper\Helper.class

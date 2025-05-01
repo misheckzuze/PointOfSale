@@ -18,6 +18,14 @@ public class App {
             
             // Check terminal activation status
             boolean isActivated = Helper.isTerminalActivated();
+            
+            // Start scheduler BEFORE launching the UI
+            ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+            scheduler.scheduleAtFixedRate(() -> {
+            System.out.println("🔄 Running auto-resend for pending transactions...");
+            ApiClient apiClient = new ApiClient();
+            apiClient.retryPendingTransactions();
+            }, 0, 2, TimeUnit.MINUTES);
 
             if (isActivated) {
                 System.out.println("Terminal is already activated. Launching Login View...");
@@ -26,14 +34,6 @@ public class App {
                 System.out.println("Terminal not activated. Launching Activation View...");
                 Application.launch(TerminalActivationView.class, args);
             }
-            
-            ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-
-            scheduler.scheduleAtFixedRate(() -> {
-            System.out.println("🔄 Running auto-resend for pending transactions...");
-            ApiClient apiClient = new ApiClient();
-            apiClient.retryPendingTransactions();
-            }, 0, 5, TimeUnit.MINUTES);
 
             
         } catch (Exception e) {

@@ -34,6 +34,8 @@ import javafx.application.Platform;
 import java.util.List;
 import java.util.ArrayList;
 import com.pointofsale.data.Database;
+import java.time.format.DateTimeParseException;
+
 
 
 public class Helper {
@@ -328,6 +330,46 @@ public static String getTerminalSiteId() {
     }
     return version;
 }
+  
+  public static int getOfflineTransactionLimit() {
+    int offlineLimit = 0;
+    try (Connection conn = Database.createConnection()) {
+        String query = "SELECT MaxTransactionAgeInHours FROM OfflineLimit LIMIT 1";
+        try (PreparedStatement stmt = conn.prepareStatement(query)) {
+            var rs = stmt.executeQuery();
+            if (rs.next()) {
+                offlineLimit = rs.getInt("MaxTransactionAgeInHours");
+            }
+        }
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to get offline limit: " + e.getMessage());
+    }
+    return offlineLimit;
+}
+  
+   public static LocalDateTime getLastSuccessfulSyncTimeFromInvoices() {
+        String query = "SELECT MIN(InvoiceDateTime) FROM Invoices WHERE State = 0";
+
+        try (Connection conn = Database.createConnection();
+             PreparedStatement stmt = conn.prepareStatement(query);
+             var rs = stmt.executeQuery()) {
+
+            if (rs.next()) {
+                String result = rs.getString(1);
+                if (result != null) {
+                    try {
+                        return LocalDateTime.parse(result);
+                    } catch (DateTimeParseException e) {
+                        System.err.println("❌ Failed to parse InvoiceDateTime: " + e.getMessage());
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("❌ Error fetching last sync time: " + e.getMessage());
+        }
+
+        return null;
+    }
 
 
     public static boolean updateIsActiveInTerminalConfiguration(boolean isActive) {
@@ -631,14 +673,17 @@ public static void loadUserDetails() {
        }
    }
 
-   public static long base64ToBase10(String base64) {
-    byte[] decoded = Base64.getUrlDecoder().decode(base64);
+  public static long base64ToBase10(String base64) {
+    String base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     long result = 0;
-    for (byte b : decoded) {
-        result = (result << 8) + (b & 0xFF);
+    for (int i = 0; i < base64.length(); i++) {
+        int index = base64Chars.indexOf(base64.charAt(i));
+        if (index == -1) throw new IllegalArgumentException("Invalid Base64 character: " + base64.charAt(i));
+        result = result * 64 + index;
     }
     return result;
 }
+
    
 public static double getTaxRateById(String taxRateId) {
     double rate = 0.0;
@@ -775,9 +820,13 @@ public static boolean saveTransaction(
     }
 
     String insertInvoiceQuery = "INSERT INTO Invoices (InvoiceNumber, InvoiceDateTime, InvoiceTotal, SellerTin, BuyerTin, TotalVAT, OfflineTransactionSignature, ValidationUrl, IsReliefSupply, State, PaymentId, AmountPaid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-    String insertLineItemQuery = "INSERT INTO LineItems (ProductCode, Description, UnitPrice, Quantity, InvoiceNumber, TaxRateID, Discount, IsProduct) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+
+    String insertLineItemQuery = "INSERT INTO LineItems (ProductCode, Description, Quantity, TaxRateID, Discount, UnitPrice, TotalPrice, DiscountAmount, VATRate, IsProduct, VATAmount, InvoiceNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
     String insertTaxBreakdownQuery = "INSERT INTO InvoiceTaxBreakDown (InvoiceNumber, RateID, TaxableAmount, TaxAmount) VALUES (?, ?, ?, ?)";
+
     String updateProductQuery = "UPDATE Products SET Quantity = ? WHERE ProductCode = ?";
+
     String insertPaymentTypeQuery = "INSERT INTO PaymentType (PaymentId, Name, AmountPaid) VALUES (?, ?, ?)";
 
     try (Connection connection = Database.createConnection()) {
@@ -811,7 +860,7 @@ public static boolean saveTransaction(
             paymentStmt.setDouble(3, amountPaid);
             paymentStmt.executeUpdate();
 
-            // Insert LineItems + Update Product Quantity
+            // Insert Line Items
             for (LineItemDto item : lineItems) {
                 if (item.isProduct()) {
                     double currentQty = getProductQuantity(item.getProductCode());
@@ -821,14 +870,23 @@ public static boolean saveTransaction(
                     updateProductStmt.executeUpdate();
                 }
 
+                double grossTotal = item.getTotal();             // Total price including VAT
+                double vatAmount = item.getTotalVAT();           // VAT amount
+                double netTotal = grossTotal - vatAmount;
+                double vatRate = netTotal != 0 ? (vatAmount / netTotal) * 100.0 : 0.0;
+
                 lineItemStmt.setString(1, item.getProductCode());
                 lineItemStmt.setString(2, item.getDescription());
-                lineItemStmt.setDouble(3, item.getUnitPrice());
-                lineItemStmt.setDouble(4, item.getQuantity());
-                lineItemStmt.setString(5, invoice.getInvoiceNumber());
-                lineItemStmt.setString(6, item.getTaxRateId());
-                lineItemStmt.setDouble(7, item.getDiscount());
-                lineItemStmt.setBoolean(8, item.isProduct());
+                lineItemStmt.setDouble(3, item.getQuantity());
+                lineItemStmt.setString(4, item.getTaxRateId());
+                lineItemStmt.setDouble(5, item.getDiscount());
+                lineItemStmt.setDouble(6, item.getUnitPrice());
+                lineItemStmt.setDouble(7, grossTotal);       // TotalPrice
+                lineItemStmt.setDouble(8, item.getDiscount()); // DiscountAmount
+                lineItemStmt.setDouble(9, vatRate);          // VATRate (calculated)
+                lineItemStmt.setBoolean(10, item.isProduct());
+                lineItemStmt.setDouble(11, vatAmount);        // VATAmount
+                lineItemStmt.setString(12, invoice.getInvoiceNumber());
                 lineItemStmt.executeUpdate();
             }
 
@@ -854,6 +912,8 @@ public static boolean saveTransaction(
         return false;
     }
 }
+
+
 
 public static double getProductQuantity(String productCode) {
     try (Connection conn = Database.createConnection()) {
@@ -916,8 +976,8 @@ public static InvoiceHeader getInvoiceHeader(String invoiceNumber) {
 public static List<LineItemDto> getLineItems(String invoiceNumber) {
     List<LineItemDto> items = new ArrayList<>();
 
-    String query = "SELECT ProductCode, Description, UnitPrice, Quantity, TaxRateID, Discount, IsProduct " +
-                   "FROM LineItems WHERE InvoiceNumber = ?";
+    String query = "SELECT ProductCode, Description, UnitPrice, Quantity, TaxRateID, Discount, " +
+                   "TotalPrice, VATAmount, IsProduct FROM LineItems WHERE InvoiceNumber = ?";
 
     try (Connection connection = Database.createConnection();
          PreparedStatement stmt = connection.prepareStatement(query)) {
@@ -933,6 +993,8 @@ public static List<LineItemDto> getLineItems(String invoiceNumber) {
             item.setQuantity(rs.getDouble("Quantity"));
             item.setTaxRateId(rs.getString("TaxRateID"));
             item.setDiscount(rs.getDouble("Discount"));
+            item.setTotal(rs.getDouble("TotalPrice"));       
+            item.setTotalVAT(rs.getDouble("VATAmount"));
             item.setIsProduct(rs.getBoolean("IsProduct"));
             items.add(item);
         }
@@ -943,6 +1005,7 @@ public static List<LineItemDto> getLineItems(String invoiceNumber) {
 
     return items;
 }
+
 
 public static void createTerminalBlockingReasonsTable() {
     String createTableSQL = 

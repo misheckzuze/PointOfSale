@@ -444,38 +444,41 @@ public class ApiClient {
          var rs = stmt.executeQuery()) {
 
         while (rs.next()) {
-            String invoiceNumber = rs.getString("InvoiceNumber");
+           String invoiceNumber = rs.getString("InvoiceNumber");
 
-            InvoiceHeader header = Helper.getInvoiceHeader(invoiceNumber);
-            List<LineItemDto> lineItems = Helper.getLineItems(invoiceNumber);
-            InvoiceSummary invoiceSummary = new InvoiceSummary();
-            List<TaxBreakDown> taxBreakdowns = Helper.generateTaxBreakdown(lineItems);
-            invoiceSummary.setTaxBreakDown(taxBreakdowns);
-            invoiceSummary.setTotalVAT(lineItems.stream().mapToDouble(LineItemDto::getTotalVAT).sum());
-            invoiceSummary.setInvoiceTotal(lineItems.stream().mapToDouble(LineItemDto::getTotal).sum());
-            invoiceSummary.setOfflineSignature("");
+           InvoiceHeader header = Helper.getInvoiceHeader(invoiceNumber);
+           List<LineItemDto> lineItems = Helper.getLineItems(invoiceNumber);
+    
+           InvoiceSummary invoiceSummary = new InvoiceSummary();
+           List<TaxBreakDown> taxBreakdowns = Helper.generateTaxBreakdown(lineItems);
+           invoiceSummary.setTaxBreakDown(taxBreakdowns);
 
+           // ✅ Use values directly from Invoices table
+           invoiceSummary.setTotalVAT(rs.getDouble("TotalVAT"));
+           invoiceSummary.setInvoiceTotal(rs.getDouble("InvoiceTotal"));
+           invoiceSummary.setOfflineSignature("");
 
-            // 4. Put everything into the payload
-            InvoicePayload payload = new InvoicePayload();
-            payload.setInvoiceHeader(header);
-            payload.setInvoiceLineItems(lineItems);
-            payload.setInvoiceSummary(invoiceSummary);
-            Gson gson = new Gson();
-            String jsonPayload = gson.toJson(payload);
-            String token = Helper.getToken();
+           InvoicePayload payload = new InvoicePayload();
+           payload.setInvoiceHeader(header);
+           payload.setInvoiceLineItems(lineItems);
+           payload.setInvoiceSummary(invoiceSummary);
+    
+           Gson gson = new Gson();
+           String jsonPayload = gson.toJson(payload);
+           String token = Helper.getToken();
 
-            ApiClient apiClient = new ApiClient();
-            apiClient.submitTransactions(jsonPayload, token, (success, returnedValidationUrl) -> {
-                if (success) {
-                    Helper.updateValidationUrl(invoiceNumber, returnedValidationUrl);
-                    Helper.markAsTransmitted(invoiceNumber);
-                    System.out.println("✅ Auto-resend success for: " + invoiceNumber);
-                } else {
-                    System.err.println("❌ Auto-resend failed for: " + invoiceNumber);
-                }
-            });
-        }
+           ApiClient apiClient = new ApiClient();
+           apiClient.submitTransactions(jsonPayload, token, (success, returnedValidationUrl) -> {
+           if (success) {
+            Helper.updateValidationUrl(invoiceNumber, returnedValidationUrl);
+            Helper.markAsTransmitted(invoiceNumber);
+            System.out.println("✅ Auto-resend success for: " + invoiceNumber);
+           } else {
+              System.err.println("❌ Auto-resend failed for: " + invoiceNumber);
+           }
+        });
+    }
+
 
     } catch (SQLException e) {
         System.err.println("❌ Error fetching pending transactions: " + e.getMessage());

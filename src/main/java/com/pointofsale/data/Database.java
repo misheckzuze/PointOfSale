@@ -150,6 +150,7 @@ public class Database {
                     "DiscountAmount REAL," +
                     "VATRate REAL," +
                     "IsProduct INTEGER," +
+                    "VATAmount REAL," +
                     "FOREIGN KEY(InvoiceNumber) REFERENCES Invoices(InvoiceNumber))";
             
             String createDiscountsTable = "CREATE TABLE IF NOT EXISTS Discounts (" +

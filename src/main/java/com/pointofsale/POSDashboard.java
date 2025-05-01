@@ -11,6 +11,7 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import java.time.Duration;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
@@ -57,6 +58,7 @@ public class POSDashboard extends Application {
     private TextField barcodeField;
     private Label dateTimeLabel;
     private Label cashierNameLabel;
+    private Label receiptNumberLabel;
     private Label changeValueLabel;
     private TextField cashAmountField;
     private Button processPaymentButton;
@@ -174,7 +176,7 @@ private void loadTransactions() {
         VBox transactionInfo = new VBox(2);
         Label receiptLabel = new Label("Receipt #:");
         receiptLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: #757575;");
-        Label receiptNumberLabel = new Label(receiptNumber);
+        receiptNumberLabel = new Label(receiptNumber);
         receiptNumberLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #333333;");
         transactionInfo.getChildren().addAll(receiptLabel, receiptNumberLabel);
         
@@ -1009,6 +1011,26 @@ private void updateChangeCalculation() {
      * Processes the payment
      */
 private void processPayment() {
+    double offlineThreshold = Helper.getOfflineTransactionLimit();
+
+    LocalDateTime firstUnSyncTime = Helper.getLastSuccessfulSyncTimeFromInvoices();
+
+    double currentOfflineAmount = firstUnSyncTime != null
+    ? java.time.Duration.between(firstUnSyncTime, LocalDateTime.now()).toHours()
+    : 0;
+    
+    if (currentOfflineAmount >= offlineThreshold) {
+        // Alert user: Offline transaction limit reached
+        Platform.runLater(() -> {
+            Alert alert = new Alert(Alert.AlertType.WARNING);
+            alert.setTitle("Offline Limit Reached");
+            alert.setHeaderText(null);
+            alert.setContentText("⚠️ Offline transaction time limit reached. Please sync before continuing.");
+            alert.showAndWait();
+        });
+        return;
+    }
+
     Helper.checkAndHandleTerminalBlocking(isAllowed -> {
         if (isAllowed) {
             Platform.runLater(this::proceedWithPayment);
@@ -1124,11 +1146,28 @@ private void processPayment() {
 
         });
       });
+       
+        // Print the receipt after successful online transaction
+                try {
+                    EscPosReceiptPrinter.printReceipt(
+                        invoiceHeader, 
+                        "", 
+                        lineItems, 
+                        validationUrl, 
+                        amountPaid, 
+                        amountPaid - totalAmount,
+                        taxBreakdowns
+                    );
+                    System.out.println("✅ Receipt printed (online).");
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    System.err.println("⚠️ Failed to print receipt (online).");
+                }
         // Reset cart and generate new receipt number
         cartItems.clear();
         cashAmountField.clear();
         updateTotals();
-        generateNewReceiptNumber();
+        receiptNumberLabel.setText(generateNewReceiptNumber());
     }
     
     /**
@@ -1138,15 +1177,13 @@ private void processPayment() {
     long taxpayerId = Helper.getTaxpayerId();
     int terminalPosition = Helper.getTerminalPosition();
     LocalDate transactionDate = LocalDate.now();
-    long transactionCount = 3;
+    long transactionCount = 0;
 
     InvoiceDetails lastDetails = Helper.getLastInvoiceDetails();
 
     if (lastDetails != null) {
-        String[] parts = lastDetails.getInvoiceNumber().split("-");
-        if (parts.length == 4) {
-            transactionCount = Helper.base64ToBase10(parts[3]) + 1;
-        }
+        
+            transactionCount = Helper.convertSequentialToBase10(lastDetails.getInvoiceNumber()) + 1;      
     }
 
     return Helper.generateReceiptNumber(taxpayerId, terminalPosition, transactionDate, transactionCount);

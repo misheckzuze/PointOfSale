@@ -4,6 +4,7 @@ module com.pointofsale {
     requires java.json;
     requires java.management;
     requires java.sql;
+    requires java.desktop;
     requires com.google.gson;
     requires com.fasterxml.jackson.databind;
 
