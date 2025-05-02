@@ -8,8 +8,11 @@ import javafx.beans.property.SimpleIntegerProperty;
 import java.util.concurrent.atomic.AtomicInteger;
 import javafx.util.Pair;
 import javafx.animation.KeyFrame;
+import java.util.Collections;
+import javafx.animation.PauseTransition;
 import javafx.animation.Timeline;
 import javafx.util.Duration;
+import java.util.List;
 import javafx.event.Event;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
@@ -619,10 +622,12 @@ private void syncTransaction(InvoiceDetails invoice) {
             Platform.runLater(() -> {
                 progressAlert.setOnCloseRequest(null); // Allow close now
                 progressAlert.close();
-
+                
                 if (success) {
                     showAlert("Sync Complete",
                             "Invoice " + invoice.getInvoiceNumber() + " has been successfully transmitted.");
+                    allTransactions.clear();
+                    allTransactions.addAll(Helper.getAllTransactions());
                     transactionsTable.refresh();
                     updateStatistics();
                 } else {
@@ -635,12 +640,21 @@ private void syncTransaction(InvoiceDetails invoice) {
 }
 
    private void syncAllPending() {
+    if (!Platform.isFxApplicationThread()) {
+        Platform.runLater(this::syncAllPending);
+        return;
+    }
+
     long pendingCount = filteredTransactions.stream()
             .filter(invoice -> !invoice.isTransmitted())
             .count();
 
     if (pendingCount == 0) {
-        showAlert("No Pending Transactions", "There are no pending transactions to synchronize.");
+        Alert infoAlert = new Alert(Alert.AlertType.INFORMATION);
+        infoAlert.setTitle("No Pending Transactions");
+        infoAlert.setHeaderText(null);
+        infoAlert.setContentText("There are no pending transactions to synchronize.");
+        infoAlert.show();
         return;
     }
 
@@ -649,85 +663,103 @@ private void syncTransaction(InvoiceDetails invoice) {
     confirmAlert.setHeaderText("Sync " + pendingCount + " Pending Transactions?");
     confirmAlert.setContentText("This will attempt to transmit all pending invoices to the tax authority system.");
 
-    Optional<ButtonType> result = confirmAlert.showAndWait();
-    if (result.isPresent() && result.get() == ButtonType.OK) {
-        ProgressBar progress = new ProgressBar(0);
-        progress.setPrefWidth(300);
+    // show confirmation dialog and handle response in separate thread
+    confirmAlert.showAndWait().ifPresent(response -> {
+        if (response == ButtonType.OK) {
+            ProgressBar progress = new ProgressBar(0);
+            progress.setPrefWidth(300);
+            Label statusLabel = new Label("Preparing to sync...");
+            VBox progressBox = new VBox(10, new Label("Syncing Transactions with Tax Authority"), progress, statusLabel);
+            progressBox.setPadding(new Insets(20));
+            progressBox.setAlignment(Pos.CENTER);
 
-        Label statusLabel = new Label("Preparing to sync...");
+            Alert progressAlert = new Alert(Alert.AlertType.NONE);
+            progressAlert.setTitle("Syncing");
+            progressAlert.getDialogPane().setContent(progressBox);
+            progressAlert.getDialogPane().getButtonTypes().clear();
+            progressAlert.setOnCloseRequest(Event::consume);
 
-        VBox progressBox = new VBox(10);
-        progressBox.setPadding(new Insets(20));
-        progressBox.setAlignment(Pos.CENTER);
-        progressBox.getChildren().addAll(
-                new Label("Syncing Transactions with Tax Authority"),
-                progress,
-                statusLabel
-        );
+            ButtonType closeButton = new ButtonType("Close", ButtonBar.ButtonData.CANCEL_CLOSE);
+            progressAlert.getDialogPane().getButtonTypes().add(closeButton);
+            progressAlert.getDialogPane().lookupButton(closeButton).setVisible(false);
 
-        Alert progressAlert = new Alert(Alert.AlertType.NONE);
-        progressAlert.setTitle("Syncing");
-        progressAlert.getDialogPane().setContent(progressBox);
-        progressAlert.getDialogPane().getButtonTypes().clear();
-        progressAlert.setOnCloseRequest(Event::consume); // Prevent manual close while syncing
+            progressAlert.show();
 
-        // Show the progress alert
-        Platform.runLater(progressAlert::show);
+            Thread syncThread = new Thread(() -> {
+                AtomicInteger syncedCount = new AtomicInteger(0);
+                int totalToSync = (int) pendingCount;
 
-        // Background thread for syncing
-        new Thread(() -> {
-            AtomicInteger syncedCount = new AtomicInteger(0);
-            int totalToSync = (int) pendingCount;
+                try {
+                    Helper.retryPendingTransactions(
+                            (progressPair) -> {
+                                int current = syncedCount.incrementAndGet();
+                                String invoiceNumber = progressPair.getValue();
+                                Platform.runLater(() -> {
+                                    statusLabel.setText("Processing: " + invoiceNumber);
+                                    progress.setProgress((double) current / totalToSync);
+                                });
+                            },
+                            (failedInvoices) -> {
+                                Platform.runLater(() -> {
+                                    progress.setProgress(1.0);
+                                    PauseTransition pauseBeforeClose = new PauseTransition(Duration.seconds(1));
+                                    pauseBeforeClose.setOnFinished(e -> {
+                                        progressAlert.setOnCloseRequest(null);
+                                        progressAlert.close();
 
-            Helper.retryPendingTransactions(
-                    (progressPair) -> {
-                        int current = syncedCount.incrementAndGet();
-                        String invoiceNumber = progressPair.getValue();
-
-                        Platform.runLater(() -> {
-                            statusLabel.setText("Processing: " + invoiceNumber);
-                            progress.setProgress((double) current / totalToSync);
-                        });
-                    },
-                    (failedInvoices) -> {
-                        Platform.runLater(() -> {
-                            progress.setProgress(1.0);
-
-                            // Use Timeline to delay closing progress alert after 1 second
-                            Timeline timeline = new Timeline(
-                                    new KeyFrame(Duration.seconds(1), e -> {
-                                        // Ensure we update UI and close alert on the JavaFX thread
-                                        Platform.runLater(() -> {
-
-                                            // Show relevant message depending on success or failure
-                                            if (failedInvoices.isEmpty()) {
-                                                progressAlert.setOnCloseRequest(null); // Allow close now
-                                                progressAlert.close(); // Close the progress alert
-                                                showAlert("Sync Complete",
-                                                        "All pending invoices have been successfully transmitted.");
-                                            } else {
-                                                progressAlert.setOnCloseRequest(null); // Allow close now
-                                                progressAlert.close(); // Close the progress alert
-                                                String failedList = String.join(", ", failedInvoices);
-                                                showAlert("Partial Sync",
-                                                        "Some invoices failed to sync:\n" + failedList);
-                                            }
-
-                                            transactionsTable.refresh();
-                                            updateStatistics();
+                                        PauseTransition pauseBeforeAlert = new PauseTransition(Duration.millis(300));
+                                        pauseBeforeAlert.setOnFinished(event -> {
+                                            Platform.runLater(() -> {
+                                                if (failedInvoices.isEmpty()) {
+                                                    Alert success = new Alert(Alert.AlertType.INFORMATION);
+                                                    success.setTitle("Sync Complete");
+                                                    success.setHeaderText(null);
+                                                    success.setContentText("All pending invoices have been successfully transmitted.");
+                                                    success.show();
+                                                } else {
+                                                    String failedList = String.join(", ", failedInvoices);
+                                                    Alert partial = new Alert(Alert.AlertType.WARNING);
+                                                    partial.setTitle("Partial Sync");
+                                                    partial.setHeaderText(null);
+                                                    partial.setContentText(
+                                                            (failedInvoices.size() == totalToSync)
+                                                                    ? "All invoices failed to sync:\n" + failedList
+                                                                    : "Some invoices failed to sync:\n" + failedList
+                                                    );
+                                                    partial.show();
+                                                }
+                                                transactionsTable.refresh();
+                                                updateStatistics();
+                                            });
                                         });
-                                    })
-                            );
-                            timeline.setCycleCount(1);
-                            timeline.play();
-                        });
-                    }
-            );
-        }).start();
-    }
+                                        pauseBeforeAlert.play();
+                                    });
+                                    pauseBeforeClose.play();
+                                });
+                            }
+                    );
+                } catch (Exception ex) {
+                    Platform.runLater(() -> {
+                        progress.setProgress(1.0);
+                        progressAlert.setOnCloseRequest(null);
+                        progressAlert.close();
+
+                        Alert error = new Alert(Alert.AlertType.ERROR);
+                        error.setTitle("Sync Error");
+                        error.setHeaderText(null);
+                        error.setContentText("An error occurred: " + ex.getMessage());
+                        error.show();
+                        updateStatistics();
+                    });
+                }
+            });
+
+            syncThread.setDaemon(true);
+            syncThread.start();
+                        transactionsTable.refresh();
+        }
+    });
 }
-
-
     
     private void exportTransactions() {
         Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
