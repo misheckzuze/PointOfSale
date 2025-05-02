@@ -5,13 +5,21 @@ import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleDoubleProperty;
 import javafx.beans.property.SimpleIntegerProperty;
+import java.util.concurrent.atomic.AtomicInteger;
+import javafx.util.Pair;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
+import javafx.util.Duration;
+import javafx.event.Event;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.collections.transformation.FilteredList;
 import javafx.geometry.Insets;
+import com.pointofsale.helper.Helper;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
+import com.pointofsale.model.InvoiceDetails;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.layout.*;
@@ -21,7 +29,6 @@ import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
 import javafx.util.Callback;
-
 import java.text.NumberFormat;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -32,42 +39,6 @@ import java.util.function.Predicate;
 
 public class TransactionsView {
 
-    // Mock InvoiceDetails class for demo purposes
-    public static class InvoiceDetails {
-        private final SimpleStringProperty invoiceNumber;
-        private final SimpleStringProperty invoiceDateTime;
-        private final SimpleStringProperty buyerTin;
-        private final SimpleIntegerProperty itemCount;
-        private final SimpleDoubleProperty invoiceTotal;
-        private final SimpleDoubleProperty totalVat;
-        private final BooleanProperty transmitted;
-        private SimpleStringProperty validationUrl;
-
-        public InvoiceDetails(String invoiceNumber, LocalDateTime dateTime, String buyerTin, 
-                             int itemCount, double total, double vat, boolean transmitted) {
-            this.invoiceNumber = new SimpleStringProperty(invoiceNumber);
-            this.invoiceDateTime = new SimpleStringProperty(dateTime.toString());
-            this.buyerTin = new SimpleStringProperty(buyerTin);
-            this.itemCount = new SimpleIntegerProperty(itemCount);
-            this.invoiceTotal = new SimpleDoubleProperty(total);
-            this.totalVat = new SimpleDoubleProperty(vat);
-            this.transmitted = new SimpleBooleanProperty(transmitted);
-            this.validationUrl = new SimpleStringProperty(transmitted ? 
-                    "https://efiscal.mra.mw/invoice/" + invoiceNumber : "");
-        }
-
-        public String getInvoiceNumber() { return invoiceNumber.get(); }
-        public String getInvoiceDateTime() { return invoiceDateTime.get(); }
-        public String getBuyerTin() { return buyerTin.get(); }
-        public int getItemCount() { return itemCount.get(); }
-        public double getInvoiceTotal() { return invoiceTotal.get(); }
-        public double getTotalVat() { return totalVat.get(); }
-        public boolean isTransmitted() { return transmitted.get(); }
-        public void setTransmitted(boolean value) { transmitted.set(value); }
-        public String getValidationUrl() { return validationUrl.get(); }
-        public void setValidationUrl(String url) { validationUrl.set(url); }
-    }
-
     private TableView<InvoiceDetails> transactionsTable;
     private final ObservableList<InvoiceDetails> allTransactions = FXCollections.observableArrayList();
     private final FilteredList<InvoiceDetails> filteredTransactions = new FilteredList<>(allTransactions);
@@ -77,18 +48,21 @@ public class TransactionsView {
     private ComboBox<String> statusFilterComboBox;
     private Label totalTransactionsLabel;
     private Label totalValueLabel;
+    private Label avgValueLabel;
     private Label totalTaxLabel;
 
     public Node getView() {
-        // Initialize components
-        initializeComponents();
-        
-        // Load initial transaction data
-        loadTransactions();
-        
-        // Return the main content
-        return createMainContent();
+       // Initialize components
+       initializeComponents();
+    
+       // Build UI (this sets up the labels)
+       Node content = createMainContent();
+    
+       loadTransactions();
+    
+       return content;
     }
+
     
     private void initializeComponents() {
         // Initialize DatePickers
@@ -212,73 +186,68 @@ public class TransactionsView {
     private HBox createStatsSection() {
         HBox statsSection = new HBox(15);
         statsSection.setPadding(new Insets(0, 0, 10, 0));
-        
+
         // Total transactions card
-        VBox transactionsCard = createStatCard("Total Transactions", "0", "receipt", "#3949ab");
-        
-        // Check if the second child is a VBox before casting
-        if (transactionsCard.getChildren().size() > 1 && transactionsCard.getChildren().get(1) instanceof VBox) {
-            totalTransactionsLabel = (Label) ((VBox) transactionsCard.getChildren().get(1)).getChildren().get(0);
-        } else {
-            System.err.println("Error: Expected VBox, but found " + transactionsCard.getChildren().get(1).getClass());
-        }
-        
+        Pair<VBox, Label> transactionsPair = createStatCard("Total Transactions", "0", "receipt", "#3949ab");
+        VBox transactionsCard = transactionsPair.getKey();
+        totalTransactionsLabel = transactionsPair.getValue();
+
         // Total value card
-        VBox valueCard = createStatCard("Total Value", formatCurrency(0), "money", "#00796b");
-        if (valueCard.getChildren().size() > 1 && valueCard.getChildren().get(1) instanceof VBox) {
-            totalValueLabel = (Label) ((VBox) valueCard.getChildren().get(1)).getChildren().get(0);
-        }
-        
+        Pair<VBox, Label> valuePair = createStatCard("Total Value", formatCurrency(0), "money", "#00796b");
+        VBox valueCard = valuePair.getKey();
+        totalValueLabel = valuePair.getValue();
+
         // Total tax card
-        VBox taxCard = createStatCard("Total Tax", formatCurrency(0), "tax", "#c62828");
-        if (taxCard.getChildren().size() > 1 && taxCard.getChildren().get(1) instanceof VBox) {
-            totalTaxLabel = (Label) ((VBox) taxCard.getChildren().get(1)).getChildren().get(0);
-        }
-        
-        // Average transaction card
-        VBox avgCard = createStatCard("Average Transaction", formatCurrency(0), "chart", "#ff8f00");
-        
+        Pair<VBox, Label> taxPair = createStatCard("Total Tax", formatCurrency(0), "tax", "#c62828");
+        VBox taxCard = taxPair.getKey();
+        totalTaxLabel = taxPair.getValue();
+
+        // Average transaction card (not storing label)
+        Pair<VBox, Label> avgPair = createStatCard("Average Transaction", formatCurrency(0), "chart", "#ff8f00");
+        VBox avgCard = avgPair.getKey();
+        avgValueLabel = avgPair.getValue();
+
         statsSection.getChildren().addAll(transactionsCard, valueCard, taxCard, avgCard);
         HBox.setHgrow(transactionsCard, Priority.ALWAYS);
         HBox.setHgrow(valueCard, Priority.ALWAYS);
         HBox.setHgrow(taxCard, Priority.ALWAYS);
         HBox.setHgrow(avgCard, Priority.ALWAYS);
-        
+
         return statsSection;
     }
     
-    private VBox createStatCard(String title, String value, String icon, String color) {
+    private Pair<VBox, Label> createStatCard(String title, String value, String icon, String color) {
         VBox card = new VBox(5);
         card.setPadding(new Insets(15));
         card.setStyle("-fx-background-color: white; -fx-background-radius: 5px; " +
-                   "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);");
-        
-        // Card title
+                      "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);");
+
+        // Title label
         Label titleLabel = new Label(title);
         titleLabel.setStyle("-fx-font-size: 13px; -fx-text-fill: #757575;");
-        
-        // Card value
+
+        // Value label
         Label valueLabel = new Label(value);
         valueLabel.setStyle("-fx-font-size: 22px; -fx-font-weight: bold; -fx-text-fill: " + color + ";");
-        
-        // Icon placeholder
+
+        // Icon section
         Circle iconCircle = new Circle(15);
         iconCircle.setFill(Color.web(color, 0.2));
-        
+
         Text iconText = new Text(icon.substring(0, 1).toUpperCase());
         iconText.setFill(Color.web(color));
         iconText.setFont(Font.font("System", FontWeight.BOLD, 12));
-        
+
         StackPane iconPane = new StackPane(iconCircle, iconText);
-        
+
         // Value section
         HBox valueSection = new HBox(10);
         valueSection.setAlignment(Pos.CENTER_LEFT);
-        valueSection.getChildren().addAll(valueLabel);
-        
+        valueSection.getChildren().add(valueLabel);
+
         card.getChildren().addAll(titleLabel, valueSection, iconPane);
-        
-        return card;
+
+        return new Pair<>(card, valueLabel);
     }
     
     private VBox createTransactionsTable() {
@@ -314,65 +283,61 @@ public class TransactionsView {
         TableColumn<InvoiceDetails, String> receiptCol = new TableColumn<>("Receipt #");
         receiptCol.setCellValueFactory(new PropertyValueFactory<>("invoiceNumber"));
         receiptCol.setPrefWidth(150);
-        
+
         TableColumn<InvoiceDetails, String> dateCol = new TableColumn<>("Date & Time");
         dateCol.setCellValueFactory(cellData -> {
-            LocalDateTime dateTime = LocalDateTime.parse(cellData.getValue().getInvoiceDateTime());
-            return new SimpleStringProperty(dateTime.format(DateTimeFormatter.ofPattern("dd-MMM-yyyy HH:mm")));
-        });
-        dateCol.setPrefWidth(180);
-        
-        TableColumn<InvoiceDetails, String> customerCol = new TableColumn<>("Customer");
-        customerCol.setCellValueFactory(cellData -> {
-            String buyerTin = cellData.getValue().getBuyerTin();
-            return new SimpleStringProperty(buyerTin != null && !buyerTin.isEmpty() ? buyerTin : "Walk-in Customer");
-        });
-        customerCol.setPrefWidth(150);
-        
-        TableColumn<InvoiceDetails, String> itemsCol = new TableColumn<>("Items");
-        itemsCol.setCellValueFactory(cellData -> new SimpleStringProperty(String.valueOf(cellData.getValue().getItemCount())));
-        itemsCol.setPrefWidth(70);
-        
-        TableColumn<InvoiceDetails, Double> amountCol = new TableColumn<>("Amount");
-        amountCol.setCellValueFactory(cellData -> new SimpleDoubleProperty(cellData.getValue().getInvoiceTotal()).asObject());
-        amountCol.setPrefWidth(100);
-        amountCol.setCellFactory(col -> new TableCell<InvoiceDetails, Double>() {
-            @Override
-            protected void updateItem(Double amount, boolean empty) {
-                super.updateItem(amount, empty);
-                if (empty) {
-                    setText(null);
-                } else {
-                    setText(formatCurrency(amount));
-                }
-            }
-        });
-        
-        TableColumn<InvoiceDetails, String> statusCol = new TableColumn<>("Status");
-        statusCol.setCellValueFactory(cellData -> new SimpleStringProperty(cellData.getValue().isTransmitted() ? "Transmitted" : "Pending"));
-        statusCol.setPrefWidth(100);
-        statusCol.setCellFactory(col -> new TableCell<InvoiceDetails, String>() {
-            @Override
-            protected void updateItem(String status, boolean empty) {
-                super.updateItem(status, empty);
-                if (empty) {
-                    setText(null);
-                    setStyle("");
-                } else {
-                    setText(status);
-                    if ("Transmitted".equals(status)) {
-                        setStyle("-fx-text-fill: #00796b;");
-                    } else {
-                        setStyle("-fx-text-fill: #ff8f00;");
-                    }
-                }
-            }
-        });
-        
-        TableColumn<InvoiceDetails, Void> actionCol = new TableColumn<>("Actions");
-        actionCol.setPrefWidth(150);
-        actionCol.setCellFactory(createActionCellFactory());
-        
+        LocalDateTime dateTime = cellData.getValue().getInvoiceDateTime();
+        return new SimpleStringProperty(dateTime.format(DateTimeFormatter.ofPattern("dd-MMM-yyyy HH:mm")));
+    });
+    dateCol.setPrefWidth(180);
+
+    TableColumn<InvoiceDetails, String> customerCol = new TableColumn<>("Customer");
+    customerCol.setCellValueFactory(cellData -> {
+    String buyerTin = cellData.getValue().getBuyerTin();
+    return new SimpleStringProperty(buyerTin != null && !buyerTin.isEmpty() ? buyerTin : "Walk-in Customer");
+    });
+    customerCol.setPrefWidth(150);
+
+    TableColumn<InvoiceDetails, String> itemsCol = new TableColumn<>("Items");
+    itemsCol.setCellValueFactory(cellData -> new SimpleStringProperty(String.valueOf(cellData.getValue().getItemCount())));
+    itemsCol.setPrefWidth(70);
+
+    TableColumn<InvoiceDetails, Double> amountCol = new TableColumn<>("Amount");
+    amountCol.setCellValueFactory(cellData -> new SimpleDoubleProperty(cellData.getValue().getInvoiceTotal()).asObject());
+    amountCol.setPrefWidth(100);
+    amountCol.setCellFactory(col -> new TableCell<InvoiceDetails, Double>() {
+    @Override
+    protected void updateItem(Double amount, boolean empty) {
+        super.updateItem(amount, empty);
+        if (empty) {
+            setText(null);
+        } else {
+            setText(formatCurrency(amount));
+        }
+    }
+});
+
+TableColumn<InvoiceDetails, String> statusCol = new TableColumn<>("Status");
+statusCol.setCellValueFactory(cellData -> new SimpleStringProperty(cellData.getValue().isTransmitted() ? "Transmitted" : "Pending"));
+statusCol.setPrefWidth(100);
+statusCol.setCellFactory(col -> new TableCell<InvoiceDetails, String>() {
+    @Override
+    protected void updateItem(String status, boolean empty) {
+        super.updateItem(status, empty);
+        if (empty) {
+            setText(null);
+            setStyle("");
+        } else {
+            setText(status);
+            setStyle("-fx-text-fill: " + ("Transmitted".equals(status) ? "#00796b;" : "#ff8f00;"));
+        }
+    }
+});
+
+TableColumn<InvoiceDetails, Void> actionCol = new TableColumn<>("Actions");
+actionCol.setPrefWidth(150);
+actionCol.setCellFactory(createActionCellFactory());
+
         transactionsTable.getColumns().addAll(receiptCol, dateCol, customerCol, itemsCol, amountCol, statusCol, actionCol);
         
         // Add event listener for row selection
@@ -450,31 +415,12 @@ public class TransactionsView {
     }
     
     private void loadTransactions() {
-        // Clear existing data
-        allTransactions.clear();
-        
-        // Add some hardcoded transactions instead of loading from DB
-        LocalDateTime now = LocalDateTime.now();
-        
-        // Transmitted transactions
-        allTransactions.add(new InvoiceDetails("INV-2025-0001", now.minusDays(1), "CUST-001", 5, 12500.00, 1875.00, true));
-        allTransactions.add(new InvoiceDetails("INV-2025-0002", now.minusDays(1).minusHours(2), "CUST-002", 3, 5600.00, 840.00, true));
-        allTransactions.add(new InvoiceDetails("INV-2025-0003", now.minusDays(2), "", 2, 2350.00, 352.50, true));
-        allTransactions.add(new InvoiceDetails("INV-2025-0004", now.minusDays(2).minusHours(5), "CUST-003", 7, 18900.00, 2835.00, true));
-        allTransactions.add(new InvoiceDetails("INV-2025-0005", now.minusDays(3), "", 1, 750.00, 112.50, true));
-        
-        // Pending transactions
-        allTransactions.add(new InvoiceDetails("INV-2025-0006", now.minusHours(3), "CUST-004", 4, 6500.00, 975.00, false));
-        allTransactions.add(new InvoiceDetails("INV-2025-0007", now.minusHours(1), "", 2, 1800.00, 270.00, false));
-        allTransactions.add(new InvoiceDetails("INV-2025-0008", now, "CUST-001", 6, 15200.00, 2280.00, false));
-        
-        // Apply filters to update UI
-        applyFilters();
-        
-        // Update statistics
-        updateStatistics();
+    allTransactions.clear();
+    allTransactions.addAll(Helper.getAllTransactions());
+    applyFilters();
+    updateStatistics();
     }
-    
+
     private void applyFilters() {
         LocalDate startDate = startDatePicker.getValue();
         LocalDate endDate = endDatePicker.getValue();
@@ -486,7 +432,7 @@ public class TransactionsView {
             if (startDate == null || endDate == null) {
                 return true;
             }
-            LocalDateTime invoiceDate = LocalDateTime.parse(invoice.getInvoiceDateTime());
+            LocalDateTime invoiceDate = invoice.getInvoiceDateTime();
             return !invoiceDate.toLocalDate().isBefore(startDate) && !invoiceDate.toLocalDate().isAfter(endDate);
         };
         
@@ -533,22 +479,20 @@ public class TransactionsView {
         
         for (InvoiceDetails invoice : filteredTransactions) {
             totalValue += invoice.getInvoiceTotal();
-            totalTax += invoice.getTotalVat();
+            totalTax += invoice.getTotalVAT();
         }
         
-        // Update statistics labels
-        if (totalTransactionsLabel != null) {
-            totalTransactionsLabel.setText(String.valueOf(transactionCount));
-        }
+   
+        totalTransactionsLabel.setText(String.valueOf(transactionCount));
+   
+        totalValueLabel.setText(formatCurrency(totalValue));
+    
+        totalTaxLabel.setText(formatCurrency(totalTax));
         
-        if (totalValueLabel != null) {
-            totalValueLabel.setText(formatCurrency(totalValue));
-        }
-        
-        if (totalTaxLabel != null) {
-            totalTaxLabel.setText(formatCurrency(totalTax));
-        }
-    }
+         // Calculate and update average transaction value
+        double avgValue = transactionCount > 0 ? totalValue / transactionCount : 0;
+        avgValueLabel.setText(formatCurrency(avgValue));
+}
     
     private void viewTransaction(InvoiceDetails invoice) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
@@ -569,7 +513,7 @@ public class TransactionsView {
         int row = 0;
         
         grid.add(createDetailLabel("Date & Time:"), 0, row);
-        LocalDateTime dateTime = LocalDateTime.parse(invoice.getInvoiceDateTime());
+        LocalDateTime dateTime = invoice.getInvoiceDateTime();
         grid.add(createDetailValue(dateTime.format(DateTimeFormatter.ofPattern("dd-MMM-yyyy HH:mm"))), 1, row++);
         
         grid.add(createDetailLabel("Customer:"), 0, row);
@@ -584,7 +528,7 @@ public class TransactionsView {
         grid.add(createDetailValue(formatCurrency(invoice.getInvoiceTotal())), 1, row++);
         
         grid.add(createDetailLabel("VAT:"), 0, row);
-        grid.add(createDetailValue(formatCurrency(invoice.getTotalVat())), 1, row++);
+        grid.add(createDetailValue(formatCurrency(invoice.getTotalVAT())), 1, row++);
         
         grid.add(createDetailLabel("Status:"), 0, row);
         Label statusValue = createDetailValue(invoice.isTransmitted() ? "Transmitted" : "Pending");
@@ -640,162 +584,150 @@ public class TransactionsView {
         return label;
     }
     
-    private void syncTransaction(InvoiceDetails invoice) {
-        // In a real application, this would connect to the tax authority API
-        // For demo purposes, we'll just simulate the process
-        
-        Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
-        confirmAlert.setTitle("Sync Transaction");
-        confirmAlert.setHeaderText("Sync Invoice " + invoice.getInvoiceNumber() + " with Tax Authority?");
-        confirmAlert.setContentText("This will attempt to transmit the invoice data to the tax authority system.");
-        
-        Optional<ButtonType> result = confirmAlert.showAndWait();
-        if (result.isPresent() && result.get() == ButtonType.OK) {
-            // Show progress indicator
-            ProgressIndicator progress = new ProgressIndicator();
-            progress.setMinSize(50, 50);
-            
-            VBox progressBox = new VBox(10);
-            progressBox.setAlignment(Pos.CENTER);
-            progressBox.getChildren().addAll(
-                progress,
-                new Label("Syncing with Tax Authority...")
-            );
-            
-            Alert progressAlert = new Alert(Alert.AlertType.NONE);
-            progressAlert.setTitle("Syncing");
-            progressAlert.getDialogPane().setContent(progressBox);
-            progressAlert.getDialogPane().getButtonTypes().clear();
-            
-            // Show the progress dialog
-            Platform.runLater(() -> progressAlert.show());
-            
-            // Simulate network delay
-            new Thread(() -> {
-                try {
-                    Thread.sleep(2000);
-                    
-                    // Update the invoice status
-                    invoice.setTransmitted(true);
-                    invoice.setValidationUrl("https://efiscal.mra.mw/invoice/" + invoice.getInvoiceNumber());
-                    
-                    // Close progress dialog and show success
-                    Platform.runLater(() -> {
-                        progressAlert.close();
-                        showAlert("Sync Complete", 
-                                "Invoice " + invoice.getInvoiceNumber() + " has been successfully transmitted to the tax authority.");
-                        
-                        // Refresh the table to update the UI
-                        transactionsTable.refresh();
-                        updateStatistics();
-                    });
-                } catch (InterruptedException e) {
-                    Platform.runLater(() -> {
-                        progressAlert.close();
-                        showAlert("Sync Failed", "Failed to sync invoice. Please try again later.");
-                    });
+private void syncTransaction(InvoiceDetails invoice) {
+    Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
+    confirmAlert.setTitle("Sync Transaction");
+    confirmAlert.setHeaderText("Sync Invoice " + invoice.getInvoiceNumber() + " with Tax Authority?");
+    confirmAlert.setContentText("This will attempt to transmit the invoice data to the tax authority system.");
+
+    Optional<ButtonType> result = confirmAlert.showAndWait();
+    if (result.isPresent() && result.get() == ButtonType.OK) {
+        // Progress UI
+        ProgressIndicator progress = new ProgressIndicator();
+        progress.setMinSize(50, 50);
+
+        VBox progressBox = new VBox(10);
+        progressBox.setAlignment(Pos.CENTER);
+        progressBox.getChildren().addAll(
+            progress,
+            new Label("Syncing with Tax Authority...")
+        );
+
+        Alert progressAlert = new Alert(Alert.AlertType.NONE);
+        progressAlert.setTitle("Syncing");
+        progressAlert.getDialogPane().setContent(progressBox);
+        progressAlert.getDialogPane().getButtonTypes().setAll(ButtonType.CLOSE);
+        progressAlert.setOnCloseRequest(Event::consume); // Prevent manual close while syncing
+
+        // Show progress
+        Platform.runLater(progressAlert::show);
+
+        // Background thread for sync
+        new Thread(() -> {
+            boolean success = Helper.transmitInvoice(invoice.getInvoiceNumber());
+
+            Platform.runLater(() -> {
+                progressAlert.setOnCloseRequest(null); // Allow close now
+                progressAlert.close();
+
+                if (success) {
+                    showAlert("Sync Complete",
+                            "Invoice " + invoice.getInvoiceNumber() + " has been successfully transmitted.");
+                    transactionsTable.refresh();
+                    updateStatistics();
+                } else {
+                    showAlert("Sync Failed",
+                            "Invoice " + invoice.getInvoiceNumber() + " could not be transmitted.\nPlease check your network and try again.");
                 }
-            }).start();
-        }
+            });
+        }).start();
     }
-    
-    private void syncAllPending() {
-        // Count pending transactions
-        long pendingCount = filteredTransactions.stream()
-                .filter(invoice -> !invoice.isTransmitted())
-                .count();
-        
-        if (pendingCount == 0) {
-            showAlert("No Pending Transactions", "There are no pending transactions to synchronize.");
-            return;
-        }
-        
-        Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
-        confirmAlert.setTitle("Sync All Pending");
-        confirmAlert.setHeaderText("Sync " + pendingCount + " Pending Transactions?");
-        confirmAlert.setContentText("This will attempt to transmit all pending invoices to the tax authority system.");
-        
-        Optional<ButtonType> result = confirmAlert.showAndWait();
-        if (result.isPresent() && result.get() == ButtonType.OK) {
-            // Show progress indicator
-            ProgressBar progress = new ProgressBar(0);
-            progress.setPrefWidth(300);
-            
-            Label statusLabel = new Label("Preparing to sync...");
-            
-            VBox progressBox = new VBox(10);
-            progressBox.setPadding(new Insets(20));
-            progressBox.setAlignment(Pos.CENTER);
-            progressBox.getChildren().addAll(
+}
+
+   private void syncAllPending() {
+    long pendingCount = filteredTransactions.stream()
+            .filter(invoice -> !invoice.isTransmitted())
+            .count();
+
+    if (pendingCount == 0) {
+        showAlert("No Pending Transactions", "There are no pending transactions to synchronize.");
+        return;
+    }
+
+    Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
+    confirmAlert.setTitle("Sync All Pending");
+    confirmAlert.setHeaderText("Sync " + pendingCount + " Pending Transactions?");
+    confirmAlert.setContentText("This will attempt to transmit all pending invoices to the tax authority system.");
+
+    Optional<ButtonType> result = confirmAlert.showAndWait();
+    if (result.isPresent() && result.get() == ButtonType.OK) {
+        ProgressBar progress = new ProgressBar(0);
+        progress.setPrefWidth(300);
+
+        Label statusLabel = new Label("Preparing to sync...");
+
+        VBox progressBox = new VBox(10);
+        progressBox.setPadding(new Insets(20));
+        progressBox.setAlignment(Pos.CENTER);
+        progressBox.getChildren().addAll(
                 new Label("Syncing Transactions with Tax Authority"),
                 progress,
                 statusLabel
-            );
-            
-            Alert progressAlert = new Alert(Alert.AlertType.NONE);
-            progressAlert.setTitle("Syncing");
-            progressAlert.getDialogPane().setContent(progressBox);
-            progressAlert.getDialogPane().getButtonTypes().clear();
-            
-            // Show the progress dialog
-            Platform.runLater(() -> progressAlert.show());
-            
-            // Simulate network process
-            new Thread(() -> {
-                try {
-                    final double[] count = {0};
-                    final double total = pendingCount;
-                    
-                    // Process each pending invoice
-                    for (InvoiceDetails invoice : filteredTransactions) {
-                        if (!invoice.isTransmitted()) {
-                            // Update progress UI
-                            final String currentInvoice = invoice.getInvoiceNumber();
-                            Platform.runLater(() -> {
-                                statusLabel.setText("Processing: " + currentInvoice);
-                                progress.setProgress(count[0] / total);
-                            });
-                            
-                            // Simulate processing time (would be API call in real app)
-                            Thread.sleep(800);
-                            
-                            // Update the invoice status
-                            invoice.setTransmitted(true);
-                            invoice.setValidationUrl("https://efiscal.mra.mw/invoice/" + invoice.getInvoiceNumber());
-                            
-                            count[0]++;
-                        }
+        );
+
+        Alert progressAlert = new Alert(Alert.AlertType.NONE);
+        progressAlert.setTitle("Syncing");
+        progressAlert.getDialogPane().setContent(progressBox);
+        progressAlert.getDialogPane().getButtonTypes().clear();
+        progressAlert.setOnCloseRequest(Event::consume); // Prevent manual close while syncing
+
+        // Show the progress alert
+        Platform.runLater(progressAlert::show);
+
+        // Background thread for syncing
+        new Thread(() -> {
+            AtomicInteger syncedCount = new AtomicInteger(0);
+            int totalToSync = (int) pendingCount;
+
+            Helper.retryPendingTransactions(
+                    (progressPair) -> {
+                        int current = syncedCount.incrementAndGet();
+                        String invoiceNumber = progressPair.getValue();
+
+                        Platform.runLater(() -> {
+                            statusLabel.setText("Processing: " + invoiceNumber);
+                            progress.setProgress((double) current / totalToSync);
+                        });
+                    },
+                    (failedInvoices) -> {
+                        Platform.runLater(() -> {
+                            progress.setProgress(1.0);
+
+                            // Use Timeline to delay closing progress alert after 1 second
+                            Timeline timeline = new Timeline(
+                                    new KeyFrame(Duration.seconds(1), e -> {
+                                        // Ensure we update UI and close alert on the JavaFX thread
+                                        Platform.runLater(() -> {
+
+                                            // Show relevant message depending on success or failure
+                                            if (failedInvoices.isEmpty()) {
+                                                progressAlert.setOnCloseRequest(null); // Allow close now
+                                                progressAlert.close(); // Close the progress alert
+                                                showAlert("Sync Complete",
+                                                        "All pending invoices have been successfully transmitted.");
+                                            } else {
+                                                progressAlert.setOnCloseRequest(null); // Allow close now
+                                                progressAlert.close(); // Close the progress alert
+                                                String failedList = String.join(", ", failedInvoices);
+                                                showAlert("Partial Sync",
+                                                        "Some invoices failed to sync:\n" + failedList);
+                                            }
+
+                                            transactionsTable.refresh();
+                                            updateStatistics();
+                                        });
+                                    })
+                            );
+                            timeline.setCycleCount(1);
+                            timeline.play();
+                        });
                     }
-                    
-                    // Final update and close
-                    Platform.runLater(() -> {
-                        progress.setProgress(1.0);
-                        statusLabel.setText("Completed successfully!");
-                        
-                        // Close after a short delay
-                        try {
-                            Thread.sleep(1000);
-                            progressAlert.close();
-                            
-                            showAlert("Sync Complete", 
-                                    "All pending invoices have been successfully transmitted to the tax authority.");
-                            
-                            // Refresh the table to update the UI
-                            transactionsTable.refresh();
-                            updateStatistics();
-                        } catch (InterruptedException e) {
-                            // Ignore
-                        }
-                    });
-                } catch (InterruptedException e) {
-                    Platform.runLater(() -> {
-                        progressAlert.close();
-                        showAlert("Sync Failed", "Failed to sync invoices. Please try again later.");
-                    });
-                }
-            }).start();
-        }
+            );
+        }).start();
     }
+}
+
+
     
     private void exportTransactions() {
         Alert alert = new Alert(Alert.AlertType.CONFIRMATION);

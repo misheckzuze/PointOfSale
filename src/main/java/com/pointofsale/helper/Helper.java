@@ -9,6 +9,12 @@ import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.util.Enumeration;
 import javax.crypto.Mac;
+import java.util.Collections;
+import javafx.util.Pair;
+import java.util.concurrent.atomic.AtomicInteger;
+import com.pointofsale.model.InvoiceSummary;
+import com.google.gson.Gson;
+import com.pointofsale.model.InvoicePayload;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
@@ -370,6 +376,60 @@ public static String getTerminalSiteId() {
 
         return null;
     }
+   
+   public static List<InvoiceDetails> getAllTransactions() {
+    List<InvoiceDetails> transactions = new ArrayList<>();
+
+    String query = """
+        SELECT i.InvoiceNumber, i.InvoiceDateTime, i.BuyerTin, 
+               COUNT(li.Id) AS ItemCount,
+               i.InvoiceTotal, i.TotalVAT, i.State,
+               i.ValidationUrl
+        FROM Invoices i
+        LEFT JOIN LineItems li ON i.InvoiceNumber = li.InvoiceNumber
+        GROUP BY i.InvoiceNumber
+        ORDER BY i.InvoiceDateTime DESC
+    """;
+
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(query);
+         var rs = stmt.executeQuery()) {
+
+        while (rs.next()) {
+            String invoiceNumber = rs.getString("InvoiceNumber");
+            String invoiceDateTimeStr = rs.getString("InvoiceDateTime");
+            String buyerTin = rs.getString("BuyerTin");
+            int itemCount = rs.getInt("ItemCount");
+            double invoiceTotal = rs.getDouble("InvoiceTotal");
+            double totalVAT = rs.getDouble("TotalVAT");
+            boolean transmitted = rs.getInt("State") != 0;
+            String validationUrl = rs.getString("ValidationUrl");
+
+
+            try {
+                LocalDateTime invoiceDateTime = LocalDateTime.parse(invoiceDateTimeStr);
+                transactions.add(new InvoiceDetails(
+                        invoiceNumber,
+                        invoiceDateTime,
+                        buyerTin != null ? buyerTin : "",
+                        itemCount,
+                        invoiceTotal,
+                        totalVAT,
+                        transmitted,
+                        validationUrl
+                ));
+            } catch (DateTimeParseException e) {
+                System.err.println("❌ Skipping invoice due to invalid date: " + invoiceDateTimeStr);
+            }
+        }
+
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to fetch transactions: " + e.getMessage());
+    }
+
+    return transactions;
+}
+
 
 
     public static boolean updateIsActiveInTerminalConfiguration(boolean isActive) {
@@ -1137,5 +1197,157 @@ public static void checkAndHandleTerminalBlocking(Consumer<Boolean> onCheckCompl
         }
     });
 }
+
+public static boolean transmitInvoice(String invoiceNumber) {
+    try (Connection connection = Database.createConnection()) {
+        String query = "SELECT * FROM Invoices WHERE InvoiceNumber = ?";
+        PreparedStatement stmt = connection.prepareStatement(query);
+        stmt.setString(1, invoiceNumber);
+
+        try (var rs = stmt.executeQuery()) {
+            if (rs.next()) {
+                InvoiceHeader header = Helper.getInvoiceHeader(invoiceNumber);
+                List<LineItemDto> lineItems = Helper.getLineItems(invoiceNumber);
+
+                InvoiceSummary invoiceSummary = new InvoiceSummary();
+                invoiceSummary.setTaxBreakDown(Helper.generateTaxBreakdown(lineItems));
+                invoiceSummary.setTotalVAT(rs.getDouble("TotalVAT"));
+                invoiceSummary.setInvoiceTotal(rs.getDouble("InvoiceTotal"));
+                invoiceSummary.setOfflineSignature("");
+
+                InvoicePayload payload = new InvoicePayload();
+                payload.setInvoiceHeader(header);
+                payload.setInvoiceLineItems(lineItems);
+                payload.setInvoiceSummary(invoiceSummary);
+
+                String jsonPayload = new Gson().toJson(payload);
+                String token = Helper.getToken();
+
+                // Use a blocking mechanism to get result
+                final boolean[] resultHolder = {false};
+                final boolean[] completed = {false};
+
+                ApiClient apiClient = new ApiClient();
+                apiClient.submitTransactions(jsonPayload, token, (success, returnedValidationUrl) -> {
+                    resultHolder[0] = success;
+                    completed[0] = true;
+                    if (success) {
+                        Helper.updateValidationUrl(invoiceNumber, returnedValidationUrl);
+                        Helper.markAsTransmitted(invoiceNumber);
+                    }
+                });
+
+                // Wait for callback completion (simple way)
+                int waitMs = 0;
+                while (!completed[0] && waitMs < 5000) {
+                    Thread.sleep(100); // max wait: 5s
+                    waitMs += 100;
+                }
+
+                return resultHolder[0];
+            }
+        }
+    } catch (Exception e) {
+        System.err.println("❌ Error: " + e.getMessage());
+    }
+    return false;
+}
+
+public static void retryPendingTransactions(
+        Consumer<Pair<Integer, String>> progressCallback,
+        Consumer<List<String>> onComplete // receives list of failed invoice numbers
+) {
+    String query = "SELECT * FROM Invoices WHERE State = 0";
+
+    List<String> failedInvoices = Collections.synchronizedList(new ArrayList<>());
+    List<String> pendingInvoices = new ArrayList<>(); // ← Move here so it's visible in catch block
+
+    try (Connection connection = Database.createConnection();
+         PreparedStatement stmt = connection.prepareStatement(query);
+         var rs = stmt.executeQuery()) {
+
+        Map<String, Double> vatMap = new HashMap<>();
+        Map<String, Double> totalMap = new HashMap<>();
+
+        while (rs.next()) {
+            String invoiceNumber = rs.getString("InvoiceNumber");
+            pendingInvoices.add(invoiceNumber);
+            vatMap.put(invoiceNumber, rs.getDouble("TotalVAT"));
+            totalMap.put(invoiceNumber, rs.getDouble("InvoiceTotal"));
+        }
+
+        int total = pendingInvoices.size();
+        AtomicInteger counter = new AtomicInteger(0);
+
+        for (String invoiceNumber : pendingInvoices) {
+            new Thread(() -> {
+                try {
+                    InvoiceHeader header = Helper.getInvoiceHeader(invoiceNumber);
+                    List<LineItemDto> lineItems = Helper.getLineItems(invoiceNumber);
+
+                    InvoiceSummary invoiceSummary = new InvoiceSummary();
+                    invoiceSummary.setTaxBreakDown(Helper.generateTaxBreakdown(lineItems));
+                    invoiceSummary.setTotalVAT(vatMap.getOrDefault(invoiceNumber, 0.0));
+                    invoiceSummary.setInvoiceTotal(totalMap.getOrDefault(invoiceNumber, 0.0));
+                    invoiceSummary.setOfflineSignature("");
+
+                    InvoicePayload payload = new InvoicePayload();
+                    payload.setInvoiceHeader(header);
+                    payload.setInvoiceLineItems(lineItems);
+                    payload.setInvoiceSummary(invoiceSummary);
+
+                    Gson gson = new Gson();
+                    String jsonPayload = gson.toJson(payload);
+                    String token = Helper.getToken();
+
+                    ApiClient apiClient = new ApiClient();
+                    apiClient.submitTransactions(jsonPayload, token, (success, returnedValidationUrl) -> {
+                        if (success) {
+                            Helper.updateValidationUrl(invoiceNumber, returnedValidationUrl);
+                            Helper.markAsTransmitted(invoiceNumber);
+                            System.out.println("✅ Synced: " + invoiceNumber);
+                        } else {
+                            failedInvoices.add(invoiceNumber);
+                            System.err.println("❌ Failed: " + invoiceNumber);
+                        }
+
+                        int current = counter.incrementAndGet();
+
+                        if (progressCallback != null) {
+                            progressCallback.accept(new Pair<>(current, invoiceNumber));
+                        }
+
+                        if (current == total && onComplete != null) {
+                            onComplete.accept(failedInvoices);
+                        }
+                    });
+                } catch (Exception e) {
+                    failedInvoices.add(invoiceNumber);
+                    System.err.println("❌ Exception for: " + invoiceNumber + " → " + e.getMessage());
+
+                    int current = counter.incrementAndGet();
+
+                    if (progressCallback != null) {
+                        progressCallback.accept(new Pair<>(current, invoiceNumber));
+                    }
+
+                    if (current == total && onComplete != null) {
+                        onComplete.accept(failedInvoices);
+                    }
+                }
+            }).start();
+
+            Thread.sleep(400); // Optional throttle
+        }
+
+    } catch (SQLException | InterruptedException e) {
+        System.err.println("❌ Database error during retry: " + e.getMessage());
+        if (onComplete != null) {
+            onComplete.accept(pendingInvoices); // Assume all failed if DB error
+        }
+    }
+}
+
+
 
 }

@@ -15,7 +15,6 @@ import java.time.Duration;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
-import javafx.scene.effect.DropShadow;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.*;
 import java.time.LocalDate;
@@ -29,8 +28,6 @@ import com.pointofsale.model.InvoiceSummary;
 import com.pointofsale.model.InvoiceDetails;
 import javafx.scene.text.Text;
 import javafx.stage.Stage;
-import javafx.util.Duration;
-import javafx.animation.FadeTransition;
 import javafx.application.Platform;
 import com.pointofsale.model.Product;
 import com.pointofsale.model.LineItemDto;
@@ -133,6 +130,20 @@ private void loadProductsManagement() {
     setContent(productsContent);
     stage.setTitle("POS System - Products Management");
 }
+
+private void loadReports() {
+    // Clear checkout panel when switching to non-sales views
+    root.setRight(null);
+    
+    // Create point of sale content
+    ReportsView reports = new  ReportsView();
+    Node posReports = reports.getView();
+    
+    // Set the content
+    setContent(posReports);
+    stage.setTitle("POS System - Reports");
+}
+
 private void loadTransactions() {
     // Clear checkout panel when switching to non-sales views
     root.setRight(null);
@@ -250,7 +261,10 @@ private void loadTransactions() {
     sidebar.getChildren().add(transactionsMenuItem);
       
     sidebar.getChildren().add(createSidebarMenuItem("Customers", false));
-    sidebar.getChildren().add(createSidebarMenuItem("Reports", false));
+     //Reports menu item
+    HBox reportsMenuItem = createSidebarMenuItem("Reports", false);
+    reportsMenuItem.setOnMouseClicked(event ->loadReports());
+    sidebar.getChildren().add(reportsMenuItem);
     sidebar.getChildren().add(createSidebarMenuItem("Settings", false));
     
     // Add spacer to push help to bottom
