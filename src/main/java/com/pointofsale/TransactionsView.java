@@ -626,8 +626,13 @@ private void syncTransaction(InvoiceDetails invoice) {
                 if (success) {
                     showAlert("Sync Complete",
                             "Invoice " + invoice.getInvoiceNumber() + " has been successfully transmitted.");
-                    allTransactions.clear();
-                    allTransactions.addAll(Helper.getAllTransactions());
+                     // Reload data (this is missing!)
+                     allTransactions.clear();
+                     allTransactions.addAll(Helper.getAllTransactions());
+    
+                       // Apply filters (this is missing!)
+                     applyFilters();
+    
                     transactionsTable.refresh();
                     updateStatistics();
                 } else {
@@ -728,6 +733,12 @@ private void syncTransaction(InvoiceDetails invoice) {
                                                     );
                                                     partial.show();
                                                 }
+                                                // Reload all data
+                                                allTransactions.clear();
+                                                allTransactions.addAll(Helper.getAllTransactions());
+                                            
+                                                // Reapply filters to update the filtered list
+                                                applyFilters();
                                                 transactionsTable.refresh();
                                                 updateStatistics();
                                             });

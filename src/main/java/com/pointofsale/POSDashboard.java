@@ -1126,7 +1126,7 @@ private void processPayment() {
    if (saveSuccess) {
       System.out.println("✅ Transaction saved locally.");
    } else {
-    System.err.println("⚠️ Failed to save transaction locally.");
+      System.err.println("⚠️ Failed to save transaction locally.");
    }
 
 
@@ -1139,49 +1139,72 @@ private void processPayment() {
        ApiClient apiClient = new ApiClient();
        
        apiClient.submitTransactions(jsonPayload, bearerToken, (success, returnedValidationUrl) -> {
-       Platform.runLater(() -> {
-       if (success) {
+         Platform.runLater(() -> {
+           if (success) {
+             // Update the validation URL in the database
+             Helper.updateValidationUrl(invoiceHeader.getInvoiceNumber(), returnedValidationUrl);
+             
+             // Mark as transmitted
+             Helper.markAsTransmitted(invoiceHeader.getInvoiceNumber());
+             
+               // Print the premium receipt with validation URL
+try {
+    String buyersName = "";
+    // Make sure we have the buyer's name
+    String buyerName = (!buyersName.trim().isEmpty()) 
+                      ? buyersName 
+                      : "Walk-in Customer";
+    
+    EscPosReceiptPrinter.printReceipt(
+        invoiceHeader, 
+        buyerName,  
+        lineItems, 
+        returnedValidationUrl, 
+        amountPaid, 
+        amountPaid - totalAmount,
+        taxBreakdowns
+    );
+    System.out.println("✅ Premium receipt printed successfully.");
+} catch (Exception e) {
+    System.err.println("⚠️ Failed to print receipt: " + e.getMessage());
+    e.printStackTrace();
+}           Alert successAlert = new Alert(Alert.AlertType.INFORMATION);
+             successAlert.setTitle("Transaction Status");
+             successAlert.setHeaderText("🎉 Transaction Processed!");
+             successAlert.setContentText("The transaction was processed successfully.");
+             successAlert.showAndWait();
+           } else {
+             Alert failureAlert = new Alert(Alert.AlertType.ERROR);
+             failureAlert.setTitle("Transaction Status");
+             failureAlert.setHeaderText("🚨 Processing Failed!");
+             failureAlert.setContentText("Transaction failed. Saved locally for later sync.");
+             failureAlert.showAndWait();
+             
+             // Optional: Print offline receipt in case of failure
+             try {
+                 EscPosReceiptPrinter.printReceipt(
+                     invoiceHeader, 
+                     "OFFLINE TRANSACTION", 
+                     lineItems, 
+                     "", 
+                     amountPaid, 
+                     amountPaid - totalAmount,
+                     taxBreakdowns
+                 );
+                 System.out.println("✅ Offline receipt printed.");
+             } catch (Exception e) {
+                 e.printStackTrace();
+                 System.err.println("⚠️ Failed to print offline receipt.");
+             }
+           }
+         });
+       });
        
-        Helper.updateValidationUrl(invoiceHeader.getInvoiceNumber(), returnedValidationUrl);
-        Alert successAlert = new Alert(Alert.AlertType.INFORMATION);
-        successAlert.setTitle("Transaction Status");
-        successAlert.setHeaderText("🎉 Transaction Processed!");
-        successAlert.setContentText("The transaction was processed successfully.");
-        successAlert.showAndWait();
-
-        Helper.markAsTransmitted(invoiceHeader.getInvoiceNumber());
-        } else {
-        Alert failureAlert = new Alert(Alert.AlertType.ERROR);
-        failureAlert.setTitle("Transaction Status");
-        failureAlert.setHeaderText("🚨 Processing Failed!");
-        failureAlert.setContentText("Transaction failed. Saved locally for later sync.");
-        failureAlert.showAndWait();
-        }
-
-        });
-      });
-       
-        // Print the receipt after successful online transaction
-                try {
-                    EscPosReceiptPrinter.printReceipt(
-                        invoiceHeader, 
-                        "", 
-                        lineItems, 
-                        validationUrl, 
-                        amountPaid, 
-                        amountPaid - totalAmount,
-                        taxBreakdowns
-                    );
-                    System.out.println("✅ Receipt printed (online).");
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    System.err.println("⚠️ Failed to print receipt (online).");
-                }
-        // Reset cart and generate new receipt number
-        cartItems.clear();
-        cashAmountField.clear();
-        updateTotals();
-        receiptNumberLabel.setText(generateNewReceiptNumber());
+       // Reset cart and generate new receipt number
+       cartItems.clear();
+       cashAmountField.clear();
+       updateTotals();
+       receiptNumberLabel.setText(generateNewReceiptNumber());
     }
     
     /**

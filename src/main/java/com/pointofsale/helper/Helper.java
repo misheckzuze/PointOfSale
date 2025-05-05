@@ -11,6 +11,8 @@ import java.util.Enumeration;
 import javax.crypto.Mac;
 import java.util.Collections;
 import javafx.util.Pair;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 import java.util.concurrent.atomic.AtomicInteger;
 import com.pointofsale.model.InvoiceSummary;
 import com.google.gson.Gson;
@@ -20,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.temporal.ChronoField;
 import java.util.Base64;
+import java.time.temporal.ChronoUnit;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import javafx.scene.control.Alert;
@@ -27,9 +30,14 @@ import java.sql.SQLException;
 import javafx.scene.control.ButtonType;
 import javax.json.JsonObject;
 import com.pointofsale.model.Product;
+import com.pointofsale.model.ProductSale;
 import com.pointofsale.model.TaxRates;
+import com.pointofsale.model.SaleSummary;
 import com.pointofsale.model.InvoiceDetails;
 import com.pointofsale.model.Session;
+import com.pointofsale.model.TaxTrend;
+import com.pointofsale.model.TaxSummary;
+import com.pointofsale.model.CategoryRevenue;
 import com.pointofsale.model.InvoiceHeader;
 import com.pointofsale.model.TaxBreakDown;
 import com.pointofsale.model.LineItemDto;
@@ -1347,7 +1355,457 @@ public static void retryPendingTransactions(
         }
     }
 }
+    /**
+     * Get the store name
+     */
+    public static String getStoreName() {
+        // Replace with your actual implementation or configuration
+        return "ACME Point of Sale";
+    }
+    
+    /**
+     * Get the store address
+     */
+    public static String getStoreAddress() {
+        // Replace with your actual implementation or configuration
+        return "123 Main Street, City";
+    }
+    
+    /**
+     * Get the store phone number
+     */
+    public static String getStorePhone() {
+        // Replace with your actual implementation or configuration
+        return "+265 1234 5678";
+    }
+    
+    public static List<SaleSummary> getDailySalesSummary(int daysBack) {
+    String query = "SELECT " +
+            "DATE(InvoiceDateTime) as SaleDate, " +
+            "COUNT(*) as Transactions, " +
+            "SUM(InvoiceTotal) as TotalRevenue, " +
+            "SUM(TotalVAT) as TotalTax " +
+            "FROM Invoices " +
+            "WHERE DATE(InvoiceDateTime) >= DATE('now', ?) " +
+            "GROUP BY DATE(InvoiceDateTime) " +
+            "ORDER BY DATE(InvoiceDateTime) DESC";
 
+    List<SaleSummary> summaries = new ArrayList<>();
+    try (var conn = Database.createConnection();
+         var stmt = conn.prepareStatement(query)) {
+
+        stmt.setString(1, "-" + daysBack + " days");
+
+        try (var rs = stmt.executeQuery()) {
+            while (rs.next()) {
+                String date = rs.getString("SaleDate");
+                int transactions = rs.getInt("Transactions");
+                double revenue = rs.getDouble("TotalRevenue");
+                double tax = rs.getDouble("TotalTax");
+
+                summaries.add(new SaleSummary(date, transactions, revenue, tax));
+            }
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+
+    return summaries;
+}
+    
+  public static double getTodaySalesTotal() {
+        String query = "SELECT SUM(InvoiceTotal) FROM Invoices WHERE DATE(InvoiceDateTime) = DATE('now')";
+        return fetchDouble(query);
+    }
+
+    public static double getYesterdaySalesTotal() {
+        String query = "SELECT SUM(InvoiceTotal) FROM Invoices WHERE DATE(InvoiceDateTime) = DATE('now', '-1 day')";
+        return fetchDouble(query);
+    }
+
+    public static double getMonthSalesTotal() {
+        String query = "SELECT SUM(InvoiceTotal) FROM Invoices WHERE strftime('%Y-%m', InvoiceDateTime) = strftime('%Y-%m', 'now')";
+        return fetchDouble(query);
+    }
+
+    public static double getLastMonthSalesTotal() {
+        String query = "SELECT SUM(InvoiceTotal) FROM Invoices WHERE strftime('%Y-%m', InvoiceDateTime) = strftime('%Y-%m', 'now', '-1 month')";
+        return fetchDouble(query);
+    }
+
+    public static int getTodayTransactionCount() {
+        String query = "SELECT COUNT(*) FROM Invoices WHERE DATE(InvoiceDateTime) = DATE('now')";
+        return (int) fetchDouble(query);
+    }
+
+    public static double getTodayTaxTotal() {
+        String query = "SELECT SUM(TotalVAT) FROM Invoices WHERE DATE(InvoiceDateTime) = DATE('now')";
+        return fetchDouble(query);
+    }
+
+    private static double fetchDouble(String query) {
+        try (Connection conn = Database.createConnection();
+             PreparedStatement stmt = conn.prepareStatement(query);
+             var rs = stmt.executeQuery()) {
+
+            return rs.next() ? rs.getDouble(1) : 0.0;
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return 0.0;
+        }
+    }
+
+    public static String getPercentageChange(double current, double previous) {
+        if (previous == 0) {
+            return current == 0 ? "0%" : "+100%";
+        }
+        double change = ((current - previous) / previous) * 100;
+        return String.format("%+.1f%%", change);
+    }
+    
+    public static List<ProductSale> getTop10ProductSales() {
+    String query = "SELECT li.ProductCode, p.ProductName, " +
+            "SUM(li.Quantity) AS TotalQuantity, SUM(li.TotalPrice) AS TotalRevenue " +
+            "FROM LineItems li " +
+            "JOIN Products p ON li.ProductCode = p.ProductCode " +
+            "GROUP BY li.ProductCode " +
+            "ORDER BY TotalRevenue DESC " +
+            "LIMIT 10";
+
+    List<ProductSale> sales = new ArrayList<>();
+    try (var conn = Database.createConnection();
+         var stmt = conn.prepareStatement(query);
+         var rs = stmt.executeQuery()) {
+
+        while (rs.next()) {
+            String name = rs.getString("ProductName");
+            int quantity = rs.getInt("TotalQuantity");
+            double revenue = rs.getDouble("TotalRevenue");
+            double profit = revenue * 0.25; // Optional: estimated profit margin
+            sales.add(new ProductSale(name, quantity, revenue, profit));
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+        return new ArrayList<>();  // Return an empty list in case of error
+    }
+
+    return sales;
+}
+ 
+public static List<CategoryRevenue> getSalesByCategory() {
+    String query = "SELECT " +
+            "CASE " +
+            "WHEN p.Description LIKE '%food%' THEN 'Food & Beverages' " +
+            "WHEN p.Description LIKE '%soap%' OR p.Description LIKE '%clean%' THEN 'Household Items' " +
+            "WHEN p.Description LIKE '%shampoo%' OR p.Description LIKE '%cream%' THEN 'Personal Care' " +
+            "ELSE 'Others' END AS Category, " +
+            "SUM(li.TotalPrice) AS Revenue " +
+            "FROM LineItems li " +
+            "JOIN Products p ON li.ProductCode = p.ProductCode " +
+            "GROUP BY Category";
+
+    List<CategoryRevenue> categoryRevenueList = new ArrayList<>();
+    try (var conn = Database.createConnection();
+         var stmt = conn.prepareStatement(query);
+         var rs = stmt.executeQuery()) {
+
+        while (rs.next()) {
+            String category = rs.getString("Category");
+            double revenue = rs.getDouble("Revenue");
+            // Add to CategoryRevenue list
+            categoryRevenueList.add(new CategoryRevenue(category, revenue));
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+
+    return categoryRevenueList;
+}
+
+public static List<TaxTrend> fetchTaxTrends(String startDate, String endDate) {
+    String query = "SELECT strftime('%Y-%m-%d', InvoiceDateTime) AS Date, SUM(TotalVAT) AS VATAmount " +
+                   "FROM Invoices " +
+                   "WHERE InvoiceDateTime BETWEEN ? AND ? " +
+                   "GROUP BY strftime('%Y-%m-%d', InvoiceDateTime) " +
+                   "ORDER BY Date DESC";
+
+    List<TaxTrend> trends = new ArrayList<>();
+    
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(query)) {
+        
+        stmt.setString(1, startDate);
+        stmt.setString(2, endDate);
+        
+        try (var rs = stmt.executeQuery()) {
+            while (rs.next()) {
+                String date = rs.getString("Date");
+                double vatAmount = rs.getDouble("VATAmount");
+                trends.add(new TaxTrend(date, vatAmount));
+            }
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+
+    return trends;
+}
+
+public static double fetchTotalVAT(String startDate, String endDate) {
+        String query = "SELECT SUM(TotalVAT) AS totalVAT FROM Invoices WHERE InvoiceDateTime BETWEEN ? AND ?";
+        return fetchDouble(query, startDate, endDate);
+    }
+
+    public static double fetchStandardRateVAT(String startDate, String endDate) {
+        String query = "SELECT SUM(TotalVAT) AS totalVAT " +
+                       "FROM Invoices i " +
+                       "JOIN LineItems li ON i.InvoiceNumber = li.InvoiceNumber " +
+                       "JOIN TaxRates tr ON li.TaxRateID = tr.Id " +
+                       "WHERE tr.Rate = 16.5 AND i.InvoiceDateTime BETWEEN ? AND ?";
+        return fetchDouble(query, startDate, endDate);
+    }
+
+    public static double fetchZeroRatedVAT(String startDate, String endDate) {
+        String query = "SELECT SUM(TotalVAT) AS totalVAT " +
+                       "FROM Invoices i " +
+                       "JOIN LineItems li ON i.InvoiceNumber = li.InvoiceNumber " +
+                       "JOIN TaxRates tr ON li.TaxRateID = tr.Id " +
+                       "WHERE tr.Rate = 0 AND i.InvoiceDateTime BETWEEN ? AND ?";
+        return fetchDouble(query, startDate, endDate);
+    }
+
+    public static double fetchExemptSales(String startDate, String endDate) {
+        String query = "SELECT SUM(TotalVAT) AS totalVAT " +
+                       "FROM Invoices i " +
+                       "JOIN LineItems li ON i.InvoiceNumber = li.InvoiceNumber " +
+                       "JOIN TaxRates tr ON li.TaxRateID = tr.Id " +
+                       "WHERE tr.Name = 'Exempt' AND i.InvoiceDateTime BETWEEN ? AND ?";
+        return fetchDouble(query, startDate, endDate);
+    }
+
+    public static double fetchDouble(String query, Object... params) {
+        try (Connection conn = Database.createConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+
+            // Set parameters dynamically
+            for (int i = 0; i < params.length; i++) {
+                stmt.setObject(i + 1, params[i]);
+            }
+
+            // Execute the query and fetch the result
+            try (var rs = stmt.executeQuery()) {
+                return rs.next() ? rs.getDouble(1) : 0.0;
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return 0.0;
+        }
+    }
+    
+    public static ObservableList<TaxSummary> fetchTaxBreakdown() {
+    String query = "SELECT tr.Name AS TaxRate, SUM(li.TotalPrice) AS TotalSales, SUM(li.VATAmount) AS TaxAmount " +
+                   "FROM LineItems li " +
+                   "JOIN TaxRates tr ON li.TaxRateID = tr.Id " +
+                   "GROUP BY tr.Name";
+    
+    ObservableList<TaxSummary> taxData = FXCollections.observableArrayList();
+    
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(query);
+         var rs = stmt.executeQuery()) {
+        
+        while (rs.next()) {
+            String taxRate = rs.getString("TaxRate");
+            double totalSales = rs.getDouble("TotalSales");
+            double taxAmount = rs.getDouble("TaxAmount");
+            taxData.add(new TaxSummary(taxRate, totalSales, taxAmount));
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+
+    return taxData;
+}
+    
+public static double getSalesTotalByDateRange(String startDate, String endDate) {
+    String query = "SELECT SUM(InvoiceTotal) FROM Invoices WHERE DATE(InvoiceDateTime) BETWEEN ? AND ?";
+    return fetchDouble(query, startDate, endDate);
+}
+
+public static int getTransactionCountByDateRange(String startDate, String endDate) {
+    String query = "SELECT COUNT(*) FROM Invoices WHERE DATE(InvoiceDateTime) BETWEEN ? AND ?";
+    return (int) fetchDouble(query, startDate, endDate);
+}
+
+public static double getTaxTotalByDateRange(String startDate, String endDate) {
+    String query = "SELECT SUM(TotalVAT) FROM Invoices WHERE DATE(InvoiceDateTime) BETWEEN ? AND ?";
+    return fetchDouble(query, startDate, endDate);
+}
+private static double fetchDouble(String query, String startDate, String endDate) {
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(query)) {
+
+        stmt.setString(1, startDate);
+        stmt.setString(2, endDate);
+
+        try (var rs = stmt.executeQuery()) {
+            return rs.next() ? rs.getDouble(1) : 0.0;
+        }
+
+    } catch (SQLException e) {
+        e.printStackTrace();
+        return 0.0;
+    }
+}   
+
+public static double getSalesTotalForPreviousPeriod(String startDate, String endDate) {
+    // Parse the input strings into LocalDate
+    LocalDate start = LocalDate.parse(startDate);
+    LocalDate end = LocalDate.parse(endDate);
+
+    // Calculate the duration of the current period
+    long days = ChronoUnit.DAYS.between(start, end) + 1;
+
+    // Calculate previous period range
+    LocalDate previousStart = start.minusDays(days);
+    LocalDate previousEnd = end.minusDays(days);
+
+    return getSalesTotalByDateRange(previousStart.toString(), previousEnd.toString());
+}
+
+public static List<ProductSale> getTop10ProductSalesByDateRange(String fromDate, String toDate) {
+    String query = "SELECT li.ProductCode, p.ProductName, " +
+            "SUM(li.Quantity) AS TotalQuantity, SUM(li.TotalPrice) AS TotalRevenue " +
+            "FROM LineItems li " +
+            "JOIN Invoices i ON li.InvoiceNumber = i.InvoiceNumber " +
+            "JOIN Products p ON li.ProductCode = p.ProductCode " +
+            "WHERE DATE(i.InvoiceDateTime) BETWEEN ? AND ? " +
+            "GROUP BY li.ProductCode " +
+            "ORDER BY TotalRevenue DESC " +
+            "LIMIT 10";
+
+    List<ProductSale> sales = new ArrayList<>();
+    try (var conn = Database.createConnection();
+         var stmt = conn.prepareStatement(query)) {
+
+        stmt.setString(1, fromDate);
+        stmt.setString(2, toDate);
+        var rs = stmt.executeQuery();
+
+        while (rs.next()) {
+            String name = rs.getString("ProductName");
+            int quantity = rs.getInt("TotalQuantity");
+            double revenue = rs.getDouble("TotalRevenue");
+            double profit = revenue * 0.25; // estimated
+            sales.add(new ProductSale(name, quantity, revenue, profit));
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+
+    return sales;
+}
+
+public static List<CategoryRevenue> getSalesByCategoryByDateRange(String fromDate, String toDate) {
+    String query = "SELECT " +
+            "CASE " +
+            "WHEN p.Description LIKE '%food%' THEN 'Food & Beverages' " +
+            "WHEN p.Description LIKE '%soap%' OR p.Description LIKE '%clean%' THEN 'Household Items' " +
+            "WHEN p.Description LIKE '%shampoo%' OR p.Description LIKE '%cream%' THEN 'Personal Care' " +
+            "ELSE 'Others' END AS Category, " +
+            "SUM(li.TotalPrice) AS Revenue " +
+            "FROM LineItems li " +
+            "JOIN Invoices i ON li.InvoiceNumber = i.InvoiceNumber " +
+            "JOIN Products p ON li.ProductCode = p.ProductCode " +
+            "WHERE DATE(i.InvoiceDateTime) BETWEEN ? AND ? " +
+            "GROUP BY Category";
+
+    List<CategoryRevenue> categoryRevenueList = new ArrayList<>();
+    try (var conn = Database.createConnection();
+         var stmt = conn.prepareStatement(query)) {
+
+        stmt.setString(1, fromDate);
+        stmt.setString(2, toDate);
+        var rs = stmt.executeQuery();
+
+        while (rs.next()) {
+            String category = rs.getString("Category");
+            double revenue = rs.getDouble("Revenue");
+            categoryRevenueList.add(new CategoryRevenue(category, revenue));
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+
+    return categoryRevenueList;
+}
+public static ObservableList<TaxSummary> fetchTaxBreakdownByDateRange(String fromDate, String toDate) {
+    String query = "SELECT tr.Name AS TaxRate, " +
+                   "SUM(li.TotalPrice) AS TotalSales, SUM(li.VATAmount) AS TaxAmount " +
+                   "FROM LineItems li " +
+                   "JOIN Invoices i ON li.InvoiceNumber = i.InvoiceNumber " +
+                   "JOIN TaxRates tr ON li.TaxRateID = tr.Id " +
+                   "WHERE i.InvoiceDateTime BETWEEN ? AND ? " +
+                   "GROUP BY tr.Name";
+
+    ObservableList<TaxSummary> taxData = FXCollections.observableArrayList();
+
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(query)) {
+
+        stmt.setString(1, fromDate);
+        stmt.setString(2, toDate);
+
+        try (var rs = stmt.executeQuery()) {
+            while (rs.next()) {
+                String taxRate = rs.getString("TaxRate");
+                double totalSales = rs.getDouble("TotalSales");
+                double taxAmount = rs.getDouble("TaxAmount");
+                taxData.add(new TaxSummary(taxRate, totalSales, taxAmount));
+            }
+        }
+
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+
+    return taxData;
+}
+public static List<SaleSummary> getSalesSummaryByDateRange(String fromDate, String toDate) {
+    String query = "SELECT " +
+            "DATE(InvoiceDateTime) as SaleDate, " +
+            "COUNT(*) as Transactions, " +
+            "SUM(InvoiceTotal) as TotalRevenue, " +
+            "SUM(TotalVAT) as TotalTax " +
+            "FROM Invoices " +
+            "WHERE DATE(InvoiceDateTime) BETWEEN ? AND ? " +
+            "GROUP BY DATE(InvoiceDateTime) " +
+            "ORDER BY DATE(InvoiceDateTime) ASC";
+
+    List<SaleSummary> summaries = new ArrayList<>();
+    try (var conn = Database.createConnection();
+         var stmt = conn.prepareStatement(query)) {
+
+        stmt.setString(1, fromDate);
+        stmt.setString(2, toDate);
+
+        try (var rs = stmt.executeQuery()) {
+            while (rs.next()) {
+                String date = rs.getString("SaleDate");
+                int transactions = rs.getInt("Transactions");
+                double revenue = rs.getDouble("TotalRevenue");
+                double tax = rs.getDouble("TotalTax");
+
+                summaries.add(new SaleSummary(date, transactions, revenue, tax));
+            }
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+
+    return summaries;
+}
 
 
 }
