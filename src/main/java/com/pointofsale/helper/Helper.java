@@ -1807,5 +1807,26 @@ public static List<SaleSummary> getSalesSummaryByDateRange(String fromDate, Stri
     return summaries;
 }
 
+public static List<String> getAllProductBarcodes() {
+    List<String> barcodes = new ArrayList<>();
+
+    String query = "SELECT ProductCode FROM Products"; // or SELECT Barcode FROM Products if Barcode column exists
+
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(query);
+         var rs = stmt.executeQuery()) {
+
+        while (rs.next()) {
+            barcodes.add(rs.getString("ProductCode")); // or "Barcode"
+        }
+
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+
+    return barcodes;
+}
+
+
 
 }

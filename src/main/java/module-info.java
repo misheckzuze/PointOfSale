@@ -6,6 +6,8 @@ module com.pointofsale {
     requires java.json;
     requires java.management;
     requires java.sql;
+    requires javafx.swing; 
+    requires javafx.media;
     requires com.google.zxing;
     requires com.google.zxing.javase; 
     requires com.google.gson;

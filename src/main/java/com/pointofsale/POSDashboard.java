@@ -2,32 +2,63 @@ package com.pointofsale;
 
 import com.pointofsale.helper.ApiClient;
 import javafx.application.Application;
-import javafx.beans.property.SimpleDoubleProperty;
-import javafx.beans.property.SimpleIntegerProperty;
-import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import java.time.Duration;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.*;
 import java.time.LocalDate;
+import javafx.event.EventHandler;
+import javafx.animation.KeyValue;
+import javafx.scene.image.Image;
+import javafx.scene.shape.Polygon;
+import javafx.embed.swing.SwingFXUtils;
+import javafx.scene.image.WritableImage;
+import java.awt.image.BufferedImage;
+import com.google.zxing.BinaryBitmap;
+import com.google.zxing.Result;
+import com.google.zxing.common.HybridBinarizer;
+import com.google.zxing.client.j2se.BufferedImageLuminanceSource;
+import com.github.sarxos.webcam.Webcam;
+import javafx.scene.image.ImageView;
+import com.google.zxing.DecodeHintType;
+import java.util.HashMap;
+import java.util.Map;
+import com.google.zxing.ResultPoint;
+import com.google.zxing.NotFoundException;
+import javax.sound.sampled.Clip;
+import javax.sound.sampled.AudioSystem;
+import com.github.sarxos.webcam.WebcamResolution;
+import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicBoolean;
+import com.google.zxing.BarcodeFormat;
+import javafx.stage.Modality;
+import java.awt.Dimension;
+import javafx.scene.Group;
+import javafx.event.ActionEvent;
+import javafx.scene.effect.DropShadow;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Font;
+import java.util.concurrent.atomic.AtomicReference;
 import javafx.scene.text.FontWeight;
 import com.pointofsale.model.Session;
 import com.pointofsale.model.InvoiceSummary;
 import com.pointofsale.model.InvoiceDetails;
 import javafx.scene.text.Text;
 import javafx.stage.Stage;
+import javax.sound.sampled.AudioInputStream;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
+import javafx.util.Duration;
+import javafx.animation.PauseTransition;
+import javafx.animation.TranslateTransition;
 import javafx.application.Platform;
 import com.pointofsale.model.Product;
 import com.pointofsale.model.LineItemDto;
@@ -35,16 +66,19 @@ import com.pointofsale.model.InvoiceHeader;
 import com.pointofsale.model.InvoicePayload;
 import com.pointofsale.model.TaxBreakDown;
 import java.text.NumberFormat;
+import javafx.scene.shape.Line;
 import java.time.LocalDateTime;
 import com.pointofsale.helper.Helper;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Random;
 import javafx.scene.Node;
 import java.util.ArrayList;
+import com.google.zxing.MultiFormatReader;
 import java.util.Locale;
 
 public class POSDashboard extends Application {
-
+   
     // Main application components
     private Stage stage;
     private BorderPane root;
@@ -54,6 +88,7 @@ public class POSDashboard extends Application {
     private Label subtotalValueLabel;
     private TextField barcodeField;
     private Label dateTimeLabel;
+    private HBox activeMenuItem;
     private Label cashierNameLabel;
     private Label receiptNumberLabel;
     private Label changeValueLabel;
@@ -78,6 +113,8 @@ public class POSDashboard extends Application {
     public void start(Stage primaryStage) {
         this.stage = primaryStage;
         createDashboard();
+        barcodeField.setOnAction(e -> addProductToCart());
+        Platform.runLater(() -> barcodeField.requestFocus());
         startTimeUpdater();
         stage.show();
     }
@@ -236,134 +273,167 @@ private void loadTransactions() {
         return topBar;
     }
     
-    /**
-     * Creates the sidebar with main navigation options
-     */
-    private VBox createSidebar() {
+   /**
+ * Creates the sidebar with main navigation options
+ */
+private VBox createSidebar() {
     VBox sidebar = new VBox();
     sidebar.setPrefWidth(220);
     sidebar.setStyle("-fx-background-color: linear-gradient(from 0% 0% to 100% 100%, #1a237e, #3949ab); -fx-padding: 0;");
-    
+
     // Create the menu items
     sidebar.getChildren().add(createSidebarHeader());
-   // Sales dashboard menu item
+
     HBox salesMenuItem = createSidebarMenuItem("New Sale", true);
-    salesMenuItem.setOnMouseClicked(event -> loadSalesDashboard());
+    activeMenuItem = salesMenuItem;
+    salesMenuItem.setOnMouseClicked(e -> {
+        setActiveMenuItem(salesMenuItem, "New Sale");
+        loadSalesDashboard();
+    });
     sidebar.getChildren().add(salesMenuItem);
-    
-    // Products menu item
+
     HBox productsMenuItem = createSidebarMenuItem("Products", false);
-    productsMenuItem.setOnMouseClicked(event -> loadProductsManagement());
+    productsMenuItem.setOnMouseClicked(e -> {
+        setActiveMenuItem(productsMenuItem, "Products");
+        loadProductsManagement();
+    });
     sidebar.getChildren().add(productsMenuItem);
-    
+
     HBox transactionsMenuItem = createSidebarMenuItem("Transactions", false);
-    transactionsMenuItem.setOnMouseClicked(event -> loadTransactions());
+    transactionsMenuItem.setOnMouseClicked(e -> {
+        setActiveMenuItem(transactionsMenuItem, "Transactions");
+        loadTransactions();
+    });
     sidebar.getChildren().add(transactionsMenuItem);
-      
-    sidebar.getChildren().add(createSidebarMenuItem("Customers", false));
-     //Reports menu item
+
+    HBox customersMenuItem = createSidebarMenuItem("Customers", false);
+    customersMenuItem.setOnMouseClicked(e -> {
+        setActiveMenuItem(customersMenuItem, "Customers");
+        // loadCustomers(); // Add this method if needed
+    });
+    sidebar.getChildren().add(customersMenuItem);
+
     HBox reportsMenuItem = createSidebarMenuItem("Reports", false);
-    reportsMenuItem.setOnMouseClicked(event ->loadReports());
+    reportsMenuItem.setOnMouseClicked(e -> {
+        setActiveMenuItem(reportsMenuItem, "Reports");
+        loadReports();
+    });
     sidebar.getChildren().add(reportsMenuItem);
-    sidebar.getChildren().add(createSidebarMenuItem("Settings", false));
-    
+
+    HBox settingsMenuItem = createSidebarMenuItem("Settings", false);
+    settingsMenuItem.setOnMouseClicked(e -> {
+        setActiveMenuItem(settingsMenuItem, "Settings");
+        // loadSettings(); // Add this method if needed
+    });
+    sidebar.getChildren().add(settingsMenuItem);
+
     // Add spacer to push help to bottom
     Region spacer = new Region();
     VBox.setVgrow(spacer, Priority.ALWAYS);
     sidebar.getChildren().add(spacer);
-    
-    // Help and support
-    sidebar.getChildren().add(createSidebarMenuItem("Help & Support", false));
-    
+
+    HBox helpMenuItem = createSidebarMenuItem("Help & Support", false);
+    helpMenuItem.setOnMouseClicked(e -> {
+        setActiveMenuItem(helpMenuItem, "Help & Support");
+        // loadHelp(); // Add this method if needed
+    });
+    sidebar.getChildren().add(helpMenuItem);
+
     return sidebar;
 }
 
-// You may need to add this helper method if it doesn't exist already
+private VBox createSidebarHeader() {
+    VBox header = new VBox();
+    header.setAlignment(Pos.CENTER);
+    header.setPadding(new Insets(25, 0, 25, 0));
+
+    Rectangle placeholderLogo = new Rectangle(50, 50);
+    placeholderLogo.setFill(Color.WHITE);
+    placeholderLogo.setOpacity(0.9);
+    placeholderLogo.setArcWidth(10);
+    placeholderLogo.setArcHeight(10);
+
+    Label logoText = new Label("POS");
+    logoText.setStyle("-fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: #3949ab;");
+
+    StackPane logoStack = new StackPane(placeholderLogo, logoText);
+    header.getChildren().add(logoStack);
+
+    return header;
+}
+
+private HBox createSidebarMenuItem(String text, boolean isSelected) {
+    HBox menuItem = new HBox();
+    menuItem.setAlignment(Pos.CENTER_LEFT);
+    menuItem.setPadding(new Insets(15, 20, 15, 20));
+    menuItem.setCursor(javafx.scene.Cursor.HAND);
+
+    // Selection indicator (added at the beginning of the menu item)
+    Rectangle indicator = new Rectangle(5, 25);
+    indicator.setFill(Color.WHITE);
+    indicator.setArcWidth(2);
+    indicator.setArcHeight(2);
+    indicator.setVisible(isSelected);
+
+    // Menu icon
+    Rectangle icon = new Rectangle(18, 18);
+    icon.setFill(Color.WHITE);
+    icon.setOpacity(0.8);
+    icon.setArcWidth(4);
+    icon.setArcHeight(4);
+
+    // Menu text
+    Label menuText = new Label(text);
+    menuText.setStyle("-fx-font-size: 14px; -fx-text-fill: white; -fx-font-weight: " + (isSelected ? "bold" : "normal") + ";");
+    HBox.setMargin(menuText, new Insets(0, 0, 0, 15));
+    HBox.setMargin(icon, new Insets(0, 0, 0, 10));
+    HBox.setMargin(indicator, new Insets(0, 10, 0, 0));
+
+    menuItem.getChildren().addAll(indicator, icon, menuText);
+
+    // Background styling
+    if (isSelected) {
+        menuItem.setStyle("-fx-background-color: rgba(255, 255, 255, 0.2);");
+    } else {
+        menuItem.setStyle("-fx-background-color: transparent;");
+        menuItem.setOnMouseEntered(e -> menuItem.setStyle("-fx-background-color: rgba(255, 255, 255, 0.1);"));
+        menuItem.setOnMouseExited(e -> menuItem.setStyle("-fx-background-color: transparent;"));
+    }
+
+    return menuItem;
+}
+
+
+private void setActiveMenuItem(HBox newActiveItem, String labelText) {
+    if (activeMenuItem != null) {
+        activeMenuItem.setStyle("-fx-background-color: transparent;");
+
+        Label oldLabel = (Label) activeMenuItem.getChildren().filtered(node -> node instanceof Label).get(0);
+        oldLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: white; -fx-font-weight: normal;");
+
+        // Hide previous indicator
+        Rectangle oldIndicator = (Rectangle) activeMenuItem.getChildren().filtered(node -> node instanceof Rectangle).get(0);
+        oldIndicator.setVisible(false);
+    }
+
+    newActiveItem.setStyle("-fx-background-color: rgba(255, 255, 255, 0.2);");
+
+    Label newLabel = (Label) newActiveItem.getChildren().filtered(node -> node instanceof Label).get(0);
+    newLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: white; -fx-font-weight: bold;");
+
+    Rectangle newIndicator = (Rectangle) newActiveItem.getChildren().filtered(node -> node instanceof Rectangle).get(0);
+    newIndicator.setVisible(true);
+
+    activeMenuItem = newActiveItem;
+}
+
 private void showAlert(String title, String message) {
     Alert alert = new Alert(Alert.AlertType.ERROR);
     alert.setTitle(title);
     alert.setHeaderText(null);
     alert.setContentText(message);
     alert.showAndWait();
-}
-    /**
-     * Creates the header for the sidebar
-     */
-    private VBox createSidebarHeader() {
-        VBox header = new VBox();
-        header.setAlignment(Pos.CENTER);
-        header.setPadding(new Insets(25, 0, 25, 0));
-        
-        // Create a placeholder logo
-        Rectangle placeholderLogo = new Rectangle(50, 50);
-        placeholderLogo.setFill(Color.WHITE);
-        placeholderLogo.setOpacity(0.9);
-        placeholderLogo.setArcWidth(10);
-        placeholderLogo.setArcHeight(10);
-        
-        Label logoText = new Label("POS");
-        logoText.setStyle("-fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: #3949ab;");
-        
-        StackPane logoStack = new StackPane(placeholderLogo, logoText);
-        header.getChildren().add(logoStack);
-        
-        return header;
-    }
-    
-    /**
-     * Creates individual menu items for the sidebar
-     */
-    private HBox createSidebarMenuItem(String text, boolean isSelected) {
-        HBox menuItem = new HBox();
-        menuItem.setAlignment(Pos.CENTER_LEFT);
-        menuItem.setPadding(new Insets(15, 20, 15, 20));
-        menuItem.setCursor(javafx.scene.Cursor.HAND);
-        
-        if (isSelected) {
-            menuItem.setStyle("-fx-background-color: rgba(255, 255, 255, 0.2);");
-        } else {
-            menuItem.setStyle("-fx-background-color: transparent;");
-            // Add hover effect
-            menuItem.setOnMouseEntered(e -> 
-                menuItem.setStyle("-fx-background-color: rgba(255, 255, 255, 0.1);")
-            );
-            menuItem.setOnMouseExited(e -> 
-                menuItem.setStyle("-fx-background-color: transparent;")
-            );
-        }
-        
-        // Menu icon (simplified with a rectangle for now)
-        Rectangle icon = new Rectangle(18, 18);
-        icon.setFill(Color.WHITE);
-        icon.setOpacity(0.8);
-        icon.setArcWidth(4);
-        icon.setArcHeight(4);
-        
-        // Menu text
-        Label menuText = new Label(text);
-        menuText.setStyle("-fx-font-size: 14px; -fx-text-fill: white; -fx-font-weight: " + (isSelected ? "bold" : "normal") + ";");
-        HBox.setMargin(menuText, new Insets(0, 0, 0, 15));
-        
-        menuItem.getChildren().addAll(icon, menuText);
-        
-        // Selection indicator for active menu
-        if (isSelected) {
-            Rectangle indicator = new Rectangle(5, 25);
-            indicator.setFill(Color.WHITE);
-            indicator.setArcWidth(2);
-            indicator.setArcHeight(2);
-            
-            // Position indicator at the left edge
-            StackPane indicatorContainer = new StackPane(indicator);
-            indicatorContainer.setAlignment(Pos.CENTER_LEFT);
-            indicatorContainer.setPadding(new Insets(0, 0, 0, -20));
-            
-            menuItem.getChildren().add(indicatorContainer);
-        }
-        
-        return menuItem;
-    }
-    
+}    
     /**
      * Creates the main content area with product search and cart
      */
@@ -415,6 +485,9 @@ private void showAlert(String title, String message) {
         Button quantityButton = createActionButton("Change Quantity", "#ff8f00");
         
         discountButton.setOnAction(e -> applyDiscount());
+        scanButton.setOnAction(e -> {
+        showBarcodeScanner();
+        });
         
         // Add this event handler to the quantityButton after it's created
        quantityButton.setOnAction(e -> {
@@ -1151,12 +1224,12 @@ private void processPayment() {
 try {
     String buyersName = "";
     // Make sure we have the buyer's name
-    String buyerName = (!buyersName.trim().isEmpty()) 
+    String buyerName = (!buyersName.trim().isEmpty())
                       ? buyersName 
                       : "Walk-in Customer";
     
     EscPosReceiptPrinter.printReceipt(
-        invoiceHeader, 
+        invoiceHeader,
         buyerName,  
         lineItems, 
         returnedValidationUrl, 
@@ -1376,6 +1449,664 @@ private void applyDiscountToCart(double discountValue, boolean isPercentage) {
         cartDiscountAmount = discountValue;
         cartDiscountPercent = 0;
     }
+}
+
+/**
+ * Shows an advanced professional barcode scanner interface
+ */
+
+private String showBarcodeScanner() {
+    // Create an atomic reference to hold the camera reference that can be accessed from lambdas
+    AtomicReference<Webcam> cameraRef = new AtomicReference<>();
+    
+    Stage scannerStage = new Stage();
+    scannerStage.initModality(Modality.APPLICATION_MODAL);
+    scannerStage.initOwner(stage);
+    scannerStage.setTitle("Barcode Scanner");
+    scannerStage.getIcons().add(new Image(getClass().getResourceAsStream("/icons/scanner_icon.png")));
+    scannerStage.setResizable(true);
+
+    BorderPane scannerRoot = new BorderPane();
+    scannerRoot.setStyle("-fx-background-color: #f5f5f7;");
+
+    // Header
+    HBox header = new HBox();
+    header.setPadding(new Insets(15, 20, 15, 20));
+    header.setStyle("-fx-background-color: #1a237e;");
+    header.setAlignment(Pos.CENTER_LEFT);
+
+    Label titleLabel = new Label("Advanced Barcode Scanner");
+    titleLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: white;");
+
+    Region spacer = new Region();
+    HBox.setHgrow(spacer, Priority.ALWAYS);
+
+    Button closeButton = new Button("×");
+    closeButton.setStyle("-fx-background-color: transparent; -fx-text-fill: white; -fx-font-size: 20px; -fx-cursor: hand;");
+    closeButton.setOnAction(e -> {
+        Webcam camera = cameraRef.get();
+        if (camera != null) {
+            camera.close();
+        }
+        scannerStage.close();
+    });
+
+    header.getChildren().addAll(titleLabel, spacer, closeButton);
+    scannerRoot.setTop(header);
+
+    // Scanner view area
+    StackPane scannerViewPane = new StackPane();
+    scannerViewPane.setPadding(new Insets(20));
+    scannerViewPane.setStyle("-fx-background-color: #424242;");
+
+    // Camera view - using JavaFX ImageView to display frames
+    ImageView cameraView = new ImageView();
+    cameraView.setFitWidth(580);
+    cameraView.setFitHeight(320);
+    cameraView.setPreserveRatio(true);
+
+    Rectangle viewport = new Rectangle(580, 320);
+    viewport.setArcWidth(10);
+    viewport.setArcHeight(10);
+
+    // Set the clip on the camera view
+    cameraView.setClip(viewport);
+
+    Rectangle scanArea = new Rectangle(400, 200);
+    scanArea.setFill(Color.rgb(0, 0, 0, 0.1));
+    scanArea.setArcWidth(10);
+    scanArea.setArcHeight(10);
+    scanArea.setStroke(Color.rgb(255, 255, 255, 0.2));
+    scanArea.setStrokeWidth(1);
+    scanArea.setTranslateX(0);
+    scanArea.setTranslateY(0);
+
+    // Corner markers
+    int markerSize = 20;
+    Line[] cornerMarkers = {
+        // Top-left
+        new Line(0, 0, markerSize, 0), 
+        new Line(0, 0, 0, markerSize),
+        // Top-right
+        new Line(400 - markerSize, 0, 400, 0), 
+        new Line(400, 0, 400, markerSize),
+        // Bottom-left
+        new Line(0, 200, markerSize, 200), 
+        new Line(0, 200 - markerSize, 0, 200),
+        // Bottom-right
+        new Line(400 - markerSize, 200, 400, 200), 
+        new Line(400, 200 - markerSize, 400, 200)
+    };
+    
+    for (Line marker : cornerMarkers) {
+        marker.setStroke(Color.rgb(0, 230, 118, 0.8));
+        marker.setStrokeWidth(3);
+    }
+
+    Group scanAreaGroup = new Group();
+    scanAreaGroup.getChildren().add(scanArea);
+    scanAreaGroup.getChildren().addAll(cornerMarkers);
+    
+    // Center the scan area in the camera view
+    scanAreaGroup.setTranslateX((580 - 400) / 2);
+    scanAreaGroup.setTranslateY((320 - 200) / 2);
+
+    // Scanning line animation
+    Rectangle scanLine = new Rectangle(400, 3);
+    scanLine.setFill(Color.rgb(0, 230, 118, 0.8));
+    scanLine.setTranslateY(10);
+    scanLine.setTranslateX((580 - 400) / 2);
+
+    DropShadow glow = new DropShadow();
+    glow.setColor(Color.rgb(0, 230, 118, 0.6));
+    glow.setRadius(15);
+    scanLine.setEffect(glow);
+
+    TranslateTransition scanAnimation = new TranslateTransition(Duration.seconds(2), scanLine);
+    scanAnimation.setFromY((320 - 200) / 2 + 10);
+    scanAnimation.setToY((320 - 200) / 2 + 180);
+    scanAnimation.setCycleCount(Timeline.INDEFINITE);
+    scanAnimation.setAutoReverse(true);
+    scanAnimation.play();
+
+    Timeline pulseEffect = new Timeline(
+        new KeyFrame(Duration.ZERO, new KeyValue(glow.radiusProperty(), 10)),
+        new KeyFrame(Duration.millis(500), new KeyValue(glow.radiusProperty(), 20)),
+        new KeyFrame(Duration.millis(1000), new KeyValue(glow.radiusProperty(), 10))
+    );
+    pulseEffect.setCycleCount(Timeline.INDEFINITE);
+    pulseEffect.play();
+
+    // Info text
+    Label cameraInfo = new Label("HD Camera Active | 1280×720 | 30fps");
+    cameraInfo.setStyle("-fx-text-fill: rgba(255,255,255,0.7); -fx-font-size: 11px;");
+    StackPane.setAlignment(cameraInfo, Pos.TOP_RIGHT);
+    StackPane.setMargin(cameraInfo, new Insets(10, 15, 0, 0));
+
+    // Status indicators
+    Circle dot1 = new Circle(4, Color.rgb(0, 230, 118, 0.8));
+    Circle dot2 = new Circle(4, Color.rgb(0, 230, 118, 0.8));
+    Circle dot3 = new Circle(4, Color.rgb(0, 230, 118, 0.8));
+
+    Label scanningLabel = new Label("Scanning for barcode");
+    scanningLabel.setStyle("-fx-text-fill: white; -fx-font-size: 12px;");
+
+    HBox statusBox = new HBox(5, scanningLabel, dot1, dot2, dot3);
+    statusBox.setAlignment(Pos.CENTER);
+    statusBox.setPadding(new Insets(8, 15, 8, 15));
+    statusBox.setStyle("-fx-background-color: rgba(0,0,0,0.5); -fx-background-radius: 15;");
+    StackPane.setAlignment(statusBox, Pos.BOTTOM_CENTER);
+    StackPane.setMargin(statusBox, new Insets(0, 0, 15, 0));
+
+    Timeline dotAnimation = new Timeline(
+        new KeyFrame(Duration.ZERO,
+            new KeyValue(dot1.opacityProperty(), 1.0),
+            new KeyValue(dot2.opacityProperty(), 0.3),
+            new KeyValue(dot3.opacityProperty(), 0.3)),
+        new KeyFrame(Duration.millis(300),
+            new KeyValue(dot1.opacityProperty(), 0.3),
+            new KeyValue(dot2.opacityProperty(), 1.0),
+            new KeyValue(dot3.opacityProperty(), 0.3)),
+        new KeyFrame(Duration.millis(600),
+            new KeyValue(dot1.opacityProperty(), 0.3),
+            new KeyValue(dot2.opacityProperty(), 0.3),
+            new KeyValue(dot3.opacityProperty(), 1.0)),
+        new KeyFrame(Duration.millis(900),
+            new KeyValue(dot1.opacityProperty(), 1.0),
+            new KeyValue(dot2.opacityProperty(), 0.3),
+            new KeyValue(dot3.opacityProperty(), 0.3))
+    );
+    dotAnimation.setCycleCount(Timeline.INDEFINITE);
+    dotAnimation.play();
+
+    // Add camera view and overlays to the scanner pane
+    scannerViewPane.getChildren().addAll(cameraView, scanAreaGroup, scanLine, cameraInfo, statusBox);
+    scannerRoot.setCenter(scannerViewPane);
+
+    // Controls section
+    VBox controlsPane = new VBox(15);
+    controlsPane.setPadding(new Insets(20));
+    controlsPane.setStyle("-fx-background-color: white;");
+
+    Label controlsTitle = new Label("Scanning Controls");
+    controlsTitle.setStyle("-fx-font-size: 14px; -fx-font-weight: bold;");
+
+    TextField barcodeInput = new TextField();
+    barcodeInput.setPromptText("Enter barcode manually");
+    barcodeInput.setPrefHeight(35);
+    barcodeInput.setStyle("-fx-font-size: 14px;");
+    HBox.setHgrow(barcodeInput, Priority.ALWAYS);
+
+    Button submitButton = new Button("Submit");
+    submitButton.setPrefHeight(35);
+    submitButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; -fx-font-weight: bold;");
+
+    HBox manualEntryBox = new HBox(10, barcodeInput, submitButton);
+    manualEntryBox.setAlignment(Pos.CENTER_LEFT);
+
+    ComboBox<String> scanModeCombo = new ComboBox<>();
+    scanModeCombo.getItems().addAll("EAN-13", "UPC-A", "CODE 128", "QR Code", "All Formats");
+    scanModeCombo.setValue("All Formats");
+    scanModeCombo.setPrefWidth(120);
+
+    CheckBox beepOnScanCheck = new CheckBox("Sound on scan");
+    beepOnScanCheck.setSelected(true);
+
+    CheckBox autoSubmitCheck = new CheckBox("Auto-submit");
+    autoSubmitCheck.setSelected(true);
+
+    FlowPane optionsPane = new FlowPane(15, 15, scanModeCombo, beepOnScanCheck, autoSubmitCheck);
+    optionsPane.setAlignment(Pos.CENTER_LEFT);
+
+    Button cancelButton = new Button("Cancel");
+    cancelButton.setPrefSize(120, 40);
+    cancelButton.setStyle("-fx-background-color: #e0e0e0; -fx-text-fill: #424242;");
+    cancelButton.setOnAction(e -> {
+        Webcam camera = cameraRef.get();
+        if (camera != null) {
+            camera.close();
+        }
+        scannerStage.close();
+    });
+
+    Button switchCameraButton = new Button("Switch Camera");
+    switchCameraButton.setPrefSize(120, 40);
+    switchCameraButton.setStyle("-fx-background-color: #3949ab; -fx-text-fill: white; -fx-font-weight: bold;");
+
+    HBox actionButtonsBox = new HBox(10, cancelButton, switchCameraButton);
+    actionButtonsBox.setAlignment(Pos.CENTER);
+
+    controlsPane.getChildren().addAll(controlsTitle, manualEntryBox, optionsPane, new Separator(), actionButtonsBox);
+    scannerRoot.setBottom(controlsPane);
+    
+    // Reference to hold the barcode result
+    AtomicReference<String> resultBarcode = new AtomicReference<>("");
+    
+    // Create an atomic reference to store the processing thread
+    AtomicReference<Thread> processingThreadRef = new AtomicReference<>();
+    
+    // Create an atomic boolean to track barcode detection status
+    AtomicBoolean barcodeFound = new AtomicBoolean(false);
+    
+    try {
+        // Initialize webcam
+        Webcam camera = Webcam.getDefault();
+        if (camera == null) {
+            throw new Exception("No webcam detected");
+        }
+        
+        // Store camera in atomic reference for access from lambdas
+        cameraRef.set(camera);
+        
+        // Set camera resolution
+        Dimension[] dimensions = camera.getViewSizes();
+        Dimension bestSize = null;
+        
+        // Choose the highest resolution that fits our needs
+        for (Dimension dim : dimensions) {
+            if (bestSize == null || 
+                (dim.width >= 640 && dim.height >= 480 && 
+                 (bestSize.width < dim.width || bestSize.height < dim.height))) {
+                bestSize = dim;
+            }
+        }
+        
+        if (bestSize != null) {
+            camera.setViewSize(bestSize);
+        } else {
+            camera.setViewSize(WebcamResolution.HD.getSize());
+        }
+        
+        // Open camera
+        camera.open();
+        
+        // Update camera info
+        cameraInfo.setText("Camera Active | " + camera.getViewSize().width + "×" + 
+                          camera.getViewSize().height + " | " + camera.getFPS() + "fps");
+        
+        // Create barcode processor
+        BarcodeFormat[] formats = getFormatsForMode(scanModeCombo.getValue());
+        
+        // Create multi-format reader
+        final MultiFormatReader barcodeReader = new MultiFormatReader();
+        Map<DecodeHintType, Object> hints = new HashMap<>();
+        hints.put(DecodeHintType.POSSIBLE_FORMATS, Arrays.asList(formats));
+        hints.put(DecodeHintType.TRY_HARDER, Boolean.TRUE);
+        barcodeReader.setHints(hints);
+        
+        // Update formats when combo box changes
+        scanModeCombo.setOnAction(e -> {
+            BarcodeFormat[] newFormats = getFormatsForMode(scanModeCombo.getValue());
+            
+            Map<DecodeHintType, Object> newHints = new HashMap<>();
+            newHints.put(DecodeHintType.POSSIBLE_FORMATS, Arrays.asList(newFormats));
+            newHints.put(DecodeHintType.TRY_HARDER, Boolean.TRUE);
+            barcodeReader.setHints(newHints);
+        });
+        
+        // Camera frame processing thread
+        Thread processingThread = new Thread(() -> {
+            BufferedImage lastFrame = null;
+            AtomicReference<Result> lastResult = new AtomicReference<>(); // Fixed: r to Result
+            long lastDetectionTime = 0;
+            
+            while (!Thread.interrupted() && cameraRef.get().isOpen()) {
+                try {
+                    // Capture frame from camera
+                    final BufferedImage image = cameraRef.get().getImage();
+                    if (image == null) continue;
+                    
+                    // Create JavaFX image from camera frame
+                    final WritableImage fxImage = SwingFXUtils.toFXImage(image, null);
+                    
+                    // Update the UI with the camera frame
+                    Platform.runLater(() -> cameraView.setImage(fxImage));
+                    
+                    // Don't process every frame for efficiency
+                    if (System.currentTimeMillis() - lastDetectionTime < 200) {
+                        Thread.sleep(20);
+                        continue;
+                    }
+                    
+                    // If a barcode was already found, don't keep processing
+                    if (barcodeFound.get()) {
+                        Thread.sleep(50);
+                        continue;
+                    }
+                    
+                    // Store the current frame for processing
+                    lastFrame = image;
+                    
+                    // Calculate scan area in image coordinates
+                    double scaleX = (double) image.getWidth() / cameraView.getFitWidth();
+                    double scaleY = (double) image.getHeight() / cameraView.getFitHeight();
+                    
+                    int scanAreaX = (int) ((cameraView.getFitWidth() - 400) / 2 * scaleX);
+                    int scanAreaY = (int) ((cameraView.getFitHeight() - 200) / 2 * scaleY);
+                    int scanAreaWidth = (int) (400 * scaleX);
+                    int scanAreaHeight = (int) (200 * scaleY);
+                    
+                    // Ensure scan area is within the image bounds
+                    scanAreaX = Math.max(0, scanAreaX);
+                    scanAreaY = Math.max(0, scanAreaY);
+                    scanAreaWidth = Math.min(image.getWidth() - scanAreaX, scanAreaWidth);
+                    scanAreaHeight = Math.min(image.getHeight() - scanAreaY, scanAreaHeight);
+                    
+                    // Create subimage for the scan area
+                    BufferedImage subImage = image.getSubimage(
+                        scanAreaX, scanAreaY, scanAreaWidth, scanAreaHeight
+                    );
+                    
+                    // Process the image to detect barcodes
+                    try {
+                        BinaryBitmap bitmap = new BinaryBitmap(new HybridBinarizer(
+                            new BufferedImageLuminanceSource(subImage)
+                        ));
+                        
+                        Result result = barcodeReader.decode(bitmap);
+                        
+                        if (result != null) {
+                            lastResult.set(result);
+                            barcodeFound.set(true);
+                            lastDetectionTime = System.currentTimeMillis();
+                            
+                            // Play beep sound if enabled
+                            if (beepOnScanCheck.isSelected()) {
+                                playBeepSound();
+                            }
+                            
+                            // Update UI to show detected barcode
+                            Platform.runLater(() -> {
+                                Result detectedResult = lastResult.get();
+                                scanningLabel.setText("Barcode detected: " + detectedResult.getText());
+                                
+                                // Stop animations
+                                dotAnimation.stop();
+                                dot1.setOpacity(1.0);
+                                dot2.setOpacity(1.0);
+                                dot3.setOpacity(1.0);
+                                
+                                // Highlight the detected barcode region
+                                ResultPoint[] points = detectedResult.getResultPoints();
+                                if (points != null && points.length > 0) {
+                                    Polygon highlight = new Polygon();
+                                    
+                                    // Convert result points to scene coordinates
+                                    for (ResultPoint point : points) {
+                                        double x = point.getX() / scaleX + scanAreaGroup.getTranslateX();
+                                        double y = point.getY() / scaleY + scanAreaGroup.getTranslateY();
+                                        highlight.getPoints().addAll(x, y);
+                                    }
+                                    
+                                    highlight.setFill(Color.TRANSPARENT);
+                                    highlight.setStroke(Color.rgb(0, 230, 118));
+                                    highlight.setStrokeWidth(3);
+                                    
+                                    // Create barcode label
+                                    Label barcodeLabel = new Label(detectedResult.getText());
+                                    barcodeLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; " +
+                                                         "-fx-text-fill: #00e676; -fx-background-color: rgba(0,0,0,0.5); " +
+                                                         "-fx-padding: 5px;");
+                                    
+                                    // Calculate position for the label (below the barcode)
+                                    double minY = Double.MAX_VALUE;
+                                    double maxY = Double.MIN_VALUE;
+                                    double avgX = 0;
+                                    
+                                    for (int i = 0; i < points.length; i++) {
+                                        double y = points[i].getY() / scaleY + scanAreaGroup.getTranslateY();
+                                        double x = points[i].getX() / scaleX + scanAreaGroup.getTranslateX();
+                                        minY = Math.min(minY, y);
+                                        maxY = Math.max(maxY, y);
+                                        avgX += x;
+                                    }
+                                    avgX /= points.length;
+                                    
+                                    StackPane.setAlignment(barcodeLabel, Pos.TOP_LEFT);
+                                    barcodeLabel.setTranslateX(avgX - 50);  // Estimate width
+                                    barcodeLabel.setTranslateY(maxY + 10);
+                                    
+                                    scannerViewPane.getChildren().addAll(highlight, barcodeLabel);
+                                }
+                                
+                                // Auto-submit if enabled
+                                if (autoSubmitCheck.isSelected()) {
+                                    PauseTransition pause = new PauseTransition(Duration.seconds(1.0));
+                                    pause.setOnFinished(event -> {
+                                        resultBarcode.set(detectedResult.getText());
+                                        
+                                        Webcam cam = cameraRef.get();
+                                        if (cam != null) {
+                                            cam.close();
+                                        }
+                                        
+                                        scannerStage.close();
+                                        
+                                        // Process the barcode
+                                        barcodeField.setText(detectedResult.getText());
+                                        addProductToCart();
+                                    });
+                                    pause.play();
+                                }
+                            });
+                        }
+                    } catch (NotFoundException e) {
+                        // No barcode found in this frame, continue processing
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                    
+                    // Sleep to control processing rate
+                    Thread.sleep(30);
+                    
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+        
+        processingThread.setDaemon(true);
+        processingThread.start();
+        processingThreadRef.set(processingThread);
+        
+        // Handler for switching cameras
+        switchCameraButton.setOnAction(e -> {
+            Webcam currentCamera = cameraRef.get();
+            if (currentCamera != null) {
+                // Request thread to stop and close current camera
+                Thread currentThread = processingThreadRef.get();
+                if (currentThread != null) {
+                    currentThread.interrupt();
+                }
+                currentCamera.close();
+                
+                try {
+                    // Get all available webcams
+                    List<Webcam> cameras = Webcam.getWebcams();
+                    if (cameras.size() <= 1) {
+                        // No other cameras available
+                        showAlert(Alert.AlertType.INFORMATION, "Camera Switch", 
+                                 "No additional cameras available.");
+                        return;
+                    }
+                    
+                    // Find the next camera (circular)
+                    int currentIndex = cameras.indexOf(currentCamera);
+                    int nextIndex = (currentIndex + 1) % cameras.size();
+                    
+                    // Initialize the new camera
+                    // For simplicity, we'll just close this dialog and reopen
+                    scannerStage.close();
+                    Platform.runLater(this::showBarcodeScanner);
+                    
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    showAlert(Alert.AlertType.ERROR, "Camera Switch Error", 
+                             "Failed to switch camera: " + ex.getMessage());
+                }
+            }
+        });
+        
+        // Handle manual entry with submit handler
+        EventHandler<ActionEvent> submitHandler = event -> {
+            String barcode = barcodeInput.getText().trim();
+            if (!barcode.isEmpty()) {
+                resultBarcode.set(barcode);
+                
+                Webcam cam = cameraRef.get();
+                if (cam != null) {
+                    cam.close();
+                }
+                
+                scannerStage.close();
+                
+                // Process the barcode
+                Platform.runLater(() -> {
+                    barcodeField.setText(barcode);
+                    addProductToCart();
+                });
+            }
+        };
+        
+        // Connect submit handler to button and text field enter key
+        submitButton.setOnAction(submitHandler);
+        barcodeInput.setOnAction(submitHandler);
+        
+    } catch (Exception e) {
+        e.printStackTrace();
+        // Show error to user
+        showAlert(Alert.AlertType.ERROR, "Camera Error", 
+                 "Could not initialize camera: " + e.getMessage() + 
+                 "\nPlease ensure your camera is connected and not in use by another application.");
+        
+        // Disable camera-dependent UI elements
+        scanningLabel.setText("Camera unavailable");
+        scanModeCombo.setDisable(true);
+        switchCameraButton.setDisable(true);
+    }
+
+    Scene scene = new Scene(scannerRoot, 700, 600);
+    scannerStage.setScene(scene);
+    
+    // Clean up resources when closing
+    scannerStage.setOnCloseRequest(event -> {
+        scanAnimation.stop();
+        pulseEffect.stop();
+        dotAnimation.stop();
+        
+        Webcam camera = cameraRef.get();
+        if (camera != null) {
+            camera.close();
+        }
+    });
+    
+    scannerStage.showAndWait();
+    
+    // Return the scanned barcode (or empty string if none was scanned)
+    return resultBarcode.get();
+}
+
+// Helper method to get barcode formats based on selected mode
+private BarcodeFormat[] getFormatsForMode(String mode) {
+    switch (mode) {
+        case "EAN-13":
+            return new BarcodeFormat[]{BarcodeFormat.EAN_13};
+        case "UPC-A":
+            return new BarcodeFormat[]{BarcodeFormat.UPC_A};
+        case "CODE 128":
+            return new BarcodeFormat[]{BarcodeFormat.CODE_128};
+        case "QR Code":
+            return new BarcodeFormat[]{BarcodeFormat.QR_CODE};
+        default:
+            return new BarcodeFormat[]{
+                BarcodeFormat.UPC_A, BarcodeFormat.UPC_E, 
+                BarcodeFormat.EAN_13, BarcodeFormat.EAN_8,
+                BarcodeFormat.CODE_39, BarcodeFormat.CODE_93, 
+                BarcodeFormat.CODE_128, BarcodeFormat.QR_CODE,
+                BarcodeFormat.DATA_MATRIX, BarcodeFormat.ITF
+            };
+    }
+}
+/**
+ * Helper method to play a beep sound when a barcode is detected
+ */
+private void playBeepSound() {
+    try {
+        // Load the beep sound file
+        AudioInputStream audioInputStream = AudioSystem.getAudioInputStream(
+            getClass().getResourceAsStream("/sounds/beep.wav")
+        );
+        
+        // Get a sound clip resource
+        Clip clip = AudioSystem.getClip();
+        
+        // Open audio clip and load samples from the audio input stream
+        clip.open(audioInputStream);
+        
+        // Start playing the sound
+        clip.start();
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
+}
+
+/**
+ * Helper method to show alerts
+ */
+private void showAlert(Alert.AlertType type, String title, String content) {
+    Platform.runLater(() -> {
+        Alert alert = new Alert(type);
+        alert.setTitle(title);
+        alert.setHeaderText(null);
+        alert.setContentText(content);
+        alert.showAndWait();
+    });
+}
+
+/**
+ * Generates a random barcode for simulated scanning
+ * Prioritizes getting actual products from the database
+ */
+private String generateRandomBarcode() {
+    // First try to get a random existing barcode from the database
+    List<String> existingBarcodes = Helper.getAllProductBarcodes();
+    if (existingBarcodes != null && !existingBarcodes.isEmpty()) {
+        int randomIndex = new Random().nextInt(existingBarcodes.size());
+        return existingBarcodes.get(randomIndex);
+    }
+    
+    // Fallback to generating an EAN-13 barcode
+    Random random = new Random();
+    StringBuilder sb = new StringBuilder();
+    
+    // First digit (GS1 prefix)
+    sb.append(random.nextInt(10));
+    
+    // Next 11 digits
+    for (int i = 0; i < 11; i++) {
+        sb.append(random.nextInt(10));
+    }
+    
+    // Calculate EAN-13 check digit
+    String partialCode = sb.toString();
+    int checkDigit = calculateEAN13CheckDigit(partialCode);
+    
+    // Add check digit
+    return partialCode + checkDigit;
+}
+
+/**
+ * Calculates the EAN-13 check digit for a 12-digit code
+ */
+private int calculateEAN13CheckDigit(String code12) {
+    int sum = 0;
+    for (int i = 0; i < 12; i++) {
+        int digit = Character.getNumericValue(code12.charAt(i));
+        sum += (i % 2 == 0) ? digit : digit * 3;
+    }
+    
+    int checkDigit = (10 - (sum % 10)) % 10;
+    return checkDigit;
 }
 
     
