@@ -51,6 +51,7 @@ public class EscPosReceiptPrinter {
     public static void printReceipt(
             InvoiceHeader invoiceHeader,
             String buyersName,
+            String buyersTIN,
             List<LineItemDto> lineItems,
             String validationUrl,
             double amountTendered,
@@ -127,10 +128,16 @@ public class EscPosReceiptPrinter {
             output.write(dateLine.getBytes(CHARSET));
             output.write(LF);
             
-            String buyerLabel = "Buyer";
-            String buyerValue = buyersName;
-            String buyerLine = String.format("%-" + labelWidth + "s : %-" + valueWidth + "s", buyerLabel, buyerValue);
-            output.write(buyerLine.getBytes(CHARSET));
+            String customerLabel = "Customer";
+            String customerValue = buyersName;
+            String customerLine = String.format("%-" + labelWidth + "s : %-" + valueWidth + "s", customerLabel, customerValue);
+            output.write(customerLine.getBytes(CHARSET));
+            output.write(LF);
+
+            String buyerTinLabel = "Buyer TIN";
+            String buyerTinValue = buyersTIN;
+            String buyerTinLine = String.format("%-" + labelWidth + "s : %-" + valueWidth + "s", buyerTinLabel, buyerTinValue);
+            output.write(buyerTinLine.getBytes(CHARSET));
             output.write(LF);
             
             // Divider before items
@@ -285,40 +292,6 @@ public class EscPosReceiptPrinter {
     }
     
     /**
-     * Format a key-value pair with proper left alignment
-     * Note: This method is no longer used as we're centering everything
-     */
-    private static String formatLeftPaddedValue(String key, String value, int leftPadding) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < leftPadding; i++) {
-            sb.append(" ");
-        }
-        sb.append(String.format("%-10s: %s", key, value));
-        return sb.toString();
-    }
-    
-    /**
-     * Format a total line with right-aligned value
-     * Note: This method is no longer used as we're centering everything
-     */
-    private static String formatTotalLine(String label, String value) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < LEFT_MARGIN; i++) {
-            sb.append(" ");
-        }
-        
-        int contentWidth = RECEIPT_WIDTH - LEFT_MARGIN;
-        int spaces = contentWidth - label.length() - value.length();
-        
-        sb.append(label);
-        for (int i = 0; i < spaces; i++) {
-            sb.append(" ");
-        }
-        sb.append(value);
-        return sb.toString();
-    }
-    
-    /**
      * Format currency value without currency symbol (added in formatValue method)
      */
     private static String formatCurrency(double value) {
@@ -401,12 +374,5 @@ public class EscPosReceiptPrinter {
         // Use first available printer
         // You can improve this by implementing printer selection logic
         return services[0];
-    }
-
-    /**
-     * Format monetary values with currency symbol
-     */
-    private static String formatValue(double value) {
-        return String.format("MWK %,.2f", value);
     }
 }

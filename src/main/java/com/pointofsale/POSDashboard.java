@@ -98,13 +98,14 @@ public class POSDashboard extends Application {
     private TextField cashAmountField;
     private Button processPaymentButton;
     private Label taxLabel;
+    private TextField heldCustomerNameField;
     private Node currentContent;
     private TextField buyerAuthField;
     private ComboBox<String> paymentMethodComboBox;
     private double cartDiscountAmount = 0.0;
     private double cartDiscountPercent = 0.0;
     private Label discountValueLabel;
-    private TextField customerNameField;
+    private TextField customerNamesField;
     private TextField  tinField; 
     private ObservableList<Product> cartItems;
     private double totalAmount = 0.0;
@@ -738,10 +739,10 @@ private VBox createCheckoutPanel() {
     customerInfoLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #424242;");
     
     // Customer name field
-    customerNameField = new TextField();
-    customerNameField.setPromptText("Enter customer name");
-    customerNameField.setPrefHeight(35);
-    customerNameField.setStyle("-fx-font-size: 13px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+    customerNamesField = new TextField();
+    customerNamesField.setPromptText("Enter customer name");
+    customerNamesField.setPrefHeight(35);
+    customerNamesField.setStyle("-fx-font-size: 13px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
                           "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;");
     
     // TIN field
@@ -772,7 +773,7 @@ private VBox createCheckoutPanel() {
         }
     });
     
-    customerInfoBox.getChildren().addAll(customerInfoLabel, customerNameField, tinField, buyerAuthField);
+    customerInfoBox.getChildren().addAll(customerInfoLabel, customerNamesField, tinField, buyerAuthField);
     
     // Subtotal section
     GridPane summaryGrid = new GridPane();
@@ -1141,7 +1142,6 @@ private void updateChangeCalculation() {
         
 
         // Validate authorization code before proceeding
-        // Step 6: Submit the request
         ApiClient apiClient = new ApiClient();
         apiClient.validateAuthorizationCode(authCode, bearerToken, isValid -> {
             if (!isValid) {
@@ -1195,11 +1195,16 @@ private void updateChangeCalculation() {
         
         String selectedPaymentMethod = paymentMethodComboBox.getValue();
         String buyerTIN = tinField.getText().trim();
+        String buyersName =  customerNamesField.getText().trim();
         String amountTenderedText = cashAmountField.getText().trim();
         double amountTendered = Double.parseDouble(amountTenderedText);
         String changeValueText = changeValueLabel.getText();
         changeValueText = changeValueText.replace("MK", "").replace(",", "").trim();
         double changeValue = Double.parseDouble(changeValueText);
+        String buyersTIN = !buyerTIN.isEmpty() ? buyerTIN : "";
+
+        // Fallback to "Walk-in Customer" if empty
+        String buyerName = !buyersName.isEmpty() ? buyersName : "";
         
         
         if (cartItems.isEmpty()) {
@@ -1286,19 +1291,13 @@ private void updateChangeCalculation() {
              // Mark as transmitted
              Helper.markAsTransmitted(invoiceHeader.getInvoiceNumber());
              
-               // Print the premium receipt with validation URL
-try {
-     // Get the buyer's name from the input field
-     String buyersName = customerNameField.getText();
-
-     // Fallback to "Walk-in Customer" if empty
-     String buyerName = (!buyersName.trim().isEmpty())
-                  ? buyersName 
-                  : "";
+    // Print the premium receipt with validation URL
+    try {
 
      EscPosReceiptPrinter.printReceipt(
       invoiceHeader,
-      buyerName,  
+      buyerName,
+      buyersTIN,
       lineItems, 
       returnedValidationUrl, 
       amountTendered, 
@@ -1325,7 +1324,8 @@ try {
              try {
                  EscPosReceiptPrinter.printReceipt(
                      invoiceHeader, 
-                     "OFFLINE TRANSACTION", 
+                     "OFFLINE TRANSACTION",
+                     buyersTIN,
                      lineItems, 
                      "", 
                      amountPaid, 
@@ -1344,6 +1344,9 @@ try {
        // Reset cart and generate new receipt number
        cartItems.clear();
        cashAmountField.clear();
+       tinField.clear();
+       buyerAuthField.clear();
+       customerNamesField.clear();
        updateTotals();
        receiptNumberLabel.setText(generateNewReceiptNumber());
     }
@@ -2273,7 +2276,7 @@ private int calculateEAN13CheckDigit(String code12) {
     Label customerNameLabel = new Label("Customer Name");
     customerNameLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #555555;");
     
-    TextField heldCustomerNameField = new TextField();
+    heldCustomerNameField = new TextField();
     heldCustomerNameField.setPromptText("Enter customer name");
     heldCustomerNameField.setPrefHeight(40);
     heldCustomerNameField.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
@@ -2348,12 +2351,12 @@ private int calculateEAN13CheckDigit(String code12) {
     dialogPane.setEffect(dialogShadow);
 
     // Request focus on the customer name field by default
-    Platform.runLater(() -> customerNameField.requestFocus());
+    Platform.runLater(() -> heldCustomerNameField.requestFocus());
 
     // Convert the result to a customer name-reason pair when the save button is clicked
     dialog.setResultConverter(dialogButton -> {
         if (dialogButton == saveButtonType) {
-            return new Pair<>(customerNameField.getText(), reasonField.getText());
+            return new Pair<>(heldCustomerNameField.getText(), reasonField.getText());
         }
         return null;
     });
