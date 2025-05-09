@@ -43,6 +43,9 @@ import com.pointofsale.model.TaxBreakDown;
 import com.pointofsale.model.LineItemDto;
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.HashMap;
 import javafx.application.Platform;
 import java.util.List;
@@ -1024,22 +1027,23 @@ public static void updateValidationUrl(String invoiceNumber, String validationUr
     }
 }
 
-public static InvoiceHeader getInvoiceHeader(String invoiceNumber) {
+public static InvoiceHeader getInvoiceHeader(String invoiceNumber, String buyerTIN, String buyerAuthorizationCode, String paymentMethod) {
     InvoiceHeader invoiceHeader = new InvoiceHeader();
     invoiceHeader.setInvoiceNumber(invoiceNumber);
     invoiceHeader.setInvoiceDateTime(LocalDateTime.now().toString());
     invoiceHeader.setSellerTIN(getTin());
-    invoiceHeader.setBuyerTIN("");
-    invoiceHeader.setBuyerAuthorizationCode("");
+    invoiceHeader.setBuyerTIN(buyerTIN != null && !buyerTIN.isEmpty() ? buyerTIN : "");
+    invoiceHeader.setBuyerAuthorizationCode(buyerAuthorizationCode != null ? buyerAuthorizationCode : "");
     invoiceHeader.setSiteId(getTerminalSiteId());
     invoiceHeader.setGlobalConfigVersion(getGlobalVersion());
     invoiceHeader.setTaxpayerConfigVersion(getTaxpayerVersion());
     invoiceHeader.setTerminalConfigVersion(getTerminalVersion());
     invoiceHeader.setReliefSupply(false);
     invoiceHeader.setVat5CertificateDetails(null);
-    invoiceHeader.setPaymentMethod("Cash"); 
+    invoiceHeader.setPaymentMethod(paymentMethod);
     return invoiceHeader;
 }
+
 
 public static List<LineItemDto> getLineItems(String invoiceNumber) {
     List<LineItemDto> items = new ArrayList<>();
@@ -1214,7 +1218,8 @@ public static boolean transmitInvoice(String invoiceNumber) {
 
         try (var rs = stmt.executeQuery()) {
             if (rs.next()) {
-                InvoiceHeader header = Helper.getInvoiceHeader(invoiceNumber);
+                String paymentId = rs.getString("PaymentId");
+                InvoiceHeader header = Helper.getInvoiceHeader(invoiceNumber, "", "", paymentId);
                 List<LineItemDto> lineItems = Helper.getLineItems(invoiceNumber);
 
                 InvoiceSummary invoiceSummary = new InvoiceSummary();
@@ -1260,37 +1265,41 @@ public static boolean transmitInvoice(String invoiceNumber) {
     }
     return false;
 }
-
 public static void retryPendingTransactions(
         Consumer<Pair<Integer, String>> progressCallback,
-        Consumer<List<String>> onComplete // receives list of failed invoice numbers
+        Consumer<List<String>> onComplete
 ) {
     String query = "SELECT * FROM Invoices WHERE State = 0";
 
     List<String> failedInvoices = Collections.synchronizedList(new ArrayList<>());
-    List<String> pendingInvoices = new ArrayList<>(); // ← Move here so it's visible in catch block
+    List<String> pendingInvoices = new ArrayList<>();
+    Map<String, Double> vatMap = new HashMap<>();
+    Map<String, Double> totalMap = new HashMap<>();
+    Map<String, String> paymentMap = new HashMap<>();
 
     try (Connection connection = Database.createConnection();
          PreparedStatement stmt = connection.prepareStatement(query);
          var rs = stmt.executeQuery()) {
-
-        Map<String, Double> vatMap = new HashMap<>();
-        Map<String, Double> totalMap = new HashMap<>();
 
         while (rs.next()) {
             String invoiceNumber = rs.getString("InvoiceNumber");
             pendingInvoices.add(invoiceNumber);
             vatMap.put(invoiceNumber, rs.getDouble("TotalVAT"));
             totalMap.put(invoiceNumber, rs.getDouble("InvoiceTotal"));
+            paymentMap.put(invoiceNumber, rs.getString("PaymentId")); // ✅ extract PaymentId
         }
 
         int total = pendingInvoices.size();
         AtomicInteger counter = new AtomicInteger(0);
+        String token = Helper.getToken(); // ✅ fetch once
+
+        ExecutorService executor = Executors.newFixedThreadPool(5); // better than spawning threads
 
         for (String invoiceNumber : pendingInvoices) {
-            new Thread(() -> {
+            executor.submit(() -> {
                 try {
-                    InvoiceHeader header = Helper.getInvoiceHeader(invoiceNumber);
+                    String paymentId = paymentMap.get(invoiceNumber);
+                    InvoiceHeader header = Helper.getInvoiceHeader(invoiceNumber, "", "", paymentId);
                     List<LineItemDto> lineItems = Helper.getLineItems(invoiceNumber);
 
                     InvoiceSummary invoiceSummary = new InvoiceSummary();
@@ -1304,9 +1313,7 @@ public static void retryPendingTransactions(
                     payload.setInvoiceLineItems(lineItems);
                     payload.setInvoiceSummary(invoiceSummary);
 
-                    Gson gson = new Gson();
-                    String jsonPayload = gson.toJson(payload);
-                    String token = Helper.getToken();
+                    String jsonPayload = new Gson().toJson(payload);
 
                     ApiClient apiClient = new ApiClient();
                     apiClient.submitTransactions(jsonPayload, token, (success, returnedValidationUrl) -> {
@@ -1320,41 +1327,41 @@ public static void retryPendingTransactions(
                         }
 
                         int current = counter.incrementAndGet();
-
                         if (progressCallback != null) {
                             progressCallback.accept(new Pair<>(current, invoiceNumber));
                         }
-
                         if (current == total && onComplete != null) {
                             onComplete.accept(failedInvoices);
                         }
                     });
+
                 } catch (Exception e) {
                     failedInvoices.add(invoiceNumber);
                     System.err.println("❌ Exception for: " + invoiceNumber + " → " + e.getMessage());
 
                     int current = counter.incrementAndGet();
-
                     if (progressCallback != null) {
                         progressCallback.accept(new Pair<>(current, invoiceNumber));
                     }
-
                     if (current == total && onComplete != null) {
                         onComplete.accept(failedInvoices);
                     }
                 }
-            }).start();
+            });
 
-            Thread.sleep(400); // Optional throttle
+            Thread.sleep(400); // throttle if needed
         }
 
+        executor.shutdown();
+
     } catch (SQLException | InterruptedException e) {
-        System.err.println("❌ Database error during retry: " + e.getMessage());
+        System.err.println("❌ DB error: " + e.getMessage());
         if (onComplete != null) {
-            onComplete.accept(pendingInvoices); // Assume all failed if DB error
+            onComplete.accept(pendingInvoices);
         }
     }
 }
+
     /**
      * Get the store name
      */

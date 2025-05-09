@@ -19,4 +19,7 @@ public class ApiEndpoints {
     public static final String TERMINAL_BLOCKING_MESSAGE = "/utilities/get-terminal-blocking-message";
     public static final String CHECK_TERMINAL_UNBLOCK_STATUS = "/utilities/check-terminal-unblock-status";
     
+    //Authorization code validation
+    public static final String VALIDATE_AUTHORIZATION_CODE = "/utilities/validate-authorization-code";
+    
 }

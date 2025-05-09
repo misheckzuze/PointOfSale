@@ -11,6 +11,7 @@ com\pointofsale\model\InvoiceSummary.class
 com\pointofsale\ProductManagement$5.class
 com\pointofsale\ProductLookupDialog.class
 com\pointofsale\ReportsView$8.class
+com\pointofsale\model\HeldSale.class
 com\pointofsale\TransactionsView$3$1.class
 com\pointofsale\ProductLookupDialog$2.class
 com\pointofsale\ProductManagement$2.class
@@ -18,6 +19,7 @@ com\pointofsale\TransactionsView$2.class
 com\pointofsale\model\TaxSummary.class
 com\pointofsale\helper\ApiClient$1.class
 com\pointofsale\model\InvoiceDetails.class
+com\pointofsale\POSDashboard$4.class
 com\pointofsale\ReportsView$1.class
 com\pointofsale\LoginView.class
 com\pointofsale\TransactionsView.class

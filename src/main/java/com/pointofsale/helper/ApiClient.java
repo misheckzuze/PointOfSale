@@ -445,8 +445,9 @@ public class ApiClient {
 
         while (rs.next()) {
            String invoiceNumber = rs.getString("InvoiceNumber");
+           String paymentId = rs.getString("PaymentId");
 
-           InvoiceHeader header = Helper.getInvoiceHeader(invoiceNumber);
+           InvoiceHeader header = Helper.getInvoiceHeader(invoiceNumber, "", "", paymentId);
            List<LineItemDto> lineItems = Helper.getLineItems(invoiceNumber);
     
            InvoiceSummary invoiceSummary = new InvoiceSummary();
@@ -483,6 +484,60 @@ public class ApiClient {
     } catch (SQLException e) {
         System.err.println("❌ Error fetching pending transactions: " + e.getMessage());
     }
+}
+  
+  public void validateAuthorizationCode(String authCode, String bearerToken, Consumer<Boolean> callback) {
+     String url = ApiEndpoints.BASE_URL + ApiEndpoints.VALIDATE_AUTHORIZATION_CODE;
+
+    JsonObject requestBody = Json.createObjectBuilder()
+        .add("authorizationCode", authCode)
+        .build();
+
+    HttpRequest request = HttpRequest.newBuilder()
+        .uri(URI.create(url))
+        .header("Authorization", "Bearer " + bearerToken)
+        .header("Content-Type", "application/json")
+        .header("Accept", "text/plain")
+        .POST(HttpRequest.BodyPublishers.ofString(requestBody.toString()))
+        .build();
+
+    new Thread(() -> {
+        boolean isValid = false;
+
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            System.out.println("Status Code: " + response.statusCode());
+            System.out.println("Response Body: " + response.body());
+
+            if (response.statusCode() == 200) {
+                JsonReader reader = Json.createReader(new StringReader(response.body()));
+                JsonObject jsonResponse = reader.readObject();
+
+                int statusCode = jsonResponse.getInt("statusCode", 0);
+                if (statusCode == 1 && jsonResponse.containsKey("data")) {
+                    JsonObject data = jsonResponse.getJsonObject("data");
+                    isValid = data.getBoolean("isValidAuthorizationCode", false);
+
+                    if (!isValid) {
+                        System.err.println("⚠ Invalid authorization code.");
+                    } else {
+                        System.out.println("✅ Authorization code is valid.");
+                    }
+                } else {
+                    System.err.println("⚠ Validation failed: " + jsonResponse.getString("remark", ""));
+                }
+            } else {
+                System.err.println("❌ HTTP Error " + response.statusCode());
+            }
+        } catch (Exception e) {
+            System.err.println("❌ Error validating authorization code: " + e.getMessage());
+            e.printStackTrace();
+        }
+
+        boolean finalIsValid = isValid;
+        Platform.runLater(() -> callback.accept(finalIsValid));
+    }).start();
 }
 
 

@@ -3,7 +3,7 @@ package com.pointofsale.model;
 import javafx.beans.property.SimpleDoubleProperty;
 import javafx.beans.property.SimpleStringProperty;
 
-public class Product {
+public class Product implements Cloneable {
     private final SimpleStringProperty barcode;
     private final SimpleStringProperty name;
     private final SimpleStringProperty description;
@@ -13,13 +13,11 @@ public class Product {
     private final SimpleStringProperty taxRate;
     private final SimpleDoubleProperty total;
 
-    // ➕ New fields for VAT and product flag
     private long id = 0;
     private final SimpleDoubleProperty discount = new SimpleDoubleProperty(0.0);
     private final SimpleDoubleProperty totalVAT = new SimpleDoubleProperty(0.0);
     private boolean isProduct = true;
 
-    // ➕ New fields to track discount details
     private double originalPrice;
     private double discountPercent;
     private double discountAmount;
@@ -54,7 +52,7 @@ public class Product {
         this.totalVAT.set(calculateVAT(this.total.get(), getTaxRate()));
     }
 
-    // 📦 Getters
+    // Getters
     public long getId() { return id; }
     public String getBarcode() { return barcode.get(); }
     public String getName() { return name.get(); }
@@ -68,19 +66,18 @@ public class Product {
     public double getTotalVAT() { return totalVAT.get(); }
     public boolean isProduct() { return isProduct; }
 
-    // ✍️ Setters
+    // Setters
     public void setId(long id) { this.id = id; }
 
     public void setDiscount(double discount) {
         this.discount.set(discount);
         updateTotal();
     }
-    
-    public void setPrice(double price) {
-    this.price.set(price);
-    updateTotal(); // Optionally recalculate totals when price changes
-}
 
+    public void setPrice(double price) {
+        this.price.set(price);
+        updateTotal();
+    }
 
     public void setIsProduct(boolean isProduct) {
         this.isProduct = isProduct;
@@ -95,7 +92,7 @@ public class Product {
         this.quantity.set(this.quantity.get() + 1);
     }
 
-    // 📊 Discount tracking
+    // Discount tracking
     public double getOriginalPrice() {
         return originalPrice > 0 ? originalPrice : price.get();
     }
@@ -126,4 +123,25 @@ public class Product {
     public SimpleDoubleProperty quantityProperty() { return quantity; }
     public SimpleDoubleProperty discountProperty() { return discount; }
     public SimpleDoubleProperty totalVATProperty() { return totalVAT; }
+
+    // Clone method
+    @Override
+    public Product clone() {
+        Product cloned = new Product(
+            this.getBarcode(),
+            this.getName(),
+            this.getDescription(),
+            this.getPrice(),
+            this.getTaxRate(),
+            this.getQuantity(),
+            this.getUnitOfMeasure(),
+            this.isProduct()
+        );
+        cloned.setId(this.getId());
+        cloned.setDiscount(this.getDiscount());
+        cloned.setOriginalPrice(this.getOriginalPrice());
+        cloned.setDiscountPercent(this.getDiscountPercent());
+        cloned.setDiscountAmount(this.getDiscountAmount());
+        return cloned;
+    }
 }

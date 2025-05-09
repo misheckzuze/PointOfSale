@@ -13,8 +13,10 @@ import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.*;
 import java.time.LocalDate;
+import java.util.Optional;
 import javafx.event.EventHandler;
 import javafx.animation.KeyValue;
+import javafx.util.Pair;
 import javafx.scene.image.Image;
 import javafx.scene.shape.Polygon;
 import javafx.embed.swing.SwingFXUtils;
@@ -63,6 +65,7 @@ import javafx.application.Platform;
 import com.pointofsale.model.Product;
 import com.pointofsale.model.LineItemDto;
 import com.pointofsale.model.InvoiceHeader;
+import com.pointofsale.model.HeldSale;
 import com.pointofsale.model.InvoicePayload;
 import com.pointofsale.model.TaxBreakDown;
 import java.text.NumberFormat;
@@ -96,18 +99,19 @@ public class POSDashboard extends Application {
     private Button processPaymentButton;
     private Label taxLabel;
     private Node currentContent;
+    private TextField buyerAuthField;
     private ComboBox<String> paymentMethodComboBox;
     private double cartDiscountAmount = 0.0;
     private double cartDiscountPercent = 0.0;
     private Label discountValueLabel;
-    
-    // Sample data
+    private TextField customerNameField;
+    private TextField  tinField; 
     private ObservableList<Product> cartItems;
     private double totalAmount = 0.0;
     private String currentCashier = Session.firstName + " " + Session.lastName;
     private String role = Session.role;
     private String receiptNumber =  generateNewReceiptNumber();
-
+    private Map<String, HeldSale> heldSales = new HashMap<>();
 
     @Override
     public void start(Stage primaryStage) {
@@ -707,8 +711,8 @@ private void showAlert(String title, String message) {
         return mainContent;
     }
     
-    /**
- * Creates the checkout panel on the right side
+/**
+ * Creates the checkout panel on the right side with buyer authorization functionality
  */
 private VBox createCheckoutPanel() {
     VBox checkoutPanel = new VBox(15);
@@ -734,20 +738,41 @@ private VBox createCheckoutPanel() {
     customerInfoLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #424242;");
     
     // Customer name field
-    TextField customerNameField = new TextField();
+    customerNameField = new TextField();
     customerNameField.setPromptText("Enter customer name");
     customerNameField.setPrefHeight(35);
     customerNameField.setStyle("-fx-font-size: 13px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
                           "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;");
     
     // TIN field
-    TextField tinField = new TextField();
+    tinField = new TextField();
     tinField.setPromptText("Enter Tax Identification Number");
     tinField.setPrefHeight(35);
     tinField.setStyle("-fx-font-size: 13px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
                    "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;");
     
-    customerInfoBox.getChildren().addAll(customerInfoLabel, customerNameField, tinField);
+    // Add buyer authorization code field (initially hidden)
+    buyerAuthField = new TextField();
+    buyerAuthField.setPromptText("Enter Buyer Authorization Code");
+    buyerAuthField.setPrefHeight(35);
+    buyerAuthField.setStyle("-fx-font-size: 13px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+                   "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;");
+    buyerAuthField.setVisible(false);
+    buyerAuthField.setManaged(false);
+    
+    // Add listener to the TIN field to toggle buyer authorization code field
+    tinField.textProperty().addListener((observable, oldValue, newValue) -> {
+        boolean isBusiness = newValue != null && !newValue.trim().isEmpty();
+        buyerAuthField.setVisible(isBusiness);
+        buyerAuthField.setManaged(isBusiness);
+        
+        // Reset auth field when TIN is cleared
+        if (!isBusiness) {
+            buyerAuthField.clear();
+        }
+    });
+    
+    customerInfoBox.getChildren().addAll(customerInfoLabel, customerNameField, tinField, buyerAuthField);
     
     // Subtotal section
     GridPane summaryGrid = new GridPane();
@@ -846,14 +871,15 @@ private VBox createCheckoutPanel() {
     changeBox.getChildren().add(0, spacer);
     
     // Add real-time change calculation when cash amount changes
-     cashAmountField.textProperty().addListener((observable, oldValue, newValue) -> {
-    // Validate input to allow only numbers and decimal points
-       if (!newValue.matches("\\d*\\.?\\d*")) {
-          cashAmountField.setText(oldValue);
+    cashAmountField.textProperty().addListener((observable, oldValue, newValue) -> {
+        // Validate input to allow only numbers and decimal points
+        if (!newValue.matches("\\d*\\.?\\d*")) {
+            cashAmountField.setText(oldValue);
         } else {
-        updateChangeCalculation();
+            updateChangeCalculation();
         }
-    });    
+    });
+    
     cashAmountBox.getChildren().addAll(cashAmountLabel, cashAmountField, changeBox);
     
     // Process payment button
@@ -890,9 +916,13 @@ private VBox createCheckoutPanel() {
     Button addCustomerButton = createSecondaryActionButton("Add Customer");
     Button addNoteButton = createSecondaryActionButton("Add Note");
     Button holdSaleButton = createSecondaryActionButton("Hold Sale");
+    Button viewHeldSalesButton = createSecondaryActionButton("View Held Sales");
     Button printReceiptButton = createSecondaryActionButton("Print Preview");
     
-    customerActionsPanel.getChildren().addAll(customerActionsTitle, addCustomerButton, addNoteButton, holdSaleButton, printReceiptButton);
+    holdSaleButton.setOnAction(e -> holdSale());
+    viewHeldSalesButton.setOnAction(e -> showHeldSales());
+    
+    customerActionsPanel.getChildren().addAll(customerActionsTitle, addCustomerButton, addNoteButton, holdSaleButton, viewHeldSalesButton, printReceiptButton);
     
     // Add all elements to the card
     card.getChildren().addAll(summaryTitle, separator, customerInfoBox, summaryGrid, paymentMethodBox, cashAmountBox, processPaymentButton);
@@ -906,7 +936,20 @@ private VBox createCheckoutPanel() {
     
     return checkoutPanel;
 }
-    
+
+ /**
+     * Creates a styled secondary action button for customer actions
+     */
+    private Button createSecondaryActionButton(String text) {
+        Button button = new Button(text);
+        button.setPrefHeight(35);
+        button.setMaxWidth(Double.MAX_VALUE);
+        button.setStyle("-fx-background-color: white; -fx-text-fill: #3949ab; " +
+                      "-fx-font-size: 13px; -fx-font-weight: bold; -fx-cursor: hand; " +
+                      "-fx-background-radius: 5px; -fx-border-color: #3949ab; -fx-border-radius: 5px;");
+        
+        return button;
+    }
     /**
      * Creates a styled action button for quick actions
      */
@@ -923,22 +966,8 @@ private VBox createCheckoutPanel() {
     }
     
     /**
-     * Creates a styled secondary action button for customer actions
-     */
-    private Button createSecondaryActionButton(String text) {
-        Button button = new Button(text);
-        button.setPrefHeight(35);
-        button.setMaxWidth(Double.MAX_VALUE);
-        button.setStyle("-fx-background-color: white; -fx-text-fill: #3949ab; " +
-                      "-fx-font-size: 13px; -fx-font-weight: bold; -fx-cursor: hand; " +
-                      "-fx-background-radius: 5px; -fx-border-color: #3949ab; -fx-border-radius: 5px;");
-        
-        return button;
-    }
-    
-    /**
      * Adds a product to the cart based on barcode input
-     */
+    */
    private void addProductToCart() {
     String barcode = barcodeField.getText().trim();
 
@@ -1092,22 +1121,58 @@ private void updateChangeCalculation() {
                                   "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: default; " +
                                   "-fx-background-radius: 5px;");
     }
+}    
+ private void processPayment() {
+    boolean isBusiness = tinField.getText() != null && !tinField.getText().trim().isEmpty();
+    String authCode = buyerAuthField.getText();
+
+    if (isBusiness) {
+        if (authCode == null || authCode.trim().isEmpty()) {
+            Alert alert = new Alert(Alert.AlertType.WARNING);
+            alert.setTitle("Authorization Required");
+            alert.setHeaderText(null);
+            alert.setContentText("Business purchase requires buyer authorization code. Please enter it to proceed.");
+            alert.showAndWait();
+            buyerAuthField.requestFocus();
+            return;
+        }
+        
+        String bearerToken = Helper.getToken();
+        
+
+        // Validate authorization code before proceeding
+        // Step 6: Submit the request
+        ApiClient apiClient = new ApiClient();
+        apiClient.validateAuthorizationCode(authCode, bearerToken, isValid -> {
+            if (!isValid) {
+                Alert alert = new Alert(Alert.AlertType.ERROR);
+                alert.setTitle("Invalid Authorization Code");
+                alert.setHeaderText(null);
+                alert.setContentText("The authorization code provided is invalid. Please check and try again.");
+                alert.showAndWait();
+                buyerAuthField.requestFocus();
+                return;
+            }
+
+            // Continue if valid
+            continueAfterValidation();
+        });
+
+        return; // prevent fallthrough while async runs
+    }
+
+    // If not business, continue immediately
+    continueAfterValidation();
 }
-    
-    /**
-     * Processes the payment
-     */
-private void processPayment() {
+
+ private void continueAfterValidation() {
     double offlineThreshold = Helper.getOfflineTransactionLimit();
-
     LocalDateTime firstUnSyncTime = Helper.getLastSuccessfulSyncTimeFromInvoices();
-
     double currentOfflineAmount = firstUnSyncTime != null
-    ? java.time.Duration.between(firstUnSyncTime, LocalDateTime.now()).toHours()
-    : 0;
-    
+        ? java.time.Duration.between(firstUnSyncTime, LocalDateTime.now()).toHours()
+        : 0;
+
     if (currentOfflineAmount >= offlineThreshold) {
-        // Alert user: Offline transaction limit reached
         Platform.runLater(() -> {
             Alert alert = new Alert(Alert.AlertType.WARNING);
             alert.setTitle("Offline Limit Reached");
@@ -1125,7 +1190,18 @@ private void processPayment() {
     });
 }
 
+
     private void proceedWithPayment() {
+        
+        String selectedPaymentMethod = paymentMethodComboBox.getValue();
+        String buyerTIN = tinField.getText().trim();
+        String amountTenderedText = cashAmountField.getText().trim();
+        double amountTendered = Double.parseDouble(amountTenderedText);
+        String changeValueText = changeValueLabel.getText();
+        changeValueText = changeValueText.replace("MK", "").replace(",", "").trim();
+        double changeValue = Double.parseDouble(changeValueText);
+        
+        
         if (cartItems.isEmpty()) {
             showAlert("Error", "Cart is empty. Please add items before processing payment.");
             return;
@@ -1135,24 +1211,14 @@ private void processPayment() {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.setTitle("Payment Processing");
         alert.setHeaderText("Processing Payment");
-        alert.setContentText("Processing " + paymentMethodComboBox.getValue() + " payment for " + 
+        alert.setContentText("Processing " + selectedPaymentMethod + " payment for " + 
                           formatCurrency(totalAmount) + "...");
         alert.showAndWait();
         
-       // 1. Create and populate the invoice header
-       InvoiceHeader invoiceHeader = new InvoiceHeader();
-       invoiceHeader.setInvoiceNumber(generateNewReceiptNumber());
-       invoiceHeader.setInvoiceDateTime(LocalDateTime.now().toString());
-       invoiceHeader.setSellerTIN(Helper.getTin());
-       invoiceHeader.setBuyerTIN("");
-       invoiceHeader.setBuyerAuthorizationCode("");
-       invoiceHeader.setSiteId(Helper.getTerminalSiteId());
-       invoiceHeader.setGlobalConfigVersion(Helper.getGlobalVersion());
-       invoiceHeader.setTaxpayerConfigVersion(Helper.getTaxpayerVersion());
-       invoiceHeader.setTerminalConfigVersion(Helper.getTerminalVersion());
-       invoiceHeader.setReliefSupply(false);
-       invoiceHeader.setVat5CertificateDetails(null);
-       invoiceHeader.setPaymentMethod("Cash");
+        String invoiceNumber = generateNewReceiptNumber();
+        String buyerAuthorizationCode = buyerAuthField.getText().trim();
+        
+       InvoiceHeader invoiceHeader = Helper.getInvoiceHeader(invoiceNumber, buyerTIN, buyerAuthorizationCode, selectedPaymentMethod);
 
     // 2. Convert products to line items
     List<LineItemDto> lineItems = new ArrayList<>();
@@ -1222,20 +1288,22 @@ private void processPayment() {
              
                // Print the premium receipt with validation URL
 try {
-    String buyersName = "";
-    // Make sure we have the buyer's name
-    String buyerName = (!buyersName.trim().isEmpty())
-                      ? buyersName 
-                      : "Walk-in Customer";
-    
-    EscPosReceiptPrinter.printReceipt(
-        invoiceHeader,
-        buyerName,  
-        lineItems, 
-        returnedValidationUrl, 
-        amountPaid, 
-        amountPaid - totalAmount,
-        taxBreakdowns
+     // Get the buyer's name from the input field
+     String buyersName = customerNameField.getText();
+
+     // Fallback to "Walk-in Customer" if empty
+     String buyerName = (!buyersName.trim().isEmpty())
+                  ? buyersName 
+                  : "";
+
+     EscPosReceiptPrinter.printReceipt(
+      invoiceHeader,
+      buyerName,  
+      lineItems, 
+      returnedValidationUrl, 
+      amountTendered, 
+      changeValue,
+      taxBreakdowns
     );
     System.out.println("✅ Premium receipt printed successfully.");
 } catch (Exception e) {
@@ -2163,6 +2231,387 @@ private int calculateEAN13CheckDigit(String code12) {
         return initials.toString().toUpperCase();
     }
     
+ private void holdSale() {
+    // Validate there are items in the cart
+    if (cartItems.isEmpty()) {
+        showAlert("Error", "Cart is empty. Add items before holding a sale.");
+        return;
+    }
+
+    // Create a dialog to get customer info and hold reason
+    Dialog<Pair<String, String>> dialog = new Dialog<>();
+    dialog.setTitle("Hold Sale");
+    dialog.setHeaderText(null); // Remove default header text for custom styling
+    
+    // Set the button types
+    ButtonType saveButtonType = new ButtonType("Hold Sale", ButtonBar.ButtonData.OK_DONE);
+    dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
+
+    // Style the dialog pane
+    DialogPane dialogPane = dialog.getDialogPane();
+    dialogPane.setStyle("-fx-background-color: white;");
+    dialogPane.setPrefWidth(500);
+    
+    // Create main container
+    VBox container = new VBox(20);
+    container.setPadding(new Insets(25));
+    
+    // Header with title
+    Label headerLabel = new Label("Hold Sale");
+    headerLabel.setStyle("-fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: #1a237e;");
+    
+    // Instruction text
+    Label instructionLabel = new Label("Enter customer information to hold this sale");
+    instructionLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #757575;");
+    
+    // Create the customer name and reason form
+    VBox formContent = new VBox(18);
+    formContent.setPadding(new Insets(15, 0, 10, 0));
+    
+    // Customer name field with label
+    VBox customerNameBox = new VBox(8);
+    Label customerNameLabel = new Label("Customer Name");
+    customerNameLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #555555;");
+    
+    TextField heldCustomerNameField = new TextField();
+    heldCustomerNameField.setPromptText("Enter customer name");
+    heldCustomerNameField.setPrefHeight(40);
+    heldCustomerNameField.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+                              "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: #f8f8f8;");
+    
+    customerNameBox.getChildren().addAll(customerNameLabel, heldCustomerNameField);
+    
+    // Reason field with label
+    VBox reasonBox = new VBox(8);
+    Label reasonLabel = new Label("Reason for Holding Sale");
+    reasonLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #555555;");
+    
+    TextArea reasonField = new TextArea();
+    reasonField.setPromptText("Enter the reason for holding this sale");
+    reasonField.setPrefRowCount(3);
+    reasonField.setWrapText(true);
+    reasonField.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+                        "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: #f8f8f8;");
+    
+    reasonBox.getChildren().addAll(reasonLabel, reasonField);
+    
+    // Add fields to form
+    formContent.getChildren().addAll(customerNameBox, reasonBox);
+    
+    // Add all components to container
+    container.getChildren().addAll(headerLabel, instructionLabel, formContent);
+    dialogPane.setContent(container);
+    
+    // Style the buttons
+    Button saveButton = (Button) dialog.getDialogPane().lookupButton(saveButtonType);
+    saveButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; " +
+                      "-fx-font-size: 14px; -fx-font-weight: bold; -fx-cursor: hand; " +
+                      "-fx-background-radius: 5px;");
+    
+    // Add hover effect to hold sale button
+    saveButton.setOnMouseEntered(e -> 
+        saveButton.setStyle("-fx-background-color: #3949ab; -fx-text-fill: white; " +
+                          "-fx-font-size: 14px; -fx-font-weight: bold; -fx-cursor: hand; " +
+                          "-fx-background-radius: 5px;")
+    );
+    
+    saveButton.setOnMouseExited(e -> 
+        saveButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; " +
+                          "-fx-font-size: 14px; -fx-font-weight: bold; -fx-cursor: hand; " +
+                          "-fx-background-radius: 5px;")
+    );
+    
+    // Style cancel button
+    Button cancelButton = (Button) dialog.getDialogPane().lookupButton(ButtonType.CANCEL);
+    cancelButton.setStyle("-fx-background-color: #f5f5f5; -fx-text-fill: #555555; " +
+                        "-fx-font-size: 14px; -fx-cursor: hand; -fx-background-radius: 5px; " +
+                        "-fx-border-color: #e0e0e0; -fx-border-width: 1px;");
+    
+    // Add hover effect to cancel button
+    cancelButton.setOnMouseEntered(e -> 
+        cancelButton.setStyle("-fx-background-color: #e0e0e0; -fx-text-fill: #555555; " +
+                            "-fx-font-size: 14px; -fx-cursor: hand; -fx-background-radius: 5px; " +
+                            "-fx-border-color: #e0e0e0; -fx-border-width: 1px;")
+    );
+    
+    cancelButton.setOnMouseExited(e -> 
+        cancelButton.setStyle("-fx-background-color: #f5f5f5; -fx-text-fill: #555555; " +
+                            "-fx-font-size: 14px; -fx-cursor: hand; -fx-background-radius: 5px; " +
+                            "-fx-border-color: #e0e0e0; -fx-border-width: 1px;")
+    );
+    
+    // Add drop shadow to dialog
+    DropShadow dialogShadow = new DropShadow();
+    dialogShadow.setRadius(10.0);
+    dialogShadow.setOffsetY(5.0);
+    dialogShadow.setColor(Color.color(0.0, 0.0, 0.0, 0.2));
+    dialogPane.setEffect(dialogShadow);
+
+    // Request focus on the customer name field by default
+    Platform.runLater(() -> customerNameField.requestFocus());
+
+    // Convert the result to a customer name-reason pair when the save button is clicked
+    dialog.setResultConverter(dialogButton -> {
+        if (dialogButton == saveButtonType) {
+            return new Pair<>(customerNameField.getText(), reasonField.getText());
+        }
+        return null;
+    });
+
+    Optional<Pair<String, String>> result = dialog.showAndWait();
+
+    result.ifPresent(customerReasonPair -> {
+        String customerName = customerReasonPair.getKey();
+        String reason = customerReasonPair.getValue();
+
+        // Generate a unique hold ID
+        String holdId = generateHoldId();
+
+        // Get customer TIN from UI if possible
+        String customerTIN = "";
+        try {
+            if (root.getRight() instanceof VBox) {
+                VBox rightPane = (VBox) root.getRight();
+                Node firstChild = rightPane.getChildren().get(0);
+                if (firstChild instanceof VBox) {
+                    VBox topSection = (VBox) firstChild;
+                    Node possibleTinField = topSection.getChildren().get(2);
+                    if (possibleTinField instanceof TextField) {
+                        TextField tinField = (TextField) possibleTinField;
+                        customerTIN = tinField.getText();
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            System.err.println("Could not extract TIN field: " + ex.getMessage());
+        }
+
+        // Copy cart items
+        List<Product> itemsCopy = new ArrayList<>();
+        for (Product item : cartItems) {
+            Product copy = item.clone(); // Clone without casting
+            itemsCopy.add(copy);
+        }
+
+        // Create a new held sale
+        HeldSale heldSale = new HeldSale(
+            holdId,
+            customerName,
+            customerTIN,
+            itemsCopy,
+            cartDiscountAmount,
+            cartDiscountPercent
+        );
+
+        // Store the held sale
+        heldSales.put(holdId, heldSale);
+
+        // Style the confirmation alert
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("Sale Held Successfully");
+        alert.setHeaderText(null);
+        alert.setContentText("Sale has been held with ID: " + holdId + "\nCustomer: " + customerName);
+        
+        DialogPane alertPane = alert.getDialogPane();
+        alertPane.setStyle("-fx-background-color: white;");
+        alertPane.getStyleClass().add("modern-alert");
+        
+        // Style the OK button on the alert
+        Button okButton = (Button) alertPane.lookupButton(ButtonType.OK);
+        okButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; " +
+                        "-fx-font-size: 14px; -fx-font-weight: bold; -fx-cursor: hand; " +
+                        "-fx-background-radius: 5px;");
+
+        // Clear the current cart
+        cartItems.clear();
+        updateTotals();
+
+        // Generate a new receipt number
+        receiptNumberLabel.setText(generateNewReceiptNumber());
+
+        alert.showAndWait();
+    });
+}
+
+
+// Add this method to POSDashboard class
+private String generateHoldId() {
+    // Create a unique ID with date and random number
+    LocalDateTime now = LocalDateTime.now();
+    String dateStr = now.format(DateTimeFormatter.ofPattern("yyMMdd"));
+    String timeStr = now.format(DateTimeFormatter.ofPattern("HHmmss"));
+    return "H" + dateStr + timeStr;
+}
+private void showHeldSales() {
+    if (heldSales.isEmpty()) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("No Held Sales");
+        alert.setHeaderText("🟨 No Sales on Hold");
+        alert.setContentText("There are currently no held sales available.");
+        alert.showAndWait();
+        return;
+    }
+
+    Dialog<HeldSale> dialog = new Dialog<>();
+    dialog.setTitle("🕒 Held Sales");
+    dialog.setHeaderText("Select a held sale to restore");
+    dialog.getDialogPane().setStyle("-fx-background-color: #FAFAFA;");
+
+    // Define buttons
+    ButtonType restoreButtonType = new ButtonType("Restore Sale", ButtonBar.ButtonData.OK_DONE);
+    dialog.getDialogPane().getButtonTypes().addAll(restoreButtonType, ButtonType.CANCEL);
+
+    // Create ListView
+    ListView<HeldSale> listView = new ListView<>();
+    listView.setPrefHeight(300);
+    listView.setStyle("-fx-border-color: #BDBDBD; -fx-border-radius: 5;");
+
+    listView.setCellFactory(lv -> new ListCell<HeldSale>() {
+        @Override
+        protected void updateItem(HeldSale item, boolean empty) {
+            super.updateItem(item, empty);
+            if (empty || item == null) {
+                setText(null);
+                setGraphic(null);
+            } else {
+                VBox cellContent = new VBox(2);
+                Label title = new Label("🟡 Hold #" + item.getHoldId());
+                title.setStyle("-fx-font-weight: bold; -fx-text-fill: #FFC107;");
+
+                Label details = new Label(item.getCustomerName() + " • " +
+                        item.getFormattedHoldTime() + " • " +
+                        item.getItems().size() + " items");
+                details.setStyle("-fx-text-fill: #616161; -fx-font-size: 12px;");
+
+                cellContent.getChildren().addAll(title, details);
+                setGraphic(cellContent);
+            }
+        }
+    });
+
+    listView.getItems().addAll(heldSales.values());
+
+    // Delete button
+    Button deleteButton = new Button("🗑 Delete Selected Sale");
+    deleteButton.setStyle(
+        "-fx-background-color: #f44336; -fx-text-fill: white; -fx-font-weight: bold; " +
+        "-fx-background-radius: 5px; -fx-cursor: hand;"
+    );
+    deleteButton.setOnMouseEntered(e -> deleteButton.setStyle(
+        "-fx-background-color: #d32f2f; -fx-text-fill: white; -fx-font-weight: bold; " +
+        "-fx-background-radius: 5px; -fx-cursor: hand;"
+    ));
+    deleteButton.setOnMouseExited(e -> deleteButton.setStyle(
+        "-fx-background-color: #f44336; -fx-text-fill: white; -fx-font-weight: bold; " +
+        "-fx-background-radius: 5px; -fx-cursor: hand;"
+    ));
+    deleteButton.setOnAction(e -> {
+        HeldSale selectedSale = listView.getSelectionModel().getSelectedItem();
+        if (selectedSale != null) {
+            Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
+            confirmAlert.setTitle("Confirm Delete");
+            confirmAlert.setHeaderText("Delete Held Sale");
+            confirmAlert.setContentText("Are you sure you want to delete this held sale?");
+            Optional<ButtonType> result = confirmAlert.showAndWait();
+            if (result.isPresent() && result.get() == ButtonType.OK) {
+                heldSales.remove(selectedSale.getHoldId());
+                listView.getItems().remove(selectedSale);
+            }
+        }
+    });
+
+    // Layout
+    VBox content = new VBox(15);
+    content.setPadding(new Insets(15));
+    content.getChildren().addAll(listView, deleteButton);
+
+    dialog.getDialogPane().setContent(content);
+
+    // Style restore button
+    Platform.runLater(() -> {
+        Button restoreButton = (Button) dialog.getDialogPane().lookupButton(restoreButtonType);
+        if (restoreButton != null) {
+            restoreButton.setStyle(
+                "-fx-background-color: #1a237e; -fx-text-fill: white; -fx-font-size: 14px; " +
+                "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 5px;"
+            );
+
+            restoreButton.setOnMouseEntered(e -> restoreButton.setStyle(
+                "-fx-background-color: #3949ab; -fx-text-fill: white; -fx-font-size: 14px; " +
+                "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 5px;"
+            ));
+
+            restoreButton.setOnMouseExited(e -> restoreButton.setStyle(
+                "-fx-background-color: #1a237e; -fx-text-fill: white; -fx-font-size: 14px; " +
+                "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 5px;"
+            ));
+        }
+    });
+
+    // Handle result
+    dialog.setResultConverter(dialogButton -> {
+        if (dialogButton == restoreButtonType) {
+            return listView.getSelectionModel().getSelectedItem();
+        }
+        return null;
+    });
+
+    Optional<HeldSale> result = dialog.showAndWait();
+
+    result.ifPresent(sale -> {
+        if (!cartItems.isEmpty()) {
+            Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
+            confirmAlert.setTitle("Cart Not Empty");
+            confirmAlert.setHeaderText("Current cart contains items");
+            confirmAlert.setContentText("Do you want to replace the current cart with the held sale?");
+            Optional<ButtonType> confirmResult = confirmAlert.showAndWait();
+            if (confirmResult.isPresent() && confirmResult.get() != ButtonType.OK) {
+                return;
+            }
+        }
+        restoreHeldSale(sale);
+    });
+}
+
+// Add this method to POSDashboard class
+private void restoreHeldSale(HeldSale sale) {
+    // Clear current cart
+    cartItems.clear();
+    
+    // Add items from held sale
+    for (Product item : sale.getItems()) {
+        cartItems.add(item);
+    }
+    
+    // Restore discount
+    cartDiscountAmount = sale.getCartDiscountAmount();
+    cartDiscountPercent = sale.getCartDiscountPercent();
+    
+    // Update customer info if available
+    if (!sale.getCustomerName().isEmpty()) {
+        // Find the customer name field in the UI
+        VBox customerInfoBox = (VBox) ((VBox) root.getRight()).getChildren().get(0).lookup(".customer-info-box");
+        if (customerInfoBox != null) {
+            ((TextField) customerInfoBox.getChildren().get(1)).setText(sale.getCustomerName());
+            ((TextField) customerInfoBox.getChildren().get(2)).setText(sale.getCustomerTIN());
+        }
+    }
+    
+    // Remove the held sale from the list
+    heldSales.remove(sale.getHoldId());
+    
+    // Update totals
+    updateTotals();
+    
+    // Show confirmation
+    Alert alert = new Alert(Alert.AlertType.INFORMATION);
+    alert.setTitle("Sale Restored");
+    alert.setHeaderText(null);
+    alert.setContentText("Held sale has been restored successfully.");
+    alert.showAndWait();
+}
+
+    
     /**
      * Handles the logout action
      */
@@ -2199,3 +2648,4 @@ private int calculateEAN13CheckDigit(String code12) {
         launch(args);
     }
 }
+
