@@ -49,8 +49,10 @@ public class Database {
                     "ProductExpiryDate TEXT, " +
                     "MinimumStockLevel REAL, " +
                     "TaxRateId TEXT, " +
-                    "IsProduct INTEGER)";
-                    
+                    "IsProduct INTEGER, " +
+                    "Discount REAL DEFAULT 0.0)";
+
+                                
             String createUsersTable = "CREATE TABLE IF NOT EXISTS Users (" +
                     "UserID INTEGER PRIMARY KEY AUTOINCREMENT," +
                     "FirstName TEXT NOT NULL," +
@@ -180,6 +182,30 @@ public class Database {
                     "RequestReason TEXT," +
                     "RequestDate TEXT," +
                     "FOREIGN KEY(InvoiceNumber) REFERENCES Invoices(InvoiceNumber))";
+            
+            String createHeldSalesTable = "CREATE TABLE IF NOT EXISTS HeldSales (" +
+                    "HoldId TEXT PRIMARY KEY, " +
+                    "CustomerName TEXT, " +
+                    "CustomerTIN TEXT, " +
+                    "CartDiscountAmount REAL, " +
+                    "CartDiscountPercent REAL, " +
+                    "HoldTime TEXT" +
+                     ")";
+
+            String createHeldSaleItemsTable = "CREATE TABLE IF NOT EXISTS HeldSaleItems (" +
+                    "Id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                    "HoldId TEXT NOT NULL, " +
+                    "Barcode TEXT NOT NULL, " +               // was ProductCode
+                    "ProductName TEXT NOT NULL, " +
+                    "UnitPrice REAL NOT NULL, " +
+                    "Quantity REAL NOT NULL, " +              // changed to REAL for decimal quantities
+                    "Discount REAL, " +
+                    "Total REAL, " +
+                    "TotalVAT REAL, " +
+                    "TaxRate TEXT, " +
+                    "UnitOfMeasure TEXT, " +
+                    "FOREIGN KEY(HoldId) REFERENCES HeldSales(HoldId)" +
+                    ")";
 
             // Execute all statements
             stmt.execute(createProductsTable);
@@ -199,6 +225,8 @@ public class Database {
             stmt.execute(createGloblaConfigurationsTable);
             stmt.execute(createInvoiceTaxBreakdownTable);
             stmt.execute(createPaymentTypeTable);
+            stmt.execute(createHeldSalesTable);
+            stmt.execute(createHeldSaleItemsTable);
 
             System.out.println("✅ All SQLite tables created and initialized at: " + DB_PATH);
             Helper.insertDefaultAdminIfNotExists(); // ← Insert admin after table creation

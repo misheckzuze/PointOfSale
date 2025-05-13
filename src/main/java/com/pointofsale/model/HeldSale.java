@@ -1,12 +1,9 @@
 package com.pointofsale.model;
 
-
 import java.time.format.DateTimeFormatter;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.ArrayList;
-
-
 
 public class HeldSale {
     private String holdId;
@@ -26,9 +23,10 @@ public class HeldSale {
         this.items = new ArrayList<>(items);
         this.cartDiscountAmount = cartDiscountAmount;
         this.cartDiscountPercent = cartDiscountPercent;
-        this.holdTime = LocalDateTime.now();
+        this.holdTime = LocalDateTime.now(); // Default to current time
     }
     
+    // Getters
     public String getHoldId() { return holdId; }
     public String getCustomerName() { return customerName; }
     public String getCustomerTIN() { return customerTIN; }
@@ -37,10 +35,14 @@ public class HeldSale {
     public double getCartDiscountPercent() { return cartDiscountPercent; }
     public LocalDateTime getHoldTime() { return holdTime; }
     
+    // Setter for holdTime
+    public void setHoldTime(LocalDateTime holdTime) {
+        this.holdTime = holdTime;
+    }
+
+    // Format holdTime for display
     public String getFormattedHoldTime() {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm:ss");
         return holdTime.format(formatter);
     }
 }
-
-

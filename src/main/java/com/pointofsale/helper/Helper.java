@@ -13,7 +13,6 @@ import java.util.Collections;
 import javafx.util.Pair;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
-import java.util.concurrent.atomic.AtomicInteger;
 import com.pointofsale.model.InvoiceSummary;
 import com.google.gson.Gson;
 import com.pointofsale.model.InvoicePayload;
@@ -35,6 +34,7 @@ import com.pointofsale.model.TaxRates;
 import com.pointofsale.model.SaleSummary;
 import com.pointofsale.model.InvoiceDetails;
 import com.pointofsale.model.Session;
+import com.pointofsale.model.HeldSale;
 import com.pointofsale.model.TaxTrend;
 import com.pointofsale.model.TaxSummary;
 import com.pointofsale.model.CategoryRevenue;
@@ -578,14 +578,13 @@ public static String getTerminalSiteId() {
         e.printStackTrace();
         }
     }
+    public static List<Product> fetchAllProductsFromDB() {
+        List<Product> products = new ArrayList<>();
 
-public static List<Product> fetchAllProductsFromDB() {
-    List<Product> products = new ArrayList<>();
-
-    try (Connection conn = Database.createConnection()) {
-        String query = "SELECT ProductCode, ProductName, Description, Price, TaxRateId, Quantity, UnitOfMeasure, IsProduct FROM Products";
-        try (PreparedStatement stmt = conn.prepareStatement(query);
-             var rs = stmt.executeQuery()) {
+        try (Connection conn = Database.createConnection()) {
+            String query = "SELECT ProductCode, ProductName, Description, Price, TaxRateId, Quantity, UnitOfMeasure, IsProduct, Discount FROM Products";
+            try (PreparedStatement stmt = conn.prepareStatement(query);
+               var rs = stmt.executeQuery()) {
 
             while (rs.next()) {
                 String barcode = rs.getString("ProductCode");
@@ -595,10 +594,12 @@ public static List<Product> fetchAllProductsFromDB() {
                 String rate = rs.getString("TaxRateId");
                 double quantity = rs.getDouble("Quantity");
                 String unit = rs.getString("UnitOfMeasure");
-                boolean isProduct = rs.getInt("IsProduct") == 1; // Assuming IsProduct is stored as 1 (true) or 0 (false)
+                boolean isProduct = rs.getInt("IsProduct") == 1;
+                double discount = rs.getDouble("Discount");
 
-                // Create the Product object with the updated constructor
-                products.add(new Product(barcode, name, desc, price, rate, quantity, unit, isProduct));
+                Product product = new Product(barcode, name, desc, price, rate, quantity, unit, isProduct);
+                product.setDiscount(discount);
+                products.add(product);
             }
 
         }
@@ -609,15 +610,16 @@ public static List<Product> fetchAllProductsFromDB() {
     return products;
 }
 
+
 public static Product fetchProductByBarcode(String barcode) {
     try (Connection conn = Database.createConnection()) {
-        String query = "SELECT ProductCode, ProductName, Description, Price, TaxRateId, Quantity, UnitOfMeasure, IsProduct FROM Products WHERE ProductCode = ?";
+        String query = "SELECT ProductCode, ProductName, Description, Price, TaxRateId, Quantity, UnitOfMeasure, IsProduct, Discount FROM Products WHERE ProductCode = ?";
         try (PreparedStatement stmt = conn.prepareStatement(query)) {
             stmt.setString(1, barcode);
             try (var rs = stmt.executeQuery()) {
                 if (rs.next()) {
-                    boolean isProduct = rs.getInt("IsProduct") == 1; // SQLite uses 0/1 for boolean
-                    return new Product(
+                    boolean isProduct = rs.getInt("IsProduct") == 1;
+                    Product product = new Product(
                         rs.getString("ProductCode"),
                         rs.getString("ProductName"),
                         rs.getString("Description"),
@@ -627,6 +629,12 @@ public static Product fetchProductByBarcode(String barcode) {
                         rs.getString("UnitOfMeasure"),
                         isProduct
                     );
+
+                    // Set discount
+                    double discount = rs.getDouble("Discount");
+                    product.setDiscount(discount);
+
+                    return product;
                 }
             }
         }
@@ -634,6 +642,23 @@ public static Product fetchProductByBarcode(String barcode) {
         System.err.println("❌ Error fetching product: " + e.getMessage());
     }
     return null;
+}
+
+
+public static boolean updateProductDiscount(String productCode, double discount) {
+    try (Connection conn = Database.createConnection()) {
+        String updateQuery = "UPDATE Products SET Discount = ? WHERE ProductCode = ?";
+        try (PreparedStatement stmt = conn.prepareStatement(updateQuery)) {
+            stmt.setDouble(1, discount);
+            stmt.setString(2, productCode);
+
+            int rowsUpdated = stmt.executeUpdate();
+            return rowsUpdated > 0;
+        }
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to update product discount: " + e.getMessage());
+        return false;
+    }
 }
 
 
@@ -1834,6 +1859,136 @@ public static List<String> getAllProductBarcodes() {
     return barcodes;
 }
 
+public static void saveHeldSale(HeldSale heldSale) {
+    String saleSql = "INSERT INTO HeldSales (HoldId, CustomerName, CustomerTIN, CartDiscountAmount, CartDiscountPercent, HoldTime) " +
+                     "VALUES (?, ?, ?, ?, ?, ?)";
+
+    String itemSql = "INSERT INTO HeldSaleItems (HoldId, Barcode, ProductName, UnitPrice, Quantity, Discount, Total, TotalVAT, TaxRate, UnitOfMeasure) " +
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+    try (Connection conn = Database.createConnection()) {
+        conn.setAutoCommit(false);
+
+        // Insert held sale info
+        try (PreparedStatement psSale = conn.prepareStatement(saleSql)) {
+            psSale.setString(1, heldSale.getHoldId());
+            psSale.setString(2, heldSale.getCustomerName());
+            psSale.setString(3, heldSale.getCustomerTIN());
+            psSale.setDouble(4, heldSale.getCartDiscountAmount());
+            psSale.setDouble(5, heldSale.getCartDiscountPercent());
+            psSale.setString(6, heldSale.getHoldTime().toString());
+            psSale.executeUpdate();
+        }
+
+        // Insert held sale items
+        try (PreparedStatement psItem = conn.prepareStatement(itemSql)) {
+            for (Product item : heldSale.getItems()) {
+                psItem.setString(1, heldSale.getHoldId());
+                psItem.setString(2, item.getBarcode());
+                psItem.setString(3, item.getName());
+                psItem.setDouble(4, item.getPrice());
+                psItem.setDouble(5, item.getQuantity());
+                psItem.setDouble(6, item.getDiscount());
+                psItem.setDouble(7, item.getTotal());
+                psItem.setDouble(8, item.getTotalVAT());
+                psItem.setString(9, item.getTaxRate());
+                psItem.setString(10, item.getUnitOfMeasure());
+                psItem.addBatch();
+            }
+            psItem.executeBatch();
+        }
+
+        conn.commit();
+        System.out.println("Held sale saved to database successfully.");
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+}
+
+public static List<HeldSale> getAllHeldSales() {
+    List<HeldSale> sales = new ArrayList<>();
+    String saleQuery = "SELECT * FROM HeldSales";
+    String itemQuery = "SELECT * FROM HeldSaleItems WHERE HoldId = ?";
+
+    try (Connection conn = Database.createConnection()) {
+
+        // Fetch all held sales
+        try (PreparedStatement saleStmt = conn.prepareStatement(saleQuery);
+             var rsSales = saleStmt.executeQuery()) {
+
+            while (rsSales.next()) {
+                // Get sale details
+                String holdId = rsSales.getString("HoldId");
+                String customerName = rsSales.getString("CustomerName");
+                String customerTIN = rsSales.getString("CustomerTIN");
+                double cartDiscountAmount = rsSales.getDouble("CartDiscountAmount");
+                double cartDiscountPercent = rsSales.getDouble("CartDiscountPercent");
+
+                // ✅ Fix: Parse HoldTime from String to LocalDateTime
+                String holdTimeStr = rsSales.getString("HoldTime");
+                LocalDateTime holdTime = LocalDateTime.parse(holdTimeStr);
+
+                // Load items for the current held sale
+                List<Product> items = new ArrayList<>();
+                try (PreparedStatement itemStmt = conn.prepareStatement(itemQuery)) {
+                    itemStmt.setString(1, holdId); // Use holdId to fetch the items
+                    try (var rsItems = itemStmt.executeQuery()) {
+                        while (rsItems.next()) {
+                            // Create a new Product object using the appropriate constructor
+                            Product item = new Product(
+                                rsItems.getString("Barcode"),
+                                rsItems.getString("ProductName"),
+                                "",
+                                rsItems.getDouble("UnitPrice"),
+                                rsItems.getString("TaxRate"),
+                                rsItems.getDouble("Quantity"),
+                                rsItems.getString("UnitOfMeasure"),
+                                true
+                            );
+                            items.add(item);
+                        }
+                    }
+                }
+
+                // Create the HeldSale using the constructor with arguments
+                HeldSale sale = new HeldSale(holdId, customerName, customerTIN, items, cartDiscountAmount, cartDiscountPercent);
+                sale.setHoldTime(holdTime);  // Ensure `setHoldTime` is present in HeldSale
+
+                sales.add(sale);  // Add the sale to the list
+            }
+
+        } catch (SQLException e) {
+            System.err.println("❌ Error fetching sales or items.");
+            e.printStackTrace();
+        }
+
+    } catch (SQLException e) {
+        System.err.println("❌ Database connection error.");
+        e.printStackTrace();
+    }
+
+    return sales;
+}
+
+public static boolean deleteHeldSaleById(String holdId) {
+    String query = "DELETE FROM HeldSales WHERE HoldId = ?";
+    
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(query)) {
+        
+        stmt.setString(1, holdId); // Use setString since HoldId is a String
+        int rowsAffected = stmt.executeUpdate();
+        
+        return rowsAffected > 0;
+        
+    } catch (SQLException e) {
+        System.err.println("❌ Error deleting held sale from database.");
+        e.printStackTrace();
+        return false;
+    }
+}
+
 
 
 }
+

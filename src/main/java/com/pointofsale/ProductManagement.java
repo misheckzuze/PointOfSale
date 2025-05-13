@@ -4,7 +4,6 @@ import com.pointofsale.helper.Helper;
 import com.pointofsale.helper.ApiClient;
 import com.pointofsale.model.Product;
 import com.pointofsale.model.TaxRates;
-
 import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.ReadOnlyStringWrapper;
 import javafx.collections.FXCollections;
@@ -509,108 +508,106 @@ public class ProductManagement {
     }
         
     private void showDiscountDialog(Product product) {
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle("Apply Discount");
-        dialog.setHeaderText("Apply Discount to " + product.getName());
-        
-        // Set the button types
-        ButtonType applyButtonType = new ButtonType("Apply Discount", ButtonBar.ButtonData.OK_DONE);
-        ButtonType removeButtonType = new ButtonType("Remove Discount", ButtonBar.ButtonData.LEFT);
-        dialog.getDialogPane().getButtonTypes().addAll(applyButtonType, removeButtonType, ButtonType.CANCEL);
-        
-        // Create the discount form
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(10);
-        grid.setPadding(new Insets(20, 150, 10, 10));
-        
-        // Current price
-        Label currentPriceLabel = new Label(formatCurrency(product.getPrice()));
-        currentPriceLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 14px;");
-        
-        // Discount options
-        ToggleGroup discountType = new ToggleGroup();
-        RadioButton percentageOption = new RadioButton("Percentage (%)");
-        percentageOption.setToggleGroup(discountType);
-        percentageOption.setSelected(true);
-        
-        RadioButton amountOption = new RadioButton("Fixed Amount");
-        amountOption.setToggleGroup(discountType);
-        
-        TextField discountValue = new TextField();
-        if (product.getDiscount() > 0) {
-            discountValue.setText(String.valueOf(product.getDiscount()));
-        }
-        
-        Label finalPriceLabel = new Label("--");
-        finalPriceLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 14px; -fx-text-fill: #1a237e;");
-        
-        // Add change listener to calculate final price
-        discountValue.textProperty().addListener((observable, oldValue, newValue) -> {
-            try {
-                double discount = Double.parseDouble(newValue);
-                double finalPrice;
-                
-                if (percentageOption.isSelected()) {
-                    finalPrice = product.getPrice() * (1 - discount / 100);
-                } else {
-                    finalPrice = product.getPrice() - discount;
-                }
-                
-                if (finalPrice < 0) finalPrice = 0;
-                finalPriceLabel.setText(formatCurrency(finalPrice));
-            } catch (NumberFormatException e) {
-                finalPriceLabel.setText("--");
+    Dialog<ButtonType> dialog = new Dialog<>();
+    dialog.setTitle("Apply Discount");
+    dialog.setHeaderText("Apply Discount to " + product.getName());
+
+    ButtonType applyButtonType = new ButtonType("Apply Discount", ButtonBar.ButtonData.OK_DONE);
+    ButtonType removeButtonType = new ButtonType("Remove Discount", ButtonBar.ButtonData.LEFT);
+    dialog.getDialogPane().getButtonTypes().addAll(applyButtonType, removeButtonType, ButtonType.CANCEL);
+
+    GridPane grid = new GridPane();
+    grid.setHgap(10);
+    grid.setVgap(10);
+    grid.setPadding(new Insets(20, 150, 10, 10));
+
+    Label currentPriceLabel = new Label(formatCurrency(product.getPrice()));
+    currentPriceLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 14px;");
+
+    ToggleGroup discountType = new ToggleGroup();
+    RadioButton percentageOption = new RadioButton("Percentage (%)");
+    percentageOption.setToggleGroup(discountType);
+    percentageOption.setSelected(true);
+
+    RadioButton amountOption = new RadioButton("Fixed Amount");
+    amountOption.setToggleGroup(discountType);
+
+    TextField discountValue = new TextField();
+    if (product.getDiscount() > 0) {
+        discountValue.setText(String.valueOf(product.getDiscount()));
+    }
+
+    Label finalPriceLabel = new Label("--");
+    finalPriceLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 14px; -fx-text-fill: #1a237e;");
+
+    discountValue.textProperty().addListener((observable, oldValue, newValue) -> {
+        try {
+            double discount = Double.parseDouble(newValue);
+            double finalPrice;
+
+            if (percentageOption.isSelected()) {
+                finalPrice = product.getPrice() * (1 - discount / 100);
+            } else {
+                finalPrice = product.getPrice() - discount;
             }
-        });
-        
-        // Add fields to the grid
-        grid.add(new Label("Current Price:"), 0, 0);
-        grid.add(currentPriceLabel, 1, 0);
-        grid.add(new Label("Discount Type:"), 0, 1);
-        HBox discountTypeBox = new HBox(10, percentageOption, amountOption);
-        grid.add(discountTypeBox, 1, 1);
-        grid.add(new Label("Discount Value:"), 0, 2);
-        grid.add(discountValue, 1, 2);
-        grid.add(new Label("Final Price:"), 0, 3);
-        grid.add(finalPriceLabel, 1, 3);
-        
-        dialog.getDialogPane().setContent(grid);
-        
-        // Request focus on the discount value field
-        discountValue.requestFocus();
-        
-        // Process the result
-        Optional<ButtonType> result = dialog.showAndWait();
-        
-        if (result.isPresent()) {
-            if (result.get() == applyButtonType) {
-                try {
-                    double discount = Double.parseDouble(discountValue.getText());
-                    
-                    if (percentageOption.isSelected()) {
-                        // Store the discount as the actual amount, not percentage
-                        double discountAmount = product.getPrice() * (discount / 100);
-                        product.setDiscount(discountAmount);
-                    } else {
-                        product.setDiscount(discount);
-                    }
-                    
-                    // Refresh the table
-                    productTable.refresh();
-                    showNotification("Discount Applied", 
-                        "Discount has been applied to " + product.getName());
-                } catch (NumberFormatException e) {
-                    showAlert("Invalid Input", "Please enter a valid discount value.");
+
+            if (finalPrice < 0) finalPrice = 0;
+            finalPriceLabel.setText(formatCurrency(finalPrice));
+        } catch (NumberFormatException e) {
+            finalPriceLabel.setText("--");
+        }
+    });
+
+    grid.add(new Label("Current Price:"), 0, 0);
+    grid.add(currentPriceLabel, 1, 0);
+    grid.add(new Label("Discount Type:"), 0, 1);
+    grid.add(new HBox(10, percentageOption, amountOption), 1, 1);
+    grid.add(new Label("Discount Value:"), 0, 2);
+    grid.add(discountValue, 1, 2);
+    grid.add(new Label("Final Price:"), 0, 3);
+    grid.add(finalPriceLabel, 1, 3);
+
+    dialog.getDialogPane().setContent(grid);
+    discountValue.requestFocus();
+
+    Optional<ButtonType> result = dialog.showAndWait();
+
+    if (result.isPresent()) {
+        if (result.get() == applyButtonType) {
+            try {
+                double discount = Double.parseDouble(discountValue.getText());
+
+                if (percentageOption.isSelected()) {
+                    double discountAmount = product.getPrice() * (discount / 100);
+                    product.setDiscount(discountAmount);
+                } else {
+                    product.setDiscount(discount);
                 }
-            } else if (result.get() == removeButtonType) {
-                product.setDiscount(0);
+
+                boolean success = Helper.updateProductDiscount(product.getBarcode(), product.getDiscount());
+                if (success) {
+                    productTable.refresh();
+                    showNotification("Discount Applied", "Discount has been applied to " + product.getName());
+                } else {
+                    showAlert("Failed to Save Discount", "There was an issue updating the discount in the database.");
+                }
+
+            } catch (NumberFormatException e) {
+                showAlert("Invalid Input", "Please enter a valid discount value.");
+            }
+
+        } else if (result.get() == removeButtonType) {
+            product.setDiscount(0);
+            boolean success = Helper.updateProductDiscount(product.getBarcode(), 0);
+            if (success) {
                 productTable.refresh();
-                showNotification("Discount Removed", 
-                    "Discount has been removed from " + product.getName());
+                showNotification("Discount Removed", "Discount has been removed from " + product.getName());
+            } else {
+                showAlert("Failed to Remove Discount", "Could not update the database.");
             }
         }
     }
+}
     
     private void showDeleteConfirmDialog(Product product) {
         Alert alert = new Alert(Alert.AlertType.CONFIRMATION);

@@ -112,7 +112,6 @@ public class POSDashboard extends Application {
     private String currentCashier = Session.firstName + " " + Session.lastName;
     private String role = Session.role;
     private String receiptNumber =  generateNewReceiptNumber();
-    private Map<String, HeldSale> heldSales = new HashMap<>();
 
     @Override
     public void start(Stage primaryStage) {
@@ -801,7 +800,7 @@ private VBox createCheckoutPanel() {
     row++;
     
     // Add tax row
-    taxLabel = new Label("Tax (16.5%):");
+    taxLabel = new Label("VAT Amount:");
     taxLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #757575;");
     taxValueLabel = new Label(formatCurrency(0.0));
     taxValueLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #424242; -fx-font-weight: bold;");
@@ -1072,7 +1071,6 @@ private void updateTotals() {
 
     // Update UI
     subtotalValueLabel.setText(formatCurrency(subtotal - totalTax)); 
-    taxLabel.setText("VAT Amount:");
     taxValueLabel.setText(formatCurrency(totalTax));
     discountValueLabel.setText(formatCurrency(totalDiscount));
     totalAmountLabel.setText(formatCurrency(total));
@@ -2406,8 +2404,9 @@ private int calculateEAN13CheckDigit(String code12) {
             cartDiscountPercent
         );
 
-        // Store the held sale
-        heldSales.put(holdId, heldSale);
+        // Save the held sale to the database (this replaces storing in memory)
+        Helper.saveHeldSale(heldSale);
+        
 
         // Style the confirmation alert
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
@@ -2422,19 +2421,17 @@ private int calculateEAN13CheckDigit(String code12) {
         // Style the OK button on the alert
         Button okButton = (Button) alertPane.lookupButton(ButtonType.OK);
         okButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; " +
-                        "-fx-font-size: 14px; -fx-font-weight: bold; -fx-cursor: hand; " +
-                        "-fx-background-radius: 5px;");
-
+                        "-fx-font-size: 14px; -fx-font-weight: bold; -fx-background-radius: 5px;");
+        
         // Clear the current cart
         cartItems.clear();
         updateTotals();
-
-        // Generate a new receipt number
-        receiptNumberLabel.setText(generateNewReceiptNumber());
-
+        
+        // Show the confirmation alert
         alert.showAndWait();
     });
 }
+
 
 
 // Add this method to POSDashboard class
@@ -2445,29 +2442,56 @@ private String generateHoldId() {
     String timeStr = now.format(DateTimeFormatter.ofPattern("HHmmss"));
     return "H" + dateStr + timeStr;
 }
+
 private void showHeldSales() {
+    List<HeldSale> heldSales = Helper.getAllHeldSales();
+
     if (heldSales.isEmpty()) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.setTitle("No Held Sales");
-        alert.setHeaderText("🟨 No Sales on Hold");
+        alert.setHeaderText("No Sales on Hold");
         alert.setContentText("There are currently no held sales available.");
+
+        DialogPane dialogPane = alert.getDialogPane();
+        dialogPane.setStyle("-fx-background-color: #f8f9fa; -fx-border-radius: 5px; -fx-padding: 15px;");
+
+        Label headerLabel = (Label) dialogPane.lookup(".header-panel .label");
+        if (headerLabel != null) {
+            headerLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #2c3e50;");
+        }
+
+        Button okButton = (Button) dialogPane.lookupButton(ButtonType.OK);
+        if (okButton != null) {
+            okButton.setStyle("-fx-background-color: #3949ab; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 4px;");
+        }
+
         alert.showAndWait();
         return;
     }
 
     Dialog<HeldSale> dialog = new Dialog<>();
-    dialog.setTitle("🕒 Held Sales");
+    dialog.setTitle("Held Sales");
     dialog.setHeaderText("Select a held sale to restore");
-    dialog.getDialogPane().setStyle("-fx-background-color: #FAFAFA;");
 
-    // Define buttons
+    DialogPane dialogPane = dialog.getDialogPane();
+    dialogPane.setStyle("-fx-background-color: #f8f9fa; -fx-border-radius: 8px; -fx-padding: 20px; -fx-font-family: 'Segoe UI', Arial, sans-serif;");
+    dialogPane.setPrefWidth(600);
+    dialogPane.setPrefHeight(500);
+
+    Label headerLabel = new Label("◷ Held Sales");
+    headerLabel.setStyle("-fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: #1a237e;");
+
+    Label subHeaderLabel = new Label("Select a held sale to restore");
+    subHeaderLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #7f8c8d; -fx-padding: 0 0 10px 0;");
+
     ButtonType restoreButtonType = new ButtonType("Restore Sale", ButtonBar.ButtonData.OK_DONE);
-    dialog.getDialogPane().getButtonTypes().addAll(restoreButtonType, ButtonType.CANCEL);
-
-    // Create ListView
+    ButtonType deleteButtonType = new ButtonType("Delete Sale", ButtonBar.ButtonData.LEFT);
+    ButtonType cancelButtonType = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+    dialogPane.getButtonTypes().addAll(restoreButtonType, deleteButtonType, cancelButtonType);
+    
     ListView<HeldSale> listView = new ListView<>();
-    listView.setPrefHeight(300);
-    listView.setStyle("-fx-border-color: #BDBDBD; -fx-border-radius: 5;");
+    listView.setPrefHeight(350);
+    listView.setStyle("-fx-background-color: white; -fx-background-radius: 5px; -fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.08), 5, 0, 0, 2);");
 
     listView.setCellFactory(lv -> new ListCell<HeldSale>() {
         @Override
@@ -2476,82 +2500,220 @@ private void showHeldSales() {
             if (empty || item == null) {
                 setText(null);
                 setGraphic(null);
+                setStyle(null);
             } else {
-                VBox cellContent = new VBox(2);
-                Label title = new Label("🟡 Hold #" + item.getHoldId());
-                title.setStyle("-fx-font-weight: bold; -fx-text-fill: #FFC107;");
+                VBox card = new VBox(8);
+                card.setStyle("-fx-background-color: white; -fx-padding: 12px; -fx-border-color: #f0f0f0; -fx-border-radius: 6px; -fx-background-radius: 6px; -fx-spacing: 8px; -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.05), 3, 0, 0, 1);");
 
-                Label details = new Label(item.getCustomerName() + " • " +
-                        item.getFormattedHoldTime() + " • " +
-                        item.getItems().size() + " items");
-                details.setStyle("-fx-text-fill: #616161; -fx-font-size: 12px;");
+                HBox header = new HBox(10);
+                header.setAlignment(Pos.CENTER_LEFT);
 
-                cellContent.getChildren().addAll(title, details);
-                setGraphic(cellContent);
+                Label holdIdLabel = new Label("🏷️ Hold #" + item.getHoldId());
+                holdIdLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #2c3e50; -fx-font-size: 14px;");
+
+                Label timeLabel = new Label("🕒 " + item.getFormattedHoldTime());
+                timeLabel.setStyle("-fx-text-fill: #7f8c8d; -fx-font-size: 12px;");
+
+                Region spacer = new Region();
+                HBox.setHgrow(spacer, Priority.ALWAYS);
+
+                header.getChildren().addAll(holdIdLabel, spacer, timeLabel);
+
+                Label customerLabel = new Label("👤 " + item.getCustomerName());
+                customerLabel.setStyle("-fx-text-fill: #34495e; -fx-font-size: 13px;");
+
+                Label itemsLabel = new Label("🛒 " + item.getItems().size() + " items");
+                itemsLabel.setStyle("-fx-text-fill: #34495e; -fx-font-size: 13px;");
+
+                card.getChildren().addAll(header, customerLabel, itemsLabel);
+                setGraphic(card);
+
+                selectedProperty().addListener((obs, wasSelected, isNowSelected) -> {
+                    if (isNowSelected) {
+                        card.setStyle("-fx-background-color: #ecf0f1; -fx-padding: 12px; -fx-border-color: #3949ab; -fx-border-radius: 6px; -fx-background-radius: 6px; -fx-spacing: 8px; -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.1), 3, 0, 0, 1);");
+                    } else {
+                        card.setStyle("-fx-background-color: white; -fx-padding: 12px; -fx-border-color: #f0f0f0; -fx-border-radius: 6px; -fx-background-radius: 6px; -fx-spacing: 8px; -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.05), 3, 0, 0, 1);");
+                    }
+                });
+
+                setOnMouseEntered(e -> {
+                    if (!isSelected()) {
+                        card.setStyle("-fx-background-color: #f5f9ff; -fx-padding: 12px; -fx-border-color: #e0e0e0; -fx-border-radius: 6px; -fx-background-radius: 6px; -fx-spacing: 8px; -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.08), 3, 0, 0, 1);");
+                    }
+                });
+
+                setOnMouseExited(e -> {
+                    if (!isSelected()) {
+                        card.setStyle("-fx-background-color: white; -fx-padding: 12px; -fx-border-color: #f0f0f0; -fx-border-radius: 6px; -fx-background-radius: 6px; -fx-spacing: 8px; -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.05), 3, 0, 0, 1);");
+                    }
+                });
             }
         }
     });
 
-    listView.getItems().addAll(heldSales.values());
-
-    // Delete button
-    Button deleteButton = new Button("🗑 Delete Selected Sale");
-    deleteButton.setStyle(
-        "-fx-background-color: #f44336; -fx-text-fill: white; -fx-font-weight: bold; " +
-        "-fx-background-radius: 5px; -fx-cursor: hand;"
-    );
-    deleteButton.setOnMouseEntered(e -> deleteButton.setStyle(
-        "-fx-background-color: #d32f2f; -fx-text-fill: white; -fx-font-weight: bold; " +
-        "-fx-background-radius: 5px; -fx-cursor: hand;"
-    ));
-    deleteButton.setOnMouseExited(e -> deleteButton.setStyle(
-        "-fx-background-color: #f44336; -fx-text-fill: white; -fx-font-weight: bold; " +
-        "-fx-background-radius: 5px; -fx-cursor: hand;"
-    ));
-    deleteButton.setOnAction(e -> {
-        HeldSale selectedSale = listView.getSelectionModel().getSelectedItem();
-        if (selectedSale != null) {
-            Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
-            confirmAlert.setTitle("Confirm Delete");
-            confirmAlert.setHeaderText("Delete Held Sale");
-            confirmAlert.setContentText("Are you sure you want to delete this held sale?");
-            Optional<ButtonType> result = confirmAlert.showAndWait();
-            if (result.isPresent() && result.get() == ButtonType.OK) {
-                heldSales.remove(selectedSale.getHoldId());
-                listView.getItems().remove(selectedSale);
-            }
-        }
-    });
-
-    // Layout
-    VBox content = new VBox(15);
-    content.setPadding(new Insets(15));
-    content.getChildren().addAll(listView, deleteButton);
-
-    dialog.getDialogPane().setContent(content);
-
-    // Style restore button
+    listView.getItems().addAll(heldSales);
+    
+    // Initialize buttons as disabled
     Platform.runLater(() -> {
         Button restoreButton = (Button) dialog.getDialogPane().lookupButton(restoreButtonType);
+        Button deleteButton = (Button) dialog.getDialogPane().lookupButton(deleteButtonType);
+        
+        // Initially disable buttons since no item is selected
+        if (restoreButton != null) restoreButton.setDisable(true);
+        if (deleteButton != null) deleteButton.setDisable(true);
+        
         if (restoreButton != null) {
             restoreButton.setStyle(
                 "-fx-background-color: #1a237e; -fx-text-fill: white; -fx-font-size: 14px; " +
-                "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 5px;"
+                "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 5px; -fx-min-width: 120px;"
             );
 
-            restoreButton.setOnMouseEntered(e -> restoreButton.setStyle(
-                "-fx-background-color: #3949ab; -fx-text-fill: white; -fx-font-size: 14px; " +
-                "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 5px;"
+            restoreButton.setOnMouseEntered(e -> {
+                if (!restoreButton.isDisabled()) {
+                    restoreButton.setStyle(
+                        "-fx-background-color: #3949ab; -fx-text-fill: white; -fx-font-size: 14px; " +
+                        "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 5px; -fx-min-width: 120px;"
+                    );
+                }
+            });
+
+            restoreButton.setOnMouseExited(e -> {
+                if (!restoreButton.isDisabled()) {
+                    restoreButton.setStyle(
+                        "-fx-background-color: #1a237e; -fx-text-fill: white; -fx-font-size: 14px; " +
+                        "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 5px; -fx-min-width: 120px;"
+                    );
+                }
+            });
+        }
+        
+        if (deleteButton != null) {
+            deleteButton.setStyle(
+                "-fx-background-color: #e53935; -fx-text-fill: white; -fx-font-size: 14px; " +
+                "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 5px; -fx-min-width: 120px;"
+            );
+
+            deleteButton.setOnMouseEntered(e -> {
+                if (!deleteButton.isDisabled()) {
+                    deleteButton.setStyle(
+                        "-fx-background-color: #f44336; -fx-text-fill: white; -fx-font-size: 14px; " +
+                        "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 5px; -fx-min-width: 120px;"
+                    );
+                }
+            });
+
+            deleteButton.setOnMouseExited(e -> {
+                if (!deleteButton.isDisabled()) {
+                    deleteButton.setStyle(
+                        "-fx-background-color: #e53935; -fx-text-fill: white; -fx-font-size: 14px; " +
+                        "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 5px; -fx-min-width: 120px;"
+                    );
+                }
+            });
+        }
+        
+        Button cancelButton = (Button) dialog.getDialogPane().lookupButton(cancelButtonType);
+        if (cancelButton != null) {
+            cancelButton.setStyle(
+                "-fx-background-color: #e0e0e0; -fx-text-fill: #424242; -fx-font-size: 14px; " +
+                "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 5px; -fx-min-width: 100px;"
+            );
+            
+            cancelButton.setOnMouseEntered(e -> cancelButton.setStyle(
+                "-fx-background-color: #eeeeee; -fx-text-fill: #424242; -fx-font-size: 14px; " +
+                "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 5px; -fx-min-width: 100px;"
             ));
 
-            restoreButton.setOnMouseExited(e -> restoreButton.setStyle(
-                "-fx-background-color: #1a237e; -fx-text-fill: white; -fx-font-size: 14px; " +
-                "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 5px;"
+            cancelButton.setOnMouseExited(e -> cancelButton.setStyle(
+                "-fx-background-color: #e0e0e0; -fx-text-fill: #424242; -fx-font-size: 14px; " +
+                "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 5px; -fx-min-width: 100px;"
             ));
         }
     });
+    
+    // Listen for selection changes to enable/disable buttons
+    listView.getSelectionModel().selectedItemProperty().addListener((obs, oldSelection, newSelection) -> {
+        Platform.runLater(() -> {
+            Button restoreButton = (Button) dialog.getDialogPane().lookupButton(restoreButtonType);
+            Button deleteButton = (Button) dialog.getDialogPane().lookupButton(deleteButtonType);
+            
+            boolean hasSelection = (newSelection != null);
+            
+            if (restoreButton != null) restoreButton.setDisable(!hasSelection);
+            if (deleteButton != null) deleteButton.setDisable(!hasSelection);
+        });
+    });
 
-    // Handle result
+    VBox content = new VBox(10);
+    content.getChildren().addAll(headerLabel, subHeaderLabel, listView);
+    dialog.getDialogPane().setContent(content);
+
+    // CRITICAL CHANGE: Intercept the Delete button click and handle it manually
+    // Instead of using the result converter for deletion
+    Button deleteButton = (Button) dialog.getDialogPane().lookupButton(deleteButtonType);
+    deleteButton.addEventFilter(ActionEvent.ACTION, event -> {
+        // Get the selected item
+        HeldSale selectedSale = listView.getSelectionModel().getSelectedItem();
+        if (selectedSale != null) {
+            // Show confirmation dialog before deletion
+            Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
+            confirmAlert.setTitle("Confirm Deletion");
+            confirmAlert.setHeaderText("Delete Held Sale");
+            confirmAlert.setContentText("Are you sure you want to delete this held sale?\nThis action cannot be undone.");
+            
+            // Style the confirmation dialog
+            DialogPane confirmDialogPane = confirmAlert.getDialogPane();
+            confirmDialogPane.setStyle("-fx-background-color: #f8f9fa; -fx-border-radius: 5px; -fx-padding: 15px;");
+            
+            Label confirmHeaderLabel = (Label) confirmDialogPane.lookup(".header-panel .label");
+            if (confirmHeaderLabel != null) {
+                confirmHeaderLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #e53935;");
+            }
+            
+            // Style buttons
+            Button confirmButton = (Button) confirmDialogPane.lookupButton(ButtonType.OK);
+            if (confirmButton != null) {
+                confirmButton.setStyle("-fx-background-color: #e53935; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 4px;");
+            }
+
+            Button cancelConfirmButton = (Button) confirmDialogPane.lookupButton(ButtonType.CANCEL);
+            if (cancelConfirmButton != null) {
+                // Style the Cancel button as needed
+                cancelConfirmButton.setStyle("-fx-background-color: #e0e0e0; -fx-text-fill: #424242; -fx-font-weight: bold; -fx-background-radius: 4px;");
+            }
+            
+            Optional<ButtonType> confirmResult = confirmAlert.showAndWait();
+            
+            if (confirmResult.isPresent() && confirmResult.get() == ButtonType.OK) {
+                // User confirmed deletion, proceed
+                boolean deleted = Helper.deleteHeldSaleById(selectedSale.getHoldId());
+                if (deleted) {
+                    // Show success confirmation
+                    Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                    alert.setTitle("Sale Deleted");
+                    alert.setHeaderText(null);
+                    alert.setContentText("Held sale has been deleted successfully.");
+                    alert.showAndWait();
+                    
+                    // Refresh the dialog (close and reopen)
+                    dialog.close();
+                    showHeldSales();
+                } else {
+                    Alert errorAlert = new Alert(Alert.AlertType.ERROR);
+                    errorAlert.setTitle("Error");
+                    errorAlert.setHeaderText("Failed to delete held sale");
+                    errorAlert.setContentText("The held sale could not be deleted from the database.");
+                    errorAlert.showAndWait();
+                }
+            }
+            
+            // Consume the event to prevent the dialog from closing
+            // This is CRITICAL to keep the parent dialog open
+            event.consume();
+        }
+    });
+
+    // Now just handle the restore operation in the result converter
     dialog.setResultConverter(dialogButton -> {
         if (dialogButton == restoreButtonType) {
             return listView.getSelectionModel().getSelectedItem();
@@ -2561,22 +2723,12 @@ private void showHeldSales() {
 
     Optional<HeldSale> result = dialog.showAndWait();
 
-    result.ifPresent(sale -> {
-        if (!cartItems.isEmpty()) {
-            Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
-            confirmAlert.setTitle("Cart Not Empty");
-            confirmAlert.setHeaderText("Current cart contains items");
-            confirmAlert.setContentText("Do you want to replace the current cart with the held sale?");
-            Optional<ButtonType> confirmResult = confirmAlert.showAndWait();
-            if (confirmResult.isPresent() && confirmResult.get() != ButtonType.OK) {
-                return;
-            }
-        }
-        restoreHeldSale(sale);
+    result.ifPresent(selectedSale -> {
+        // This will only execute for restore operations
+        restoreHeldSale(selectedSale);
     });
 }
 
-// Add this method to POSDashboard class
 private void restoreHeldSale(HeldSale sale) {
     // Clear current cart
     cartItems.clear();
@@ -2585,24 +2737,31 @@ private void restoreHeldSale(HeldSale sale) {
     for (Product item : sale.getItems()) {
         cartItems.add(item);
     }
-    
+
     // Restore discount
     cartDiscountAmount = sale.getCartDiscountAmount();
     cartDiscountPercent = sale.getCartDiscountPercent();
     
     // Update customer info if available
-    if (!sale.getCustomerName().isEmpty()) {
-        // Find the customer name field in the UI
+    if (sale.getCustomerName() != null && !sale.getCustomerName().isEmpty()) {
         VBox customerInfoBox = (VBox) ((VBox) root.getRight()).getChildren().get(0).lookup(".customer-info-box");
         if (customerInfoBox != null) {
             ((TextField) customerInfoBox.getChildren().get(1)).setText(sale.getCustomerName());
             ((TextField) customerInfoBox.getChildren().get(2)).setText(sale.getCustomerTIN());
         }
     }
-    
-    // Remove the held sale from the list
-    heldSales.remove(sale.getHoldId());
-    
+
+    // Remove the held sale from the database
+    boolean deleted = Helper.deleteHeldSaleById(sale.getHoldId());
+    if (!deleted) {
+        Alert errorAlert = new Alert(Alert.AlertType.ERROR);
+        errorAlert.setTitle("Error");
+        errorAlert.setHeaderText("Failed to remove held sale");
+        errorAlert.setContentText("The held sale could not be removed from the database.");
+        errorAlert.showAndWait();
+        return;
+    }
+
     // Update totals
     updateTotals();
     
