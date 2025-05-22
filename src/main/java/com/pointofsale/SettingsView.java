@@ -10,6 +10,11 @@ import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.collections.FXCollections;
 import javafx.application.Platform;
+import com.pointofsale.helper.Helper;
+import com.pointofsale.model.User;
+import java.util.List;
+import javafx.beans.property.SimpleStringProperty;
+
 import java.util.Optional;
 
 public class SettingsView {
@@ -288,31 +293,53 @@ public class SettingsView {
         userButtons.getChildren().addAll(addUserButton, editUserButton, deleteUserButton);
         
         // Users table
+        // Users table
         usersTable = new TableView<>();
         usersTable.setStyle("-fx-background-color: white; -fx-border-color: #e0e0e0;");
-        
+
+        // Username Column
         TableColumn<User, String> usernameCol = new TableColumn<>("Username");
-        usernameCol.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(data.getValue().getUsername()));
+        usernameCol.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().getUserName()));
         usernameCol.setPrefWidth(150);
-        
-        TableColumn<User, String> fullNameCol = new TableColumn<>("Full Name");
-        fullNameCol.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(data.getValue().getFullName()));
-        fullNameCol.setPrefWidth(200);
-        
-        TableColumn<User, String> roleCol = new TableColumn<>("Role");
-        roleCol.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(data.getValue().getRole()));
-        roleCol.setPrefWidth(120);
-        
-        TableColumn<User, String> statusCol = new TableColumn<>("Status");
-        statusCol.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(data.getValue().getStatus()));
-        statusCol.setPrefWidth(100);
-        
-        TableColumn<User, String> lastLoginCol = new TableColumn<>("Last Login");
-        lastLoginCol.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(data.getValue().getLastLogin()));
-        lastLoginCol.setPrefWidth(150);
-        
-        usersTable.getColumns().addAll(usernameCol, fullNameCol, roleCol, statusCol, lastLoginCol);
+
+       // Full Name Column (from getFullName helper method)
+       TableColumn<User, String> fullNameCol = new TableColumn<>("Full Name");
+       fullNameCol.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().getFullName()));
+       fullNameCol.setPrefWidth(200);
+
+       // Role Column
+       TableColumn<User, String> roleCol = new TableColumn<>("Role");
+       roleCol.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().getRole()));
+       roleCol.setPrefWidth(120);
+
+       // Gender Column
+       TableColumn<User, String> genderCol = new TableColumn<>("Gender");
+       genderCol.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().getGender()));
+       genderCol.setPrefWidth(100);
+
+       // Phone Column
+       TableColumn<User, String> phoneCol = new TableColumn<>("Phone");
+        phoneCol.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().getPhoneNumber()));
+       phoneCol.setPrefWidth(130);
+
+        // Email Column
+        TableColumn<User, String> emailCol = new TableColumn<>("Email");
+         emailCol.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().getEmailAddress()));
+        emailCol.setPrefWidth(180);
+
+        // Address Column
+        TableColumn<User, String> addressCol = new TableColumn<>("Address");
+        addressCol.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().getAddress()));
+        addressCol.setPrefWidth(180);
+
+        // Add all columns to the table
+        usersTable.getColumns().addAll(
+         usernameCol, fullNameCol, roleCol, genderCol, phoneCol, emailCol, addressCol
+        );
+
+        // Set preferred height
         usersTable.setPrefHeight(300);
+
         
         usersSection.getChildren().addAll(userButtons, usersTable);
         content.getChildren().add(usersSection);
@@ -594,42 +621,545 @@ public class SettingsView {
     }
     
     private void loadUsersData() {
-        // This would typically load from database
-        // For now, we'll leave the table empty
+    try {
+        // Clear existing data
+        usersTable.getItems().clear();
+
+        // Fetch users from database
+        List<User> users = Helper.getAllUsers();
+
+        // Add users to the table
+        usersTable.getItems().addAll(users);
+
+    } catch (Exception e) {
+        showErrorAlert("Load Error", "Failed to load users: " + e.getMessage());
+    }
+}
+
+    
+    // Add User Dialog Implementation
+private void addUser() {
+    Dialog<User> dialog = new Dialog<>();
+    dialog.setTitle("Add New User");
+    dialog.setHeaderText("Create a new user account");
+    
+    // Set dialog styling
+    DialogPane dialogPane = dialog.getDialogPane();
+    dialogPane.setStyle("-fx-background-color: white; -fx-border-color: #1a237e; -fx-border-width: 2px;");
+    
+    // Create form fields
+    GridPane grid = new GridPane();
+    grid.setHgap(15);
+    grid.setVgap(15);
+    grid.setPadding(new Insets(25, 25, 25, 25));
+    
+    // Form fields
+    TextField firstNameField = new TextField();
+    firstNameField.setPromptText("Enter first name");
+    firstNameField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    
+    TextField lastNameField = new TextField();
+    lastNameField.setPromptText("Enter last name");
+    lastNameField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    
+    TextField usernameField = new TextField();
+    usernameField.setPromptText("Enter username");
+    usernameField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    
+    ComboBox<String> genderComboBox = new ComboBox<>();
+    genderComboBox.getItems().addAll("MALE", "FEMALE");
+    genderComboBox.setPromptText("Select gender");
+    genderComboBox.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    
+    TextField phoneField = new TextField();
+    phoneField.setPromptText("Enter phone number");
+    phoneField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    
+    TextField emailField = new TextField();
+    emailField.setPromptText("Enter email address");
+    emailField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    
+    TextArea addressArea = new TextArea();
+    addressArea.setPromptText("Enter address");
+    addressArea.setPrefRowCount(3);
+    addressArea.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    
+    ComboBox<String> roleComboBox = new ComboBox<>();
+    roleComboBox.getItems().addAll("ADMIN", "CASHIER");
+    roleComboBox.setPromptText("Select role");
+    roleComboBox.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    
+    PasswordField passwordField = new PasswordField();
+    passwordField.setPromptText("Enter password");
+    passwordField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    
+    PasswordField confirmPasswordField = new PasswordField();
+    confirmPasswordField.setPromptText("Confirm password");
+    confirmPasswordField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    
+    // Create labels with corporate styling
+    Label[] labels = {
+        new Label("First Name:*"),
+        new Label("Last Name:*"),
+        new Label("Username:*"),
+        new Label("Gender:"),
+        new Label("Phone Number:"),
+        new Label("Email Address:"),
+        new Label("Address:"),
+        new Label("Role:*"),
+        new Label("Password:*"),
+        new Label("Confirm Password:*")
+    };
+    
+    for (Label label : labels) {
+        label.setStyle("-fx-font-weight: bold; -fx-text-fill: #1a237e; -fx-font-size: 14px;");
     }
     
-    // Action methods
-    private void addUser() {
-        showUserDialog(null, "Add New User");
-    }
+    // Add components to grid
+    int row = 0;
+    grid.add(labels[0], 0, row);
+    grid.add(firstNameField, 1, row++);
+    grid.add(labels[1], 0, row);
+    grid.add(lastNameField, 1, row++);
+    grid.add(labels[2], 0, row);
+    grid.add(usernameField, 1, row++);
+    grid.add(labels[3], 0, row);
+    grid.add(genderComboBox, 1, row++);
+    grid.add(labels[4], 0, row);
+    grid.add(phoneField, 1, row++);
+    grid.add(labels[5], 0, row);
+    grid.add(emailField, 1, row++);
+    grid.add(labels[6], 0, row);
+    grid.add(addressArea, 1, row++);
+    grid.add(labels[7], 0, row);
+    grid.add(roleComboBox, 1, row++);
+    grid.add(labels[8], 0, row);
+    grid.add(passwordField, 1, row++);
+    grid.add(labels[9], 0, row);
+    grid.add(confirmPasswordField, 1, row++);
     
-    private void editUser() {
-        User selectedUser = usersTable.getSelectionModel().getSelectedItem();
-        if (selectedUser != null) {
-            showUserDialog(selectedUser, "Edit User");
-        } else {
-            showAlert("No Selection", "Please select a user to edit.");
-        }
-    }
+    // Set column constraints
+    ColumnConstraints col1 = new ColumnConstraints();
+    col1.setMinWidth(140);
+    ColumnConstraints col2 = new ColumnConstraints();
+    col2.setMinWidth(280);
+    grid.getColumnConstraints().addAll(col1, col2);
     
-    private void deleteUser() {
-        User selectedUser = usersTable.getSelectionModel().getSelectedItem();
-        if (selectedUser != null) {
-            Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
-            confirmAlert.setTitle("Delete User");
-            confirmAlert.setHeaderText("Are you sure you want to delete this user?");
-            confirmAlert.setContentText("This action cannot be undone.");
-            
-            Optional<ButtonType> result = confirmAlert.showAndWait();
-            if (result.isPresent() && result.get() == ButtonType.OK) {
-                // Delete user logic here
-                usersTable.getItems().remove(selectedUser);
-                showAlert("Success", "User deleted successfully.");
+    dialogPane.setContent(grid);
+    
+    // Add buttons
+    ButtonType addButtonType = new ButtonType("Add User", ButtonBar.ButtonData.OK_DONE);
+    ButtonType cancelButtonType = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+    dialog.getDialogPane().getButtonTypes().addAll(addButtonType, cancelButtonType);
+    
+    // Style buttons
+    Button addButton = (Button) dialog.getDialogPane().lookupButton(addButtonType);
+    Button cancelButton = (Button) dialog.getDialogPane().lookupButton(cancelButtonType);
+    
+    addButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; -fx-font-weight: bold; " +
+                     "-fx-padding: 10px 20px; -fx-border-radius: 5px; -fx-background-radius: 5px;");
+    cancelButton.setStyle("-fx-background-color: #757575; -fx-text-fill: white; -fx-font-weight: bold; " +
+                         "-fx-padding: 10px 20px; -fx-border-radius: 5px; -fx-background-radius: 5px;");
+    
+    // Add validation
+    addButton.setDisable(true);
+    
+    // Enable/disable add button based on form validation
+    Runnable validateForm = () -> {
+        boolean isValid = !firstNameField.getText().trim().isEmpty() &&
+                         !lastNameField.getText().trim().isEmpty() &&
+                         !usernameField.getText().trim().isEmpty() &&
+                         roleComboBox.getValue() != null &&
+                         !passwordField.getText().isEmpty() &&
+                         !confirmPasswordField.getText().isEmpty() &&
+                         passwordField.getText().equals(confirmPasswordField.getText());
+        addButton.setDisable(!isValid);
+        
+        // Update password field border color based on match
+        if (!passwordField.getText().isEmpty() && !confirmPasswordField.getText().isEmpty()) {
+            if (passwordField.getText().equals(confirmPasswordField.getText())) {
+                confirmPasswordField.setStyle("-fx-border-color: #4caf50; -fx-border-radius: 5px; -fx-padding: 10px;");
+            } else {
+                confirmPasswordField.setStyle("-fx-border-color: #f44336; -fx-border-radius: 5px; -fx-padding: 10px;");
             }
         } else {
-            showAlert("No Selection", "Please select a user to delete.");
+            confirmPasswordField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+        }
+    };
+    
+    // Add listeners for validation
+    firstNameField.textProperty().addListener((obs, oldVal, newVal) -> validateForm.run());
+    lastNameField.textProperty().addListener((obs, oldVal, newVal) -> validateForm.run());
+    usernameField.textProperty().addListener((obs, oldVal, newVal) -> validateForm.run());
+    roleComboBox.valueProperty().addListener((obs, oldVal, newVal) -> validateForm.run());
+    passwordField.textProperty().addListener((obs, oldVal, newVal) -> validateForm.run());
+    confirmPasswordField.textProperty().addListener((obs, oldVal, newVal) -> validateForm.run());
+    
+    // Set result converter
+    dialog.setResultConverter(dialogButton -> {
+        if (dialogButton == addButtonType) {
+            User user = new User();
+            user.setFirstName(firstNameField.getText().trim());
+            user.setLastName(lastNameField.getText().trim());
+            user.setUserName(usernameField.getText().trim());
+            user.setGender(genderComboBox.getValue());
+            user.setPhoneNumber(phoneField.getText().trim());
+            user.setEmailAddress(emailField.getText().trim());
+            user.setAddress(addressArea.getText().trim());
+            user.setRole(roleComboBox.getValue());
+            user.setPassword(passwordField.getText());
+            return user;
+        }
+        return null;
+    });
+    
+    // Show dialog and handle result
+    Optional<User> result = dialog.showAndWait();
+    result.ifPresent(user -> {
+        try {
+            // Add user to database
+            if (Helper.addUser(user)) {
+                // Refresh table
+                loadUsersData();
+                
+                // Show success message
+                showSuccessAlert("User Added", "User '" + user.getUserName() + "' has been successfully added.");
+            } else {
+                showErrorAlert("Error Adding User", "Failed to add user. Username or email may already exist.");
+            }
+            
+        } catch (Exception e) {
+            showErrorAlert("Error Adding User", "Failed to add user: " + e.getMessage());
+        }
+    });
+}
+
+// Edit User Dialog Implementation
+private void editUser() {
+    User selectedUser = usersTable.getSelectionModel().getSelectedItem();
+    
+    if (selectedUser == null) {
+        showWarningAlert("No Selection", "Please select a user to edit.");
+        return;
+    }
+    
+    Dialog<User> dialog = new Dialog<>();
+    dialog.setTitle("Edit User");
+    dialog.setHeaderText("Modify user information for: " + selectedUser.getUserName());
+    
+    // Set dialog styling
+    DialogPane dialogPane = dialog.getDialogPane();
+    dialogPane.setStyle("-fx-background-color: white; -fx-border-color: #1a237e; -fx-border-width: 2px;");
+    
+    // Create form fields
+    GridPane grid = new GridPane();
+    grid.setHgap(15);
+    grid.setVgap(15);
+    grid.setPadding(new Insets(25, 25, 25, 25));
+    
+    // Form fields - pre-populated with existing data
+    TextField firstNameField = new TextField(selectedUser.getFirstName());
+    firstNameField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    
+    TextField lastNameField = new TextField(selectedUser.getLastName());
+    lastNameField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    
+    TextField usernameField = new TextField(selectedUser.getUserName());
+    usernameField.setDisable(true); // Username shouldn't be editable
+    usernameField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px; -fx-opacity: 0.7;");
+    
+    ComboBox<String> genderComboBox = new ComboBox<>();
+    genderComboBox.getItems().addAll("MALE", "FEMALE");
+    genderComboBox.setValue(selectedUser.getGender());
+    genderComboBox.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    
+    TextField phoneField = new TextField(selectedUser.getPhoneNumber() != null ? selectedUser.getPhoneNumber() : "");
+    phoneField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    
+    TextField emailField = new TextField(selectedUser.getEmailAddress() != null ? selectedUser.getEmailAddress() : "");
+    emailField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    
+    TextArea addressArea = new TextArea(selectedUser.getAddress() != null ? selectedUser.getAddress() : "");
+    addressArea.setPrefRowCount(3);
+    addressArea.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    
+    ComboBox<String> roleComboBox = new ComboBox<>();
+    roleComboBox.getItems().addAll("ADMIN", "CASHIER");
+    roleComboBox.setValue(selectedUser.getRole());
+    roleComboBox.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    
+    CheckBox resetPasswordCheckBox = new CheckBox("Reset Password");
+    resetPasswordCheckBox.setStyle("-fx-text-fill: #1a237e; -fx-font-weight: bold;");
+    
+    PasswordField newPasswordField = new PasswordField();
+    newPasswordField.setPromptText("New password");
+    newPasswordField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    newPasswordField.setDisable(true);
+    
+    PasswordField confirmNewPasswordField = new PasswordField();
+    confirmNewPasswordField.setPromptText("Confirm new password");
+    confirmNewPasswordField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    confirmNewPasswordField.setDisable(true);
+    
+    // Enable/disable password fields based on checkbox
+    resetPasswordCheckBox.selectedProperty().addListener((obs, oldVal, newVal) -> {
+        newPasswordField.setDisable(!newVal);
+        confirmNewPasswordField.setDisable(!newVal);
+        if (!newVal) {
+            newPasswordField.clear();
+            confirmNewPasswordField.clear();
+        }
+    });
+    
+    // Create labels
+    Label[] labels = {
+        new Label("First Name:*"),
+        new Label("Last Name:*"),
+        new Label("Username:"),
+        new Label("Gender:"),
+        new Label("Phone Number:"),
+        new Label("Email Address:"),
+        new Label("Address:"),
+        new Label("Role:*"),
+        new Label("Password:")
+    };
+    
+    for (Label label : labels) {
+        label.setStyle("-fx-font-weight: bold; -fx-text-fill: #1a237e; -fx-font-size: 14px;");
+    }
+    
+    // Add components to grid
+    int row = 0;
+    grid.add(labels[0], 0, row);
+    grid.add(firstNameField, 1, row++);
+    grid.add(labels[1], 0, row);
+    grid.add(lastNameField, 1, row++);
+    grid.add(labels[2], 0, row);
+    grid.add(usernameField, 1, row++);
+    grid.add(labels[3], 0, row);
+    grid.add(genderComboBox, 1, row++);
+    grid.add(labels[4], 0, row);
+    grid.add(phoneField, 1, row++);
+    grid.add(labels[5], 0, row);
+    grid.add(emailField, 1, row++);
+    grid.add(labels[6], 0, row);
+    grid.add(addressArea, 1, row++);
+    grid.add(labels[7], 0, row);
+    grid.add(roleComboBox, 1, row++);
+    grid.add(labels[8], 0, row);
+    grid.add(resetPasswordCheckBox, 1, row++);
+    grid.add(new Label("New Password:"), 0, row);
+    grid.add(newPasswordField, 1, row++);
+    grid.add(new Label("Confirm Password:"), 0, row);
+    grid.add(confirmNewPasswordField, 1, row++);
+    
+    // Set column constraints
+    ColumnConstraints col1 = new ColumnConstraints();
+    col1.setMinWidth(140);
+    ColumnConstraints col2 = new ColumnConstraints();
+    col2.setMinWidth(280);
+    grid.getColumnConstraints().addAll(col1, col2);
+    
+    dialogPane.setContent(grid);
+    
+    // Add buttons
+    ButtonType updateButtonType = new ButtonType("Update User", ButtonBar.ButtonData.OK_DONE);
+    ButtonType cancelButtonType = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+    dialog.getDialogPane().getButtonTypes().addAll(updateButtonType, cancelButtonType);
+    
+    // Style buttons
+    Button updateButton = (Button) dialog.getDialogPane().lookupButton(updateButtonType);
+    Button cancelButton = (Button) dialog.getDialogPane().lookupButton(cancelButtonType);
+    
+    updateButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; -fx-font-weight: bold; " +
+                         "-fx-padding: 10px 20px; -fx-border-radius: 5px; -fx-background-radius: 5px;");
+    cancelButton.setStyle("-fx-background-color: #757575; -fx-text-fill: white; -fx-font-weight: bold; " +
+                         "-fx-padding: 10px 20px; -fx-border-radius: 5px; -fx-background-radius: 5px;");
+    
+    // Add validation for password fields
+    Runnable validatePasswords = () -> {
+        if (resetPasswordCheckBox.isSelected() && 
+            !newPasswordField.getText().isEmpty() && 
+            !confirmNewPasswordField.getText().isEmpty()) {
+            if (newPasswordField.getText().equals(confirmNewPasswordField.getText())) {
+                confirmNewPasswordField.setStyle("-fx-border-color: #4caf50; -fx-border-radius: 5px; -fx-padding: 10px;");
+            } else {
+                confirmNewPasswordField.setStyle("-fx-border-color: #f44336; -fx-border-radius: 5px; -fx-padding: 10px;");
+            }
+        } else {
+            confirmNewPasswordField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+        }
+    };
+    
+    newPasswordField.textProperty().addListener((obs, oldVal, newVal) -> validatePasswords.run());
+    confirmNewPasswordField.textProperty().addListener((obs, oldVal, newVal) -> validatePasswords.run());
+    
+    // Set result converter
+    dialog.setResultConverter(dialogButton -> {
+        if (dialogButton == updateButtonType) {
+            // Validate password match if reset is selected
+            if (resetPasswordCheckBox.isSelected() && 
+                !newPasswordField.getText().equals(confirmNewPasswordField.getText())) {
+                showErrorAlert("Password Mismatch", "New passwords do not match!");
+                return null;
+            }
+            
+            User updatedUser = new User();
+            updatedUser.setUserID(selectedUser.getUserID());
+            updatedUser.setFirstName(firstNameField.getText().trim());
+            updatedUser.setLastName(lastNameField.getText().trim());
+            updatedUser.setUserName(selectedUser.getUserName()); // Keep original username
+            updatedUser.setGender(genderComboBox.getValue());
+            updatedUser.setPhoneNumber(phoneField.getText().trim());
+            updatedUser.setEmailAddress(emailField.getText().trim());
+            updatedUser.setAddress(addressArea.getText().trim());
+            updatedUser.setRole(roleComboBox.getValue());
+            
+            if (resetPasswordCheckBox.isSelected() && !newPasswordField.getText().isEmpty()) {
+                updatedUser.setPassword(newPasswordField.getText());
+            } else {
+                updatedUser.setPassword(selectedUser.getPassword()); // Keep existing password
+            }
+            
+            return updatedUser;
+        }
+        return null;
+    });
+    
+    // Show dialog and handle result
+    Optional<User> result = dialog.showAndWait();
+    result.ifPresent(user -> {
+        try {
+            // Update user in database
+            if (Helper.updateUser(user)) {
+                // Refresh table
+                loadUsersData();
+                
+                // Show success message
+                showSuccessAlert("User Updated", "User '" + user.getUserName() + "' has been successfully updated.");
+            } else {
+                showErrorAlert("Error Updating User", "Failed to update user.");
+            }
+            
+        } catch (Exception e) {
+            showErrorAlert("Error Updating User", "Failed to update user: " + e.getMessage());
+        }
+    });
+}
+
+// Delete User Dialog Implementation
+private void deleteUser() {
+    User selectedUser = usersTable.getSelectionModel().getSelectedItem();
+    
+    if (selectedUser == null) {
+        showWarningAlert("No Selection", "Please select a user to delete.");
+        return;
+    }
+    
+    // Create confirmation dialog
+    Alert confirmDialog = new Alert(Alert.AlertType.CONFIRMATION);
+    confirmDialog.setTitle("Confirm User Deletion");
+    confirmDialog.setHeaderText("Delete User: " + selectedUser.getUserName());
+    confirmDialog.setContentText("Are you sure you want to delete this user?\n\n" +
+                                "Username: " + selectedUser.getUserName() + "\n" +
+                                "Full Name: " + selectedUser.getFirstName() + " " + selectedUser.getLastName() + "\n" +
+                                "Role: " + selectedUser.getRole() + "\n\n" +
+                                "This action cannot be undone!");
+    
+    // Style the dialog
+    DialogPane dialogPane = confirmDialog.getDialogPane();
+    dialogPane.setStyle("-fx-background-color: white; -fx-border-color: #1a237e; -fx-border-width: 2px;");
+    
+    // Style the header
+    Label headerLabel = (Label) dialogPane.lookup(".header-panel .label");
+    if (headerLabel != null) {
+        headerLabel.setStyle("-fx-text-fill: #1a237e; -fx-font-weight: bold; -fx-font-size: 16px;");
+    }
+    
+    // Get and style buttons
+    ButtonType deleteButtonType = new ButtonType("Delete User", ButtonBar.ButtonData.OK_DONE);
+    ButtonType cancelButtonType = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+    
+    confirmDialog.getButtonTypes().setAll(deleteButtonType, cancelButtonType);
+    
+    Button deleteButton = (Button) confirmDialog.getDialogPane().lookupButton(deleteButtonType);
+    Button cancelButton = (Button) confirmDialog.getDialogPane().lookupButton(cancelButtonType);
+    
+    deleteButton.setStyle("-fx-background-color: #c62828; -fx-text-fill: white; -fx-font-weight: bold; " +
+                         "-fx-padding: 10px 20px; -fx-border-radius: 5px; -fx-background-radius: 5px;");
+    cancelButton.setStyle("-fx-background-color: #757575; -fx-text-fill: white; -fx-font-weight: bold; " +
+                         "-fx-padding: 10px 20px; -fx-border-radius: 5px; -fx-background-radius: 5px;");
+    
+    // Show confirmation dialog
+    Optional<ButtonType> result = confirmDialog.showAndWait();
+    
+    if (result.isPresent() && result.get() == deleteButtonType) {
+        try {
+            // Delete user from database
+            if (Helper.deleteUser(selectedUser.getUserID())) {
+                // Refresh table
+                loadUsersData();
+                
+                // Show success message
+                showSuccessAlert("User Deleted", "User '" + selectedUser.getUserName() + "' has been successfully deleted.");
+            } else {
+                showErrorAlert("Error Deleting User", "Failed to delete user.");
+            }
+            
+        } catch (Exception e) {
+            showErrorAlert("Error Deleting User", "Failed to delete user: " + e.getMessage());
         }
     }
+}
+
+// Helper methods for showing alerts
+private void showSuccessAlert(String title, String message) {
+    Alert alert = new Alert(Alert.AlertType.INFORMATION);
+    alert.setTitle(title);
+    alert.setHeaderText(null);
+    alert.setContentText(message);
+    
+    DialogPane dialogPane = alert.getDialogPane();
+    dialogPane.setStyle("-fx-background-color: white; -fx-border-color: #1a237e; -fx-border-width: 2px;");
+    
+    Button okButton = (Button) alert.getDialogPane().lookupButton(ButtonType.OK);
+    okButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; -fx-font-weight: bold; " +
+                     "-fx-padding: 10px 20px; -fx-border-radius: 5px; -fx-background-radius: 5px;");
+    
+    alert.showAndWait();
+}
+
+private void showErrorAlert(String title, String message) {
+    Alert alert = new Alert(Alert.AlertType.ERROR);
+    alert.setTitle(title);
+    alert.setHeaderText(null);
+    alert.setContentText(message);
+    
+    DialogPane dialogPane = alert.getDialogPane();
+    dialogPane.setStyle("-fx-background-color: white; -fx-border-color: #c62828; -fx-border-width: 2px;");
+    
+    Button okButton = (Button) alert.getDialogPane().lookupButton(ButtonType.OK);
+    okButton.setStyle("-fx-background-color: #c62828; -fx-text-fill: white; -fx-font-weight: bold; " +
+                     "-fx-padding: 10px 20px; -fx-border-radius: 5px; -fx-background-radius: 5px;");
+    
+    alert.showAndWait();
+}
+
+private void showWarningAlert(String title, String message) {
+    Alert alert = new Alert(Alert.AlertType.WARNING);
+    alert.setTitle(title);
+    alert.setHeaderText(null);
+    alert.setContentText(message);
+    
+    DialogPane dialogPane = alert.getDialogPane();
+    dialogPane.setStyle("-fx-background-color: white; -fx-border-color: #ff8f00; -fx-border-width: 2px;");
+    
+    Button okButton = (Button) alert.getDialogPane().lookupButton(ButtonType.OK);
+    okButton.setStyle("-fx-background-color: #ff8f00; -fx-text-fill: white; -fx-font-weight: bold; " +
+                     "-fx-padding: 10px 20px; -fx-border-radius: 5px; -fx-background-radius: 5px;");
+    
+    alert.showAndWait();
+}
     
     private void showUserDialog(User user, String title) {
         // Implementation for user add/edit dialog
@@ -716,35 +1246,4 @@ public class SettingsView {
         alert.showAndWait();
     }
     
-    // Inner class for User data
-    public static class User {
-        private String username;
-        private String fullName;
-        private String role;
-        private String status;
-        private String lastLogin;
-        
-        public User(String username, String fullName, String role, String status, String lastLogin) {
-            this.username = username;
-            this.fullName = fullName;
-            this.role = role;
-            this.status = status;
-            this.lastLogin = lastLogin;
-        }
-        
-        public String getUsername() { return username; }
-        public void setUsername(String username) { this.username = username; }
-        
-        public String getFullName() { return fullName; }
-        public void setFullName(String fullName) { this.fullName = fullName; }
-        
-        public String getRole() { return role; }
-        public void setRole(String role) { this.role = role; }
-        
-        public String getStatus() { return status; }
-        public void setStatus(String status) { this.status = status; }
-        
-        public String getLastLogin() { return lastLogin; }
-        public void setLastLogin(String lastLogin) { this.lastLogin = lastLogin; }
-    }
 }

@@ -11,10 +11,12 @@ com\pointofsale\model\InvoiceSummary.class
 com\pointofsale\ProductManagement$5.class
 com\pointofsale\ProductLookupDialog.class
 com\pointofsale\CustomersView$4.class
+com\pointofsale\PrintPreviewDialog.class
 com\pointofsale\ReportsView$8.class
 com\pointofsale\model\HeldSale.class
 com\pointofsale\utils\StyleUtils.class
 com\pointofsale\TransactionsView$3$1.class
+com\pointofsale\model\User.class
 com\pointofsale\CustomersView$1.class
 com\pointofsale\ProductLookupDialog$2.class
 com\pointofsale\model\Customer.class
@@ -33,7 +35,6 @@ com\pointofsale\TerminalConfirmationDialog.class
 com\pointofsale\EscPosReceiptPrinter.class
 com\pointofsale\ReportsView$4.class
 com\pointofsale\ReportsView$7.class
-com\pointofsale\SettingsView$User.class
 com\pointofsale\ProductManagement.class
 com\pointofsale\POSDashboard$1.class
 com\pointofsale\helper\Helper.class

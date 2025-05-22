@@ -37,6 +37,7 @@ import com.pointofsale.model.Session;
 import com.pointofsale.model.HeldSale;
 import com.pointofsale.model.TaxTrend;
 import com.pointofsale.model.Customer;
+import com.pointofsale.model.User;
 import com.pointofsale.model.TaxSummary;
 import com.pointofsale.model.CategoryRevenue;
 import com.pointofsale.model.InvoiceHeader;
@@ -2114,6 +2115,113 @@ public static void deleteCustomer(String id) {
         System.err.println("❌ Deletion failed: " + e.getMessage());
     }
 }
+
+public static boolean deleteUser(int userId) {
+    String sql = "DELETE FROM Users WHERE UserID = ?";
+
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+        stmt.setInt(1, userId);
+        int rows = stmt.executeUpdate();
+        return rows > 0;
+
+    } catch (SQLException e) {
+        System.err.println("❌ Delete failed: " + e.getMessage());
+        return false;
+    }
+}
+
+public static boolean addUser(User user) {
+    String sql = """
+        INSERT INTO Users (FirstName, LastName, UserName, Gender, PhoneNumber,
+                           EmailAddress, Address, Role, Password)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """;
+
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+        stmt.setString(1, user.getFirstName());
+        stmt.setString(2, user.getLastName());
+        stmt.setString(3, user.getUserName());
+        stmt.setString(4, user.getGender());
+        stmt.setString(5, user.getPhoneNumber());
+        stmt.setString(6, user.getEmailAddress());
+        stmt.setString(7, user.getAddress());
+        stmt.setString(8, user.getRole());
+        stmt.setString(9, user.getPassword());
+
+        int rows = stmt.executeUpdate();
+        return rows > 0;
+
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to add user: " + e.getMessage());
+        return false;
+    }
+}
+
+public static boolean updateUser(User user) {
+    String sql = """
+        UPDATE Users
+        SET FirstName = ?, LastName = ?, Gender = ?, PhoneNumber = ?, 
+            EmailAddress = ?, Address = ?, Role = ?, Password = ?
+        WHERE UserName = ?
+    """;
+
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+        stmt.setString(1, user.getFirstName());
+        stmt.setString(2, user.getLastName());
+        stmt.setString(3, user.getGender());
+        stmt.setString(4, user.getPhoneNumber());
+        stmt.setString(5, user.getEmailAddress());
+        stmt.setString(6, user.getAddress());
+        stmt.setString(7, user.getRole());
+        stmt.setString(8, user.getPassword());  // consider hashing if needed
+        stmt.setString(9, user.getUserName());  // use username as unique identifier
+
+        int rowsAffected = stmt.executeUpdate();
+        return rowsAffected > 0;
+
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to update user: " + e.getMessage());
+        return false;
+    }
+}
+
+public static List<User> getAllUsers() {
+        List<User> users = new ArrayList<>();
+
+        String query = "SELECT * FROM Users";  // Your actual table name
+
+        try (Connection conn = Database.createConnection();
+             PreparedStatement stmt = conn.prepareStatement(query);
+             var rs = stmt.executeQuery()) {
+
+            while (rs.next()) {
+                User user = new User(
+                    rs.getInt("UserID"),
+                    rs.getString("FirstName"),
+                    rs.getString("LastName"),
+                    rs.getString("UserName"),
+                    rs.getString("Gender"),
+                    rs.getString("PhoneNumber"),
+                    rs.getString("EmailAddress"),
+                    rs.getString("Address"),
+                    rs.getString("Role"),
+                    rs.getString("Password")
+                );
+                users.add(user);
+            }
+
+        } catch (SQLException e) {
+            System.err.println("❌ Error fetching users: " + e.getMessage());
+        }
+
+        return users;
+    }
 
 
 }

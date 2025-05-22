@@ -113,6 +113,8 @@ public class POSDashboard extends Application {
     private String currentCashier = Session.firstName + " " + Session.lastName;
     private String role = Session.role;
     private String receiptNumber =  generateNewReceiptNumber();
+    private String transactionNote = "";
+    private Label noteIndicatorLabel;
 
     @Override
     public void start(Stage primaryStage) {
@@ -950,6 +952,8 @@ private VBox createCheckoutPanel() {
     holdSaleButton.setOnAction(e -> holdSale());
     viewHeldSalesButton.setOnAction(e -> showHeldSales());
     addCustomerButton.setOnAction(e -> addCustomer());
+    printReceiptButton.setOnAction(e -> showPrintPreview());
+    addNoteButton.setOnAction(e -> addNote());
     
     customerActionsPanel.getChildren().addAll(customerActionsTitle, addCustomerButton, addNoteButton, holdSaleButton, viewHeldSalesButton, printReceiptButton);
     
@@ -3211,7 +3215,396 @@ private void restoreHeldSale(HeldSale sale) {
     alert.showAndWait();
 }
 
+/**
+ * Shows the print preview dialog for the current cart
+ */
+private void showPrintPreview() {
+    if (cartItems.isEmpty()) {
+        Alert alert = new Alert(Alert.AlertType.WARNING);
+        alert.setTitle("Empty Cart");
+        alert.setHeaderText(null);
+        alert.setContentText("Cannot print receipt for empty cart. Please add items to cart first.");
+        alert.showAndWait();
+        return;
+    }
     
+    // Calculate totals using the existing logic
+    double subtotal = calculateSubtotal();
+    double tax = calculateTax();
+    double total = calculateTotal();
+    
+    PrintPreviewDialog printPreview = new PrintPreviewDialog(
+        stage, 
+        cartItems, 
+        subtotal, 
+        tax, 
+        total, 
+        receiptNumber, 
+        currentCashier
+    );
+    
+    printPreview.showAndWait();
+}
+
+// Helper methods that reuse your existing updateTotals() logic
+private double calculateSubtotal() {
+    double subtotal = 0.0;
+    
+    for (Product item : cartItems) {
+        double itemPrice = item.getPrice();
+        double itemQuantity = item.getQuantity();
+        double itemSubtotal = itemPrice * itemQuantity;
+        subtotal += itemSubtotal;
+    }
+    
+    // Apply cart-level discount
+    double cartLevelDiscount = 0.0;
+    if (cartDiscountPercent > 0) {
+        cartLevelDiscount = subtotal * (cartDiscountPercent / 100.0);
+    } else if (cartDiscountAmount > 0) {
+        cartLevelDiscount = Math.min(cartDiscountAmount, subtotal);
+    }
+    
+    // Get tax amount to subtract for net subtotal (same logic as your updateTotals)
+    double totalTax = calculateTax();
+    
+    return subtotal - totalTax; // Net subtotal (excluding VAT)
+}
+
+private double calculateTax() {
+    double totalTax = 0.0;
+    
+    for (Product item : cartItems) {
+        double itemPrice = item.getPrice();
+        double itemQuantity = item.getQuantity();
+        double itemSubtotal = itemPrice * itemQuantity;
+        
+        // Get tax rate from DB using TaxRate ID (same as your updateTotals logic)
+        double taxRate = Helper.getTaxRateById(item.getTaxRate());
+        boolean isVATRegistered = Helper.isVATRegistered();
+        
+        // Calculate VAT (same formula as your updateTotals)
+        double itemVAT = isVATRegistered ? (itemSubtotal * taxRate) / (100 + taxRate) : 0;
+        totalTax += itemVAT;
+    }
+    
+    return totalTax;
+}
+
+private double calculateTotal() {
+    double subtotal = 0.0;
+    
+    // Calculate gross subtotal (before cart discount)
+    for (Product item : cartItems) {
+        double itemPrice = item.getPrice();
+        double itemQuantity = item.getQuantity();
+        double itemSubtotal = itemPrice * itemQuantity;
+        subtotal += itemSubtotal;
+    }
+    
+    // Apply cart-level discount (same logic as updateTotals)
+    double cartLevelDiscount = 0.0;
+    if (cartDiscountPercent > 0) {
+        cartLevelDiscount = subtotal * (cartDiscountPercent / 100.0);
+    } else if (cartDiscountAmount > 0) {
+        cartLevelDiscount = Math.min(cartDiscountAmount, subtotal);
+    }
+    
+    return subtotal - cartLevelDiscount;
+}
+
+// Method to show the Add Note dialog
+private void addNote() {
+    // Create custom dialog
+    Dialog<String> dialog = new Dialog<>();
+    dialog.setTitle("Add Transaction Note");
+    dialog.setHeaderText("Add a note to this transaction");
+    dialog.setResizable(true);
+    
+    // Set the button types
+    ButtonType saveButtonType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
+    ButtonType cancelButtonType = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+    dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, cancelButtonType);
+    
+    // Create the main content
+    VBox content = new VBox(15);
+    content.setPadding(new Insets(20));
+    content.setPrefWidth(400);
+    content.setPrefHeight(300);
+    
+    // Note type selection
+    Label noteTypeLabel = new Label("Note Type:");
+    noteTypeLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #1a237e;");
+    
+    ComboBox<String> noteTypeComboBox = new ComboBox<>();
+    noteTypeComboBox.getItems().addAll(
+        "General Note", 
+        "Customer Request", 
+        "Special Instructions", 
+        "Discount Reason", 
+        "Return/Exchange Note",
+        "Internal Note"
+    );
+    noteTypeComboBox.setValue("General Note");
+    noteTypeComboBox.setPrefHeight(35);
+    noteTypeComboBox.setStyle("-fx-font-size: 13px; -fx-background-radius: 5px; -fx-border-color: #1a237e; -fx-border-width: 1px;");
+    
+    // Note text area
+    Label noteTextLabel = new Label("Note Details:");
+    noteTextLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #1a237e;");
+    
+    TextArea noteTextArea = new TextArea();
+    noteTextArea.setPromptText("Enter your note here...\n\nExample:\n- Customer requested gift wrapping\n- Applied senior citizen discount\n- Special delivery instructions");
+    noteTextArea.setPrefRowCount(6);
+    noteTextArea.setWrapText(true);
+    noteTextArea.setStyle("-fx-font-size: 13px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+                         "-fx-border-color: #1a237e; -fx-border-width: 1px; -fx-background-color: white;");
+    
+    // Set existing note if available
+    if (!transactionNote.isEmpty()) {
+        // Parse existing note to extract type and text
+        String[] noteParts = transactionNote.split(": ", 2);
+        if (noteParts.length == 2) {
+            String existingType = noteParts[0].replace("[", "").replace("]", "");
+            String existingText = noteParts[1];
+            
+            // Set the combo box value if it matches
+            if (noteTypeComboBox.getItems().contains(existingType)) {
+                noteTypeComboBox.setValue(existingType);
+            }
+            noteTextArea.setText(existingText);
+        } else {
+            noteTextArea.setText(transactionNote);
+        }
+    }
+    
+    // Character counter
+    Label charCountLabel = new Label("0 / 500 characters");
+    charCountLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: #757575;");
+    
+    // Add character limit and counter
+    noteTextArea.textProperty().addListener((observable, oldValue, newValue) -> {
+        int length = newValue.length();
+        charCountLabel.setText(length + " / 500 characters");
+        
+        if (length > 500) {
+            noteTextArea.setText(oldValue); // Revert to previous value
+            charCountLabel.setText(oldValue.length() + " / 500 characters");
+            charCountLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: #c62828;");
+        } else {
+            charCountLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: #757575;");
+        }
+        
+        // Update character count color as it approaches limit
+        if (length > 450) {
+            charCountLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: #ff8f00;");
+        } else if (length > 400) {
+            charCountLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: #757575;");
+        }
+    });
+    
+    // Current note display (if exists)
+    VBox currentNoteBox = new VBox(5);
+    if (!transactionNote.isEmpty()) {
+        Label currentNoteLabel = new Label("Current Note:");
+        currentNoteLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #1a237e;");
+        
+        Label currentNoteText = new Label(transactionNote);
+        currentNoteText.setWrapText(true);
+        currentNoteText.setStyle("-fx-font-size: 12px; -fx-text-fill: #616161; " +
+                               "-fx-background-color: #e8eaf6; -fx-padding: 8px; " +
+                               "-fx-background-radius: 3px; -fx-border-radius: 3px; " +
+                               "-fx-border-color: #1a237e; -fx-border-width: 1px;");
+        
+        currentNoteBox.getChildren().addAll(currentNoteLabel, currentNoteText);
+    }
+    
+    // Quick note buttons for common scenarios
+    Label quickNotesLabel = new Label("Quick Notes:");
+    quickNotesLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #1a237e;");
+    
+    FlowPane quickNotesPane = new FlowPane();
+    quickNotesPane.setHgap(8);
+    quickNotesPane.setVgap(5);
+    
+    String[] quickNotes = {
+        "Customer paid exact amount",
+        "Gift receipt requested",
+        "No bag needed",
+        "Senior citizen discount applied",
+        "Loyalty points used",
+        "Return within 30 days"
+    };
+    
+    for (String quickNote : quickNotes) {
+        Button quickButton = new Button(quickNote);
+        quickButton.setStyle("-fx-font-size: 11px; -fx-background-color: #e8eaf6; " +
+                           "-fx-text-fill: #1a237e; -fx-background-radius: 15px; " +
+                           "-fx-padding: 4px 8px; -fx-cursor: hand; " +
+                           "-fx-border-color: #1a237e; -fx-border-width: 1px;");
+        quickButton.setOnAction(e -> {
+            String currentText = noteTextArea.getText();
+            String newText = currentText.isEmpty() ? quickNote : currentText + "\n• " + quickNote;
+            if (newText.length() <= 500) {
+                noteTextArea.setText(newText);
+            }
+        });
+        quickNotesPane.getChildren().add(quickButton);
+    }
+    
+    // Add all components to content
+    content.getChildren().addAll(
+        noteTypeLabel, noteTypeComboBox,
+        noteTextLabel, noteTextArea, charCountLabel,
+        currentNoteBox,
+        quickNotesLabel, quickNotesPane
+    );
+    
+    // Only show current note box if there's an existing note
+    if (transactionNote.isEmpty()) {
+        content.getChildren().remove(currentNoteBox);
+    }
+    
+    dialog.getDialogPane().setContent(content);
+    
+    // Enable/disable the save button based on input
+    Node saveButton = dialog.getDialogPane().lookupButton(saveButtonType);
+    saveButton.setDisable(true);
+    
+    // Style the save button with organization color
+    saveButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; " +
+                       "-fx-background-radius: 5px; -fx-font-weight: bold;");
+    
+    noteTextArea.textProperty().addListener((observable, oldValue, newValue) -> {
+        saveButton.setDisable(newValue.trim().isEmpty());
+    });
+    
+    // Set initial state if there's existing text
+    if (!noteTextArea.getText().trim().isEmpty()) {
+        saveButton.setDisable(false);
+    }
+    
+    // Convert the result to a note when the save button is clicked
+    dialog.setResultConverter(dialogButton -> {
+        if (dialogButton == saveButtonType) {
+            String noteType = noteTypeComboBox.getValue();
+            String noteText = noteTextArea.getText().trim();
+            if (!noteText.isEmpty()) {
+                return "[" + noteType + "]: " + noteText;
+            }
+        }
+        return null;
+    });
+    
+    // Style the dialog with organization theme
+    dialog.getDialogPane().setStyle("-fx-background-color: white;");
+    
+    // Style the header area with organization color
+    dialog.getDialogPane().setHeaderText(null); // Clear default header
+    Label customHeader = new Label("Add note to this transaction");
+    customHeader.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; " +
+                         "-fx-padding: 15px; -fx-font-weight: bold; -fx-font-size: 14px; " +
+                         "-fx-pref-width: 400px; -fx-alignment: center;");
+    dialog.getDialogPane().setHeader(customHeader);
+    
+    // Show dialog and handle result
+    Optional<String> result = dialog.showAndWait();
+    result.ifPresent(note -> {
+        transactionNote = note;
+        updateNoteIndicator();
+        
+        // Show confirmation
+        showNoteConfirmation(note);
+    });
+}
+
+// Method to update the note indicator in the UI
+private void updateNoteIndicator() {
+    if (noteIndicatorLabel == null) {
+        // Create note indicator if it doesn't exist
+        noteIndicatorLabel = new Label();
+        noteIndicatorLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: #3949ab; " +
+                                  "-fx-background-color: #e8eaf6; -fx-padding: 4px 8px; " +
+                                  "-fx-background-radius: 10px; -fx-border-radius: 10px;");
+        
+        // Add to the customer information section (you'll need to modify your createCheckoutPanel method)
+        // This should be added after the customer info fields
+    }
+    
+    if (!transactionNote.isEmpty()) {
+        // Extract note type for display
+        String displayText = "📝 Note Added";
+        if (transactionNote.contains("]:")) {
+            String noteType = transactionNote.substring(transactionNote.indexOf("[") + 1, transactionNote.indexOf("]"));
+            displayText = "📝 " + noteType;
+        }
+        
+        noteIndicatorLabel.setText(displayText);
+        noteIndicatorLabel.setVisible(true);
+        noteIndicatorLabel.setManaged(true);
+        
+        // Add tooltip with full note
+        Tooltip tooltip = new Tooltip(transactionNote);
+        tooltip.setWrapText(true);
+        tooltip.setMaxWidth(300);
+        Tooltip.install(noteIndicatorLabel, tooltip);
+    } else {
+        noteIndicatorLabel.setVisible(false);
+        noteIndicatorLabel.setManaged(false);
+    }
+}
+
+// Method to show confirmation after adding note
+private void showNoteConfirmation(String note) {
+    Alert confirmation = new Alert(Alert.AlertType.INFORMATION);
+    confirmation.setTitle("Note Added");
+    confirmation.setHeaderText("Transaction note has been added successfully");
+    
+    // Create content with note preview
+    VBox content = new VBox(10);
+    content.setPadding(new Insets(10));
+    
+    Label notePreview = new Label(note);
+    notePreview.setWrapText(true);
+    notePreview.setStyle("-fx-background-color: #f5f5f5; -fx-padding: 10px; " +
+                        "-fx-background-radius: 5px; -fx-border-radius: 5px;");
+    
+    Label infoLabel = new Label("This note will be included in the transaction record and receipt.");
+    infoLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: #757575;");
+    
+    content.getChildren().addAll(notePreview, infoLabel);
+    confirmation.getDialogPane().setContent(content);
+    
+    // Auto-close after 3 seconds
+    Timeline timeline = new Timeline(new KeyFrame(Duration.seconds(3), e -> confirmation.close()));
+    timeline.play();
+    
+    confirmation.showAndWait();
+}
+
+// Method to clear the note (optional - you might want to add a clear note button)
+private void clearNote() {
+    Alert confirmClear = new Alert(Alert.AlertType.CONFIRMATION);
+    confirmClear.setTitle("Clear Note");
+    confirmClear.setHeaderText("Are you sure you want to clear the transaction note?");
+    confirmClear.setContentText("This action cannot be undone.");
+    
+    Optional<ButtonType> result = confirmClear.showAndWait();
+    if (result.isPresent() && result.get() == ButtonType.OK) {
+        transactionNote = "";
+        updateNoteIndicator();
+    }
+}
+
+// Method to get the current note (for use in receipt generation or transaction saving)
+public String getTransactionNote() {
+    return transactionNote;
+}
+
+// Method to check if there's a note
+public boolean hasTransactionNote() {
+    return !transactionNote.isEmpty();
+}
     /**
      * Handles the logout action
      */
@@ -3243,6 +3636,7 @@ private void restoreHeldSale(HeldSale sale) {
         }
     }
 }
+    
          
     public static void main(String[] args) {
         launch(args);
