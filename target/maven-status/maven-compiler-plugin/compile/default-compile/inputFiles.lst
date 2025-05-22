@@ -1,6 +1,8 @@
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\TaxBreakDown.java
+C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\Customer.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\SaleSummary.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\TerminalBlockingInfo.java
+C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\CustomersView.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\TerminalBlockingResponse.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\module-info.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\App.java
@@ -16,6 +18,7 @@ C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\CategoryRevenue.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\TaxSummary.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\TerminalConfirmationDialog.java
+C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\SettingsView.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\TaxRates.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\HeldSale.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\TransactionsView.java

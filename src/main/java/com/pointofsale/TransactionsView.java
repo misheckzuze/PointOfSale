@@ -1,18 +1,11 @@
 package com.pointofsale;
 
 import javafx.application.Platform;
-import javafx.beans.property.BooleanProperty;
-import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleDoubleProperty;
-import javafx.beans.property.SimpleIntegerProperty;
 import java.util.concurrent.atomic.AtomicInteger;
 import javafx.util.Pair;
-import javafx.animation.KeyFrame;
-import java.util.Collections;
 import javafx.animation.PauseTransition;
-import javafx.animation.Timeline;
 import javafx.util.Duration;
-import java.util.List;
 import javafx.event.Event;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;

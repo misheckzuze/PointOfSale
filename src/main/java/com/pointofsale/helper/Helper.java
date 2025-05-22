@@ -36,6 +36,7 @@ import com.pointofsale.model.InvoiceDetails;
 import com.pointofsale.model.Session;
 import com.pointofsale.model.HeldSale;
 import com.pointofsale.model.TaxTrend;
+import com.pointofsale.model.Customer;
 import com.pointofsale.model.TaxSummary;
 import com.pointofsale.model.CategoryRevenue;
 import com.pointofsale.model.InvoiceHeader;
@@ -1988,6 +1989,131 @@ public static boolean deleteHeldSaleById(String holdId) {
     }
 }
 
+/**
+ * Save customer to database
+ */
+public static void saveCustomerToDatabase(String name, String phone, String email, String type, String tin, String address, String notes) {
+    String insertSQL = "INSERT INTO Customers (Name, Phone, Email, Type, TIN, Address, Notes) VALUES (?, ?, ?, ?, ?, ?, ?)";
+
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(insertSQL)) {
+
+        stmt.setString(1, name);
+        stmt.setString(2, phone);
+        stmt.setString(3, email);
+        stmt.setString(4, type);
+        stmt.setString(5, tin);
+        stmt.setString(6, address);
+        stmt.setString(7, notes);
+
+        int rowsInserted = stmt.executeUpdate();
+        if (rowsInserted > 0) {
+            System.out.println("✅ Customer saved successfully.");
+        } else {
+            System.out.println("⚠️ No customer was saved.");
+        }
+
+    } catch (SQLException e) {
+        System.err.println("❌ Error saving customer: " + e.getMessage());
+    }
+}
+
+public static ObservableList<Customer> loadCustomers() {
+    ObservableList<Customer> customers = FXCollections.observableArrayList();
+
+    String query = """
+        SELECT 
+            c.Id, c.Name, c.Email, c.Phone, c.TIN, c.Address, c.RegisteredDate, c.Notes,
+            MAX(i.InvoiceDateTime) AS LastPurchaseDate,
+            CASE 
+                WHEN MAX(i.InvoiceDateTime) IS NULL THEN 'Inactive'
+                WHEN DATE(i.InvoiceDateTime) >= DATE('now', '-12 months') THEN 'Active'
+                ELSE 'Inactive'
+            END AS Status
+        FROM Customers c
+        LEFT JOIN Invoices i ON c.TIN = i.BuyerTin
+        GROUP BY c.Id
+    """;
+
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(query);
+         var rs = stmt.executeQuery()) {
+
+        while (rs.next()) {
+            Customer customer = new Customer(
+                rs.getString("Id"),
+                rs.getString("Name"),
+                rs.getString("Email"),
+                rs.getString("Phone"),
+                rs.getString("TIN"),
+                rs.getString("Status")
+            );
+
+            customer.setAddress(rs.getString("Address"));
+            customer.setRegisteredDate(rs.getString("RegisteredDate"));
+            customer.setLastPurchaseDate(rs.getString("LastPurchaseDate"));
+            customer.setNotes(rs.getString("Notes"));
+
+            customers.add(customer);
+        }
+
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to load customers: " + e.getMessage());
+    }
+
+    return customers;
+}
+
+public static void updateCustomer(String id, String name, String phone, String email,
+                                  String tin, String address, String notes) {
+    String sql = """
+        UPDATE Customers SET
+            Name = ?, Phone = ?, Email = ?, TIN = ?, Address = ?, Notes = ?
+        WHERE Id = ?
+    """;
+
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+        stmt.setString(1, name);
+        stmt.setString(2, phone);
+        stmt.setString(3, email);
+        stmt.setString(4, tin);
+        stmt.setString(5, address);
+        stmt.setString(6, notes);
+        stmt.setString(7, id);
+
+        int rows = stmt.executeUpdate();
+        if (rows > 0) {
+            System.out.println("✅ Customer updated.");
+        } else {
+            System.out.println("⚠️ No matching customer to update.");
+        }
+
+    } catch (SQLException e) {
+        System.err.println("❌ Update failed: " + e.getMessage());
+    }
+}
+
+public static void deleteCustomer(String id) {
+    String sql = "DELETE FROM Customers WHERE Id = ?";
+
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+        stmt.setString(1, id);
+
+        int rows = stmt.executeUpdate();
+        if (rows > 0) {
+            System.out.println("🗑️ Customer deleted successfully.");
+        } else {
+            System.out.println("⚠️ No matching customer found to delete.");
+        }
+
+    } catch (SQLException e) {
+        System.err.println("❌ Deletion failed: " + e.getMessage());
+    }
+}
 
 
 }

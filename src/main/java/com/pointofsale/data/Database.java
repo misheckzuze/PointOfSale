@@ -206,6 +206,19 @@ public class Database {
                     "UnitOfMeasure TEXT, " +
                     "FOREIGN KEY(HoldId) REFERENCES HeldSales(HoldId)" +
                     ")";
+            String createCustomersTable = "CREATE TABLE IF NOT EXISTS Customers (" +
+                    "Id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                    "Name TEXT NOT NULL, " +
+                    "Phone TEXT, " +
+                    "Email TEXT, " +
+                    "Type TEXT, " +
+                    "TIN TEXT UNIQUE, " +
+                    "Address TEXT, " +
+                    "RegisteredDate TEXT DEFAULT (datetime('now')), " +
+                    "Notes TEXT" +
+                    ")";
+
+
 
             // Execute all statements
             stmt.execute(createProductsTable);
@@ -226,6 +239,7 @@ public class Database {
             stmt.execute(createInvoiceTaxBreakdownTable);
             stmt.execute(createPaymentTypeTable);
             stmt.execute(createHeldSalesTable);
+            stmt.execute(createCustomersTable);
             stmt.execute(createHeldSaleItemsTable);
 
             System.out.println("✅ All SQLite tables created and initialized at: " + DB_PATH);

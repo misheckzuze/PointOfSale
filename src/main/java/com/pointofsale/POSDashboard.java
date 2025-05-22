@@ -14,6 +14,7 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.layout.*;
 import java.time.LocalDate;
 import java.util.Optional;
+import javafx.stage.Popup;
 import javafx.event.EventHandler;
 import javafx.animation.KeyValue;
 import javafx.util.Pair;
@@ -172,6 +173,33 @@ private void loadProductsManagement() {
     stage.setTitle("POS System - Products Management");
 }
 
+private void loadCustomersManagement() {
+    // Clear checkout panel when switching to non-sales views
+    root.setRight(null);
+    
+    // Create customers management content
+    CustomersView customersManagement = new CustomersView();
+    Node customersContent = customersManagement.getView();
+    
+    // Set the content
+    setContent(customersContent);
+    stage.setTitle("POS System - Customers Management");
+}
+
+private void loadSettings() {
+    // Clear checkout panel when switching to non-sales views
+    root.setRight(null);
+    
+    // Create settimgs content
+    SettingsView settings = new SettingsView();
+    Node settengsContent = settings.getView();
+    
+    // Set the content
+    setContent(settengsContent );
+    stage.setTitle("POS System - Settings");
+}
+
+
 private void loadReports() {
     // Clear checkout panel when switching to non-sales views
     root.setRight(null);
@@ -313,7 +341,7 @@ private VBox createSidebar() {
     HBox customersMenuItem = createSidebarMenuItem("Customers", false);
     customersMenuItem.setOnMouseClicked(e -> {
         setActiveMenuItem(customersMenuItem, "Customers");
-        // loadCustomers(); // Add this method if needed
+        loadCustomersManagement();
     });
     sidebar.getChildren().add(customersMenuItem);
 
@@ -327,7 +355,7 @@ private VBox createSidebar() {
     HBox settingsMenuItem = createSidebarMenuItem("Settings", false);
     settingsMenuItem.setOnMouseClicked(e -> {
         setActiveMenuItem(settingsMenuItem, "Settings");
-        // loadSettings(); // Add this method if needed
+        loadSettings();
     });
     sidebar.getChildren().add(settingsMenuItem);
 
@@ -921,6 +949,7 @@ private VBox createCheckoutPanel() {
     
     holdSaleButton.setOnAction(e -> holdSale());
     viewHeldSalesButton.setOnAction(e -> showHeldSales());
+    addCustomerButton.setOnAction(e -> addCustomer());
     
     customerActionsPanel.getChildren().addAll(customerActionsTitle, addCustomerButton, addNoteButton, holdSaleButton, viewHeldSalesButton, printReceiptButton);
     
@@ -1039,6 +1068,8 @@ private void updateTotals() {
     double itemLevelDiscountTotal = 0.0;
 
     for (Product item : cartItems) {
+        double discount = item.getDiscount();
+        applyDiscountToItem(item, discount, false);    
         double itemPrice = item.getPrice();
         double itemQuantity = item.getQuantity();
         double itemSubtotal = itemPrice * itemQuantity;
@@ -1136,8 +1167,7 @@ private void updateChangeCalculation() {
             return;
         }
         
-        String bearerToken = Helper.getToken();
-        
+        String bearerToken = Helper.getToken();     
 
         // Validate authorization code before proceeding
         ApiClient apiClient = new ApiClient();
@@ -1509,7 +1539,7 @@ private void applyDiscountToItem(Product product, double discountValue, boolean 
     cartTable.refresh();
 }
 
-// Method to apply discount to the entire cart
+// Method to apply discount to the entire cart  
 private void applyDiscountToCart(double discountValue, boolean isPercentage) {
     if (isPercentage) {
         cartDiscountPercent = discountValue;
@@ -2130,55 +2160,7 @@ private void showAlert(Alert.AlertType type, String title, String content) {
         alert.setContentText(content);
         alert.showAndWait();
     });
-}
-
-/**
- * Generates a random barcode for simulated scanning
- * Prioritizes getting actual products from the database
- */
-private String generateRandomBarcode() {
-    // First try to get a random existing barcode from the database
-    List<String> existingBarcodes = Helper.getAllProductBarcodes();
-    if (existingBarcodes != null && !existingBarcodes.isEmpty()) {
-        int randomIndex = new Random().nextInt(existingBarcodes.size());
-        return existingBarcodes.get(randomIndex);
-    }
-    
-    // Fallback to generating an EAN-13 barcode
-    Random random = new Random();
-    StringBuilder sb = new StringBuilder();
-    
-    // First digit (GS1 prefix)
-    sb.append(random.nextInt(10));
-    
-    // Next 11 digits
-    for (int i = 0; i < 11; i++) {
-        sb.append(random.nextInt(10));
-    }
-    
-    // Calculate EAN-13 check digit
-    String partialCode = sb.toString();
-    int checkDigit = calculateEAN13CheckDigit(partialCode);
-    
-    // Add check digit
-    return partialCode + checkDigit;
-}
-
-/**
- * Calculates the EAN-13 check digit for a 12-digit code
- */
-private int calculateEAN13CheckDigit(String code12) {
-    int sum = 0;
-    for (int i = 0; i < 12; i++) {
-        int digit = Character.getNumericValue(code12.charAt(i));
-        sum += (i % 2 == 0) ? digit : digit * 3;
-    }
-    
-    int checkDigit = (10 - (sum % 10)) % 10;
-    return checkDigit;
-}
-
-    
+}  
     /**
        * Formats a number as Malawi Kwacha currency
     */
@@ -2433,7 +2415,6 @@ private int calculateEAN13CheckDigit(String code12) {
 }
 
 
-
 // Add this method to POSDashboard class
 private String generateHoldId() {
     // Create a unique ID with date and random number
@@ -2442,7 +2423,6 @@ private String generateHoldId() {
     String timeStr = now.format(DateTimeFormatter.ofPattern("HHmmss"));
     return "H" + dateStr + timeStr;
 }
-
 private void showHeldSales() {
     List<HeldSale> heldSales = Helper.getAllHeldSales();
 
@@ -2648,72 +2628,37 @@ private void showHeldSales() {
     content.getChildren().addAll(headerLabel, subHeaderLabel, listView);
     dialog.getDialogPane().setContent(content);
 
-    // CRITICAL CHANGE: Intercept the Delete button click and handle it manually
-    // Instead of using the result converter for deletion
     Button deleteButton = (Button) dialog.getDialogPane().lookupButton(deleteButtonType);
     deleteButton.addEventFilter(ActionEvent.ACTION, event -> {
         // Get the selected item
         HeldSale selectedSale = listView.getSelectionModel().getSelectedItem();
         if (selectedSale != null) {
-            // Show confirmation dialog before deletion
-            Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
-            confirmAlert.setTitle("Confirm Deletion");
-            confirmAlert.setHeaderText("Delete Held Sale");
-            confirmAlert.setContentText("Are you sure you want to delete this held sale?\nThis action cannot be undone.");
-            
-            // Style the confirmation dialog
-            DialogPane confirmDialogPane = confirmAlert.getDialogPane();
-            confirmDialogPane.setStyle("-fx-background-color: #f8f9fa; -fx-border-radius: 5px; -fx-padding: 15px;");
-            
-            Label confirmHeaderLabel = (Label) confirmDialogPane.lookup(".header-panel .label");
-            if (confirmHeaderLabel != null) {
-                confirmHeaderLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #e53935;");
+            // Delete without confirmation
+            boolean deleted = Helper.deleteHeldSaleById(selectedSale.getHoldId());
+            if (deleted) {
+                // Show success notification
+                Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                alert.setTitle("Sale Deleted");
+                alert.setHeaderText(null);
+                alert.setContentText("Held sale has been deleted successfully.");
+                alert.showAndWait();
+                
+                // Refresh the dialog (close and reopen)
+                dialog.close();
+                showHeldSales();
+            } else {
+                Alert errorAlert = new Alert(Alert.AlertType.ERROR);
+                errorAlert.setTitle("Error");
+                errorAlert.setHeaderText("Failed to delete held sale");
+                errorAlert.setContentText("The held sale could not be deleted from the database.");
+                errorAlert.showAndWait();
             }
             
-            // Style buttons
-            Button confirmButton = (Button) confirmDialogPane.lookupButton(ButtonType.OK);
-            if (confirmButton != null) {
-                confirmButton.setStyle("-fx-background-color: #e53935; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 4px;");
-            }
-
-            Button cancelConfirmButton = (Button) confirmDialogPane.lookupButton(ButtonType.CANCEL);
-            if (cancelConfirmButton != null) {
-                // Style the Cancel button as needed
-                cancelConfirmButton.setStyle("-fx-background-color: #e0e0e0; -fx-text-fill: #424242; -fx-font-weight: bold; -fx-background-radius: 4px;");
-            }
-            
-            Optional<ButtonType> confirmResult = confirmAlert.showAndWait();
-            
-            if (confirmResult.isPresent() && confirmResult.get() == ButtonType.OK) {
-                // User confirmed deletion, proceed
-                boolean deleted = Helper.deleteHeldSaleById(selectedSale.getHoldId());
-                if (deleted) {
-                    // Show success confirmation
-                    Alert alert = new Alert(Alert.AlertType.INFORMATION);
-                    alert.setTitle("Sale Deleted");
-                    alert.setHeaderText(null);
-                    alert.setContentText("Held sale has been deleted successfully.");
-                    alert.showAndWait();
-                    
-                    // Refresh the dialog (close and reopen)
-                    dialog.close();
-                    showHeldSales();
-                } else {
-                    Alert errorAlert = new Alert(Alert.AlertType.ERROR);
-                    errorAlert.setTitle("Error");
-                    errorAlert.setHeaderText("Failed to delete held sale");
-                    errorAlert.setContentText("The held sale could not be deleted from the database.");
-                    errorAlert.showAndWait();
-                }
-            }
-            
-            // Consume the event to prevent the dialog from closing
-            // This is CRITICAL to keep the parent dialog open
             event.consume();
         }
     });
 
-    // Now just handle the restore operation in the result converter
+    //handle the restore operation in the result converter
     dialog.setResultConverter(dialogButton -> {
         if (dialogButton == restoreButtonType) {
             return listView.getSelectionModel().getSelectedItem();
@@ -2728,6 +2673,499 @@ private void showHeldSales() {
         restoreHeldSale(selectedSale);
     });
 }
+
+/**
+ * Handles the Add Customer action with professional UI design
+ */
+private void addCustomer() {
+    // Create a dialog
+    Dialog<ButtonType> dialog = new Dialog<>();
+    dialog.setTitle("Add New Customer");
+    dialog.setHeaderText(null);
+    
+    // Set the dialog style to match application with enhanced styling
+    DialogPane dialogPane = dialog.getDialogPane();
+    dialogPane.setPrefWidth(500);
+    dialogPane.setPrefHeight(500);
+    dialogPane.setStyle("-fx-background-color: white; -fx-padding: 0;");
+    
+    // Create main container with header
+    VBox mainContainer = new VBox();
+    mainContainer.setSpacing(0);
+    
+    // Create professional header with icon
+    HBox header = new HBox();
+    header.setPadding(new Insets(20, 25, 20, 25));
+    header.setStyle("-fx-background-color: linear-gradient(to right, #1a237e, #3949ab); -fx-background-radius: 5px 5px 0 0;");
+    
+    // Create a circle avatar for the person icon
+    Circle personIcon = new Circle(25);
+    personIcon.setFill(Color.WHITE);
+    personIcon.setOpacity(0.9);
+    
+    // Use a text as the icon
+    Text userIcon = new Text("");
+    userIcon.setFont(Font.font("FontAwesome", 25));
+    userIcon.setFill(Color.web("#1a237e"));
+    
+    StackPane iconContainer = new StackPane(personIcon, userIcon);
+    
+    // Header text
+    VBox headerTextContainer = new VBox(5);
+    Label headerTitle = new Label("Add New Customer");
+    headerTitle.setStyle("-fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: white;");
+    
+    Label headerSubtitle = new Label("Enter customer details to add to the system");
+    headerSubtitle.setStyle("-fx-font-size: 12px; -fx-text-fill: rgba(255,255,255,0.8);");
+    
+    headerTextContainer.getChildren().addAll(headerTitle, headerSubtitle);
+    HBox.setMargin(headerTextContainer, new Insets(0, 0, 0, 15));
+    
+    header.getChildren().addAll(iconContainer, headerTextContainer);
+    header.setAlignment(Pos.CENTER_LEFT);
+    
+    // Add the header to the main container
+    mainContainer.getChildren().add(header);
+    
+    // Create the form with better styling
+    ScrollPane scrollPane = new ScrollPane();
+    scrollPane.setFitToWidth(true);
+    scrollPane.setStyle("-fx-background: white; -fx-border-color: transparent;");
+    
+    VBox formContainer = new VBox(15);
+    formContainer.setPadding(new Insets(25));
+    formContainer.setStyle("-fx-background-color: white;");
+    
+    // Define enhanced text field style
+    String textFieldStyle = "-fx-font-size: 14px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+                          "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white; " +
+                          "-fx-padding: 10px 15px;";
+    
+    String labelStyle = "-fx-font-size: 13px; -fx-text-fill: #616161; -fx-font-weight: bold;";
+    
+    // Customer Type section
+    VBox customerTypeSection = new VBox(8);
+    Label customerTypeLabel = new Label("CUSTOMER TYPE");
+    customerTypeLabel.setStyle(labelStyle);
+    
+    HBox typeButtons = new HBox(15);
+    typeButtons.setPrefHeight(45);
+    
+    ToggleGroup typeGroup = new ToggleGroup();
+    
+    // Individual button
+    ToggleButton individualButton = new ToggleButton("Individual");
+    individualButton.setToggleGroup(typeGroup);
+    individualButton.setSelected(true);
+    individualButton.setPrefWidth(200);
+    individualButton.setPrefHeight(40);
+    individualButton.setStyle("-fx-background-color: white; -fx-border-color: #e0e0e0; -fx-border-radius: 5px; " +
+                           "-fx-font-size: 14px; -fx-text-fill: #616161; -fx-cursor: hand;");
+    
+    // Business button
+    ToggleButton businessButton = new ToggleButton("Business");
+    businessButton.setToggleGroup(typeGroup);
+    businessButton.setPrefWidth(200);
+    businessButton.setPrefHeight(40);
+    businessButton.setStyle("-fx-background-color: white; -fx-border-color: #e0e0e0; -fx-border-radius: 5px; " +
+                         "-fx-font-size: 14px; -fx-text-fill: #616161; -fx-cursor: hand;");
+    
+    // Add selection effect
+    individualButton.selectedProperty().addListener((obs, oldVal, newVal) -> {
+        if (newVal) {
+            individualButton.setStyle("-fx-background-color: #EBF5FB; -fx-border-color: #3949ab; -fx-border-radius: 5px; " +
+                                   "-fx-font-size: 14px; -fx-text-fill: #1a237e; -fx-font-weight: bold; -fx-cursor: hand;");
+        } else {
+            individualButton.setStyle("-fx-background-color: white; -fx-border-color: #e0e0e0; -fx-border-radius: 5px; " +
+                                   "-fx-font-size: 14px; -fx-text-fill: #616161; -fx-cursor: hand;");
+        }
+    });
+    
+    businessButton.selectedProperty().addListener((obs, oldVal, newVal) -> {
+        if (newVal) {
+            businessButton.setStyle("-fx-background-color: #EBF5FB; -fx-border-color: #3949ab; -fx-border-radius: 5px; " +
+                                 "-fx-font-size: 14px; -fx-text-fill: #1a237e; -fx-font-weight: bold; -fx-cursor: hand;");
+        } else {
+            businessButton.setStyle("-fx-background-color: white; -fx-border-color: #e0e0e0; -fx-border-radius: 5px; " +
+                                 "-fx-font-size: 14px; -fx-text-fill: #616161; -fx-cursor: hand;");
+        }
+    });
+    
+    typeButtons.getChildren().addAll(individualButton, businessButton);
+    customerTypeSection.getChildren().addAll(customerTypeLabel, typeButtons);
+    
+    // Customer Basic Info
+    VBox nameBox = createFormFieldWithIcon("", "Full Name", "Enter customer full name", textFieldStyle, labelStyle);
+    TextField nameField = (TextField) nameBox.getChildren().get(1);
+    
+    VBox phoneBox = createFormFieldWithIcon("", "Phone Number", "Enter phone number", textFieldStyle, labelStyle);
+    TextField phoneField = (TextField) phoneBox.getChildren().get(1);
+    
+    VBox emailBox = createFormFieldWithIcon("", "Email Address", "Enter email address", textFieldStyle, labelStyle);
+    TextField emailField = (TextField) emailBox.getChildren().get(1);
+    
+    // TIN field - initially not visible
+    VBox tinBox = createFormFieldWithIcon("", "Tax Identification Number", "Enter TIN number", textFieldStyle, labelStyle);
+    TextField tpinField = (TextField) tinBox.getChildren().get(1);
+    tinBox.setManaged(false);
+    tinBox.setVisible(false);
+    
+    // Address Section
+    VBox addressBox = new VBox(8);
+    Label addressLabel = new Label("ADDRESS");
+    addressLabel.setStyle(labelStyle);
+    
+    TextArea addressField = new TextArea();
+    addressField.setPromptText("Enter full address");
+    addressField.setPrefRowCount(3);
+    addressField.setWrapText(true);
+    addressField.setStyle(textFieldStyle);
+    
+    addressBox.getChildren().addAll(addressLabel, addressField);
+    
+    // Show/hide TIN field based on customer type
+    businessButton.setOnAction(e -> {
+        tinBox.setManaged(true);
+        tinBox.setVisible(true);
+    });
+    
+    individualButton.setOnAction(e -> {
+        tinBox.setManaged(false);
+        tinBox.setVisible(false);
+        tinField.clear();
+    });
+    
+    // Add all form sections
+    formContainer.getChildren().addAll(
+        customerTypeSection,
+        createSectionDivider(),
+        nameBox,
+        phoneBox,
+        emailBox,
+        tinBox,
+        createSectionDivider(),
+        addressBox
+    );
+    
+    scrollPane.setContent(formContainer);
+    
+    // Create the footer with action buttons
+    HBox footer = new HBox();
+    footer.setPadding(new Insets(15, 25, 15, 25));
+    footer.setSpacing(10);
+    footer.setAlignment(Pos.CENTER_RIGHT);
+    footer.setStyle("-fx-background-color: #f5f5f7; -fx-border-color: #e0e0e0; -fx-border-width: 1 0 0 0;");
+    
+    Button cancelButton = new Button("Cancel");
+    cancelButton.setPrefHeight(40);
+    cancelButton.setPrefWidth(100);
+    cancelButton.setStyle("-fx-background-color: white; -fx-text-fill: #616161; -fx-border-color: #e0e0e0; " +
+                        "-fx-border-radius: 5px; -fx-background-radius: 5px; -fx-font-size: 14px; -fx-cursor: hand;");
+    
+    Button saveButton = new Button("Save Customer");
+    saveButton.setPrefHeight(40);
+    saveButton.setPrefWidth(150);
+    saveButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; -fx-font-weight: bold; " +
+                      "-fx-background-radius: 5px; -fx-font-size: 14px; -fx-cursor: hand;");
+    
+    // Hover effects
+    saveButton.setOnMouseEntered(e -> 
+        saveButton.setStyle("-fx-background-color: #3949ab; -fx-text-fill: white; -fx-font-weight: bold; " +
+                         "-fx-background-radius: 5px; -fx-font-size: 14px; -fx-cursor: hand;")
+    );
+    
+    saveButton.setOnMouseExited(e -> 
+        saveButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; -fx-font-weight: bold; " +
+                         "-fx-background-radius: 5px; -fx-font-size: 14px; -fx-cursor: hand;")
+    );
+    
+    cancelButton.setOnMouseEntered(e -> 
+        cancelButton.setStyle("-fx-background-color: #f5f5f7; -fx-text-fill: #616161; -fx-border-color: #e0e0e0; " +
+                           "-fx-border-radius: 5px; -fx-background-radius: 5px; -fx-font-size: 14px; -fx-cursor: hand;")
+    );
+    
+    cancelButton.setOnMouseExited(e -> 
+        cancelButton.setStyle("-fx-background-color: white; -fx-text-fill: #616161; -fx-border-color: #e0e0e0; " +
+                           "-fx-border-radius: 5px; -fx-background-radius: 5px; -fx-font-size: 14px; -fx-cursor: hand;")
+    );
+    
+    footer.getChildren().addAll(cancelButton, saveButton);
+    
+    // Add form and footer to main container
+    mainContainer.getChildren().addAll(scrollPane, footer);
+    VBox.setVgrow(scrollPane, Priority.ALWAYS);
+    
+    // Add the main container to the dialog
+    dialogPane.setContent(mainContainer);
+    
+    // Handle dialog buttons
+    ButtonType saveButtonType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
+    ButtonType cancelButtonType = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+    dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, cancelButtonType);
+    
+    // Hide the default buttons as we're using custom ones
+    Button defaultSaveButton = (Button) dialog.getDialogPane().lookupButton(saveButtonType);
+    Button defaultCancelButton = (Button) dialog.getDialogPane().lookupButton(cancelButtonType);
+    defaultSaveButton.setVisible(false);
+    defaultCancelButton.setVisible(false);
+    
+    // Add action handlers to our custom buttons
+    saveButton.setOnAction(e -> {
+        if (validateCustomerForm(nameField, phoneField, emailField, tpinField, businessButton.isSelected())) {
+            dialog.setResult(saveButtonType);
+            dialog.close();
+        }
+    });
+    
+    cancelButton.setOnAction(e -> {
+        dialog.setResult(cancelButtonType);
+        dialog.close();
+    });
+    
+    // Add focus indicator on active field
+    nameField.focusedProperty().addListener((obs, oldVal, newVal) -> {
+        if (newVal) {
+            nameBox.setStyle("-fx-border-color: #3949ab; -fx-border-width: 0 0 0 3; -fx-padding: 0 0 0 10;");
+        } else {
+            nameBox.setStyle("-fx-border-color: transparent; -fx-border-width: 0 0 0 3; -fx-padding: 0 0 0 10;");
+        }
+    });
+    
+    phoneField.focusedProperty().addListener((obs, oldVal, newVal) -> {
+        if (newVal) {
+            phoneBox.setStyle("-fx-border-color: #3949ab; -fx-border-width: 0 0 0 3; -fx-padding: 0 0 0 10;");
+        } else {
+            phoneBox.setStyle("-fx-border-color: transparent; -fx-border-width: 0 0 0 3; -fx-padding: 0 0 0 10;");
+        }
+    });
+    
+    emailField.focusedProperty().addListener((obs, oldVal, newVal) -> {
+        if (newVal) {
+            emailBox.setStyle("-fx-border-color: #3949ab; -fx-border-width: 0 0 0 3; -fx-padding: 0 0 0 10;");
+        } else {
+            emailBox.setStyle("-fx-border-color: transparent; -fx-border-width: 0 0 0 3; -fx-padding: 0 0 0 10;");
+        }
+    });
+    
+    // Show dialog and process result
+    dialog.showAndWait().ifPresent(result -> {
+        if (result == saveButtonType) {
+            // Save customer details
+            String name = nameField.getText();
+            String phone = phoneField.getText();
+            String email = emailField.getText();
+            String type = businessButton.isSelected() ? "Business" : "Individual";
+            String tin = tpinField.getText();
+            String address = addressField.getText();
+            
+            Helper.saveCustomerToDatabase(name, phone, email, type, tin, address, "");
+            
+            // Update the customer name field in checkout panel
+            customerNamesField.setText(name);
+            
+            // If business customer, also update TIN field in checkout panel
+            if ("Business".equals(type) && !tin.isEmpty()) {
+                tinField.setText(tin);
+            }
+            
+            // Show success notification
+            showSuccessNotification("Customer Added", "Customer has been successfully added to the system.");
+        }
+    });
+}
+
+/**
+ * Helper method to create a form field with icon
+ */
+private VBox createFormFieldWithIcon(String icon, String labelText, String promptText, String textFieldStyle, String labelStyle) {
+    VBox container = new VBox(8);
+    container.setStyle("-fx-border-color: transparent; -fx-border-width: 0 0 0 3; -fx-padding: 0 0 0 10;");
+    
+    Label label = new Label(labelText);
+    label.setStyle(labelStyle);
+    
+    HBox fieldContainer = new HBox(10);
+    fieldContainer.setAlignment(Pos.CENTER_LEFT);
+    
+    // Create icon (placeholder - replace with actual icon implementation)
+    Label iconLabel = new Label(icon);
+    iconLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #9e9e9e;");
+    
+    TextField textField = new TextField();
+    textField.setPromptText(promptText);
+    textField.setStyle(textFieldStyle);
+    HBox.setHgrow(textField, Priority.ALWAYS);
+    
+    fieldContainer.getChildren().addAll(textField);
+    container.getChildren().addAll(label, textField);
+    
+    return container;
+}
+
+/**
+ * Creates a visual divider for form sections
+ */
+private Separator createSectionDivider() {
+    Separator separator = new Separator();
+    separator.setStyle("-fx-padding: 5 0 5 0;");
+    return separator;
+}
+
+/**
+ * Validate customer form inputs
+ */
+private boolean validateCustomerForm(TextField nameField, TextField phoneField, TextField emailField, TextField tinField, boolean isBusiness) {
+    // Reset error styling
+    nameField.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+                     "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 10px 15px;");
+    
+    // Validate name (required)
+    if (nameField.getText().trim().isEmpty()) {
+        nameField.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+                        "-fx-border-color: #c62828; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 10px 15px;");
+        
+        showErrorNotification("Validation Error", "Customer name is required.");
+        return false;
+    }
+    
+    // Validate phone (optional, but if provided must be valid)
+    if (!phoneField.getText().trim().isEmpty() && !phoneField.getText().matches("^\\d{10,15}$")) {
+        phoneField.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+                         "-fx-border-color: #c62828; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 10px 15px;");
+        
+        showErrorNotification("Validation Error", "Please enter a valid phone number.");
+        return false;
+    }
+    
+    // Validate email (optional, but if provided must be valid)
+    if (!emailField.getText().trim().isEmpty() && !emailField.getText().matches("^[\\w-\\.]+@([\\w-]+\\.)+[\\w-]{2,4}$")) {
+        emailField.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+                         "-fx-border-color: #c62828; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 10px 15px;");
+        
+        showErrorNotification("Validation Error", "Please enter a valid email address.");
+        return false;
+    }
+    
+    // Validate TIN for business customers
+    if (isBusiness && tinField.getText().trim().isEmpty()) {
+        tinField.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+                       "-fx-border-color: #c62828; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 10px 15px;");
+        
+        showErrorNotification("Validation Error", "TIN is required for business customers.");
+        return false;
+    }
+    
+    return true;
+}
+
+/**
+ * Show success notification
+ */
+private void showSuccessNotification(String title, String message) {
+    // Create a styled notification pane
+    StackPane notificationPane = new StackPane();
+    notificationPane.setStyle("-fx-background-color: #E8F5E9; -fx-background-radius: 5px; -fx-padding: 15px; " +
+                           "-fx-border-color: #81C784; -fx-border-radius: 5px; -fx-border-width: 1px; " +
+                           "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 10, 0, 0, 5);");
+    
+    HBox content = new HBox(15);
+    content.setAlignment(Pos.CENTER_LEFT);
+    
+    // Success icon
+    Circle successCircle = new Circle(15);
+    successCircle.setFill(Color.web("#4CAF50"));
+    
+    Text checkIcon = new Text("✓");
+    checkIcon.setFill(Color.WHITE);
+    checkIcon.setFont(Font.font("System", FontWeight.BOLD, 16));
+    
+    StackPane iconContainer = new StackPane(successCircle, checkIcon);
+    
+    // Message content
+    VBox messageContainer = new VBox(5);
+    Label titleLabel = new Label(title);
+    titleLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #2E7D32;");
+    
+    Label messageLabel = new Label(message);
+    messageLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #37474F;");
+    
+    messageContainer.getChildren().addAll(titleLabel, messageLabel);
+    
+    content.getChildren().addAll(iconContainer, messageContainer);
+    notificationPane.getChildren().add(content);
+    
+    // Create a popup
+    Popup popup = new Popup();
+    popup.getContent().add(notificationPane);
+    popup.setAutoHide(true);
+    
+    // Show the popup
+    popup.show(stage);
+    
+    // Position the popup in the bottom right
+    popup.setX(stage.getX() + stage.getWidth() - notificationPane.getPrefWidth() - 20);
+    popup.setY(stage.getY() + stage.getHeight() - notificationPane.getPrefHeight() - 20);
+    
+    // Close after 3 seconds
+    PauseTransition delay = new PauseTransition(Duration.seconds(3));
+    delay.setOnFinished(e -> popup.hide());
+    delay.play();
+}
+
+/**
+ * Show error notification
+ */
+private void showErrorNotification(String title, String message) {
+    // Create a styled notification pane
+    StackPane notificationPane = new StackPane();
+    notificationPane.setStyle("-fx-background-color: #FFEBEE; -fx-background-radius: 5px; -fx-padding: 15px; " +
+                           "-fx-border-color: #EF9A9A; -fx-border-radius: 5px; -fx-border-width: 1px; " +
+                           "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 10, 0, 0, 5);");
+    
+    HBox content = new HBox(15);
+    content.setAlignment(Pos.CENTER_LEFT);
+    
+    // Error icon
+    Circle errorCircle = new Circle(15);
+    errorCircle.setFill(Color.web("#F44336"));
+    
+    Text errorIcon = new Text("!");
+    errorIcon.setFill(Color.WHITE);
+    errorIcon.setFont(Font.font("System", FontWeight.BOLD, 16));
+    
+    StackPane iconContainer = new StackPane(errorCircle, errorIcon);
+    
+    // Message content
+    VBox messageContainer = new VBox(5);
+    Label titleLabel = new Label(title);
+    titleLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #C62828;");
+    
+    Label messageLabel = new Label(message);
+    messageLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #37474F;");
+    
+    messageContainer.getChildren().addAll(titleLabel, messageLabel);
+    
+    content.getChildren().addAll(iconContainer, messageContainer);
+    notificationPane.getChildren().add(content);
+    
+    // Create a popup
+    Popup popup = new Popup();
+    popup.getContent().add(notificationPane);
+    popup.setAutoHide(true);
+    
+    // Show the popup
+    popup.show(stage);
+    
+    // Position the popup in the bottom right
+    popup.setX(stage.getX() + stage.getWidth() - notificationPane.getPrefWidth() - 20);
+    popup.setY(stage.getY() + stage.getHeight() - notificationPane.getPrefHeight() - 20);
+    
+    // Close after 3 seconds
+    PauseTransition delay = new PauseTransition(Duration.seconds(3));
+    delay.setOnFinished(e -> popup.hide());
+    delay.play();
+}
+
 
 private void restoreHeldSale(HeldSale sale) {
     // Clear current cart

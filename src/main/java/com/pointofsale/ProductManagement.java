@@ -391,35 +391,19 @@ public class ProductManagement {
             @Override
             public TableCell<Product, Void> call(final TableColumn<Product, Void> param) {
                 return new TableCell<>() {
-                    private final Button editBtn = new Button("Edit");
-                    private final Button deleteBtn = new Button("Delete");
                     private final Button discountBtn = new Button("Discount");
                     private final HBox pane = new HBox(5);
 
                     {
-                        editBtn.setStyle("-fx-background-color: #3949ab; -fx-text-fill: white; " +
-                                "-fx-cursor: hand; -fx-background-radius: 3px; -fx-font-size: 12px;");
-                        deleteBtn.setStyle("-fx-background-color: #c62828; -fx-text-fill: white; " +
-                                "-fx-cursor: hand; -fx-background-radius: 3px; -fx-font-size: 12px;");
                         discountBtn.setStyle("-fx-background-color: #ff8f00; -fx-text-fill: white; " +
                                 "-fx-cursor: hand; -fx-background-radius: 3px; -fx-font-size: 12px;");
-
-                        editBtn.setOnAction(event -> {
-                            Product product = getTableView().getItems().get(getIndex());
-                            // Implement edit functionality
-                        });
-
-                        deleteBtn.setOnAction(event -> {
-                            Product product = getTableView().getItems().get(getIndex());
-                            showDeleteConfirmDialog(product);
-                        });
 
                         discountBtn.setOnAction(event -> {
                             Product product = getTableView().getItems().get(getIndex());
                             showDiscountDialog(product);
                         });
 
-                        pane.getChildren().addAll(editBtn, discountBtn, deleteBtn);
+                        pane.getChildren().addAll(discountBtn);
                         pane.setAlignment(Pos.CENTER);
                     }
 
@@ -609,21 +593,6 @@ public class ProductManagement {
     }
 }
     
-    private void showDeleteConfirmDialog(Product product) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.setTitle("Confirm Deletion");
-        alert.setHeaderText("Delete Product");
-        alert.setContentText("Are you sure you want to delete " + product.getName() + "?");
-        
-        Optional<ButtonType> result = alert.showAndWait();
-        if (result.isPresent() && result.get() == ButtonType.OK) {
-            productData.remove(product);
-            updateProductStats();
-            filterProducts();
-            showNotification("Product Deleted", "Product has been deleted successfully.");
-        }
-    }
-    
     private void showNotification(String title, String message) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.setTitle(title);
@@ -638,32 +607,6 @@ public class ProductManagement {
         alert.setHeaderText(null);
         alert.setContentText(message);
         alert.showAndWait();
-    }
-    
-    private String getTaxRateCode(String displayName) {
-        if (displayName == null) return "EXEMPT";
-        
-        switch (displayName) {
-            case "VAT16 (16%)":
-                return "VAT16";
-            case "VAT12 (12%)":
-                return "VAT12";
-            default:
-                return "EXEMPT";
-        }
-    }
-    
-    private String getTaxRateDisplay(String code) {
-        if (code == null) return "Exempt (0%)";
-        
-        switch (code) {
-            case "VAT16":
-                return "VAT16 (16%)";
-            case "VAT12":
-                return "VAT12 (12%)";
-            default:
-                return "Exempt (0%)";
-        }
     }
     
     /**
