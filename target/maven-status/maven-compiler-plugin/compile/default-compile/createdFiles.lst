@@ -3,6 +3,7 @@ com\pointofsale\ReportsView$5.class
 com\pointofsale\SystemInfo.class
 com\pointofsale\utils\ApiEndpoints.class
 com\pointofsale\model\InvoicePayload.class
+com\pointofsale\AuditTrailView.class
 com\pointofsale\POSDashboard$3.class
 com\pointofsale\ProductLookupDialog$1.class
 com\pointofsale\helper\ActivationDataInserter.class
@@ -10,6 +11,7 @@ com\pointofsale\model\CheckResult.class
 com\pointofsale\model\InvoiceSummary.class
 com\pointofsale\ProductManagement$5.class
 com\pointofsale\ProductLookupDialog.class
+com\pointofsale\SessionTimeoutWatcher.class
 com\pointofsale\CustomersView$4.class
 com\pointofsale\PrintPreviewDialog.class
 com\pointofsale\ReportsView$8.class
@@ -21,8 +23,10 @@ com\pointofsale\CustomersView$1.class
 com\pointofsale\ProductLookupDialog$2.class
 com\pointofsale\model\Customer.class
 com\pointofsale\ProductManagement$2.class
+com\pointofsale\AuditTrailView$1.class
 com\pointofsale\TransactionsView$2.class
 com\pointofsale\model\TaxSummary.class
+com\pointofsale\AuditTrailView$2.class
 com\pointofsale\helper\ApiClient$1.class
 com\pointofsale\model\InvoiceDetails.class
 com\pointofsale\CustomersView$PurchaseRecord.class
@@ -31,6 +35,7 @@ com\pointofsale\ReportsView$1.class
 com\pointofsale\CustomersView$2.class
 com\pointofsale\LoginView.class
 com\pointofsale\TransactionsView.class
+com\pointofsale\LockScreen.class
 com\pointofsale\TerminalConfirmationDialog.class
 com\pointofsale\EscPosReceiptPrinter.class
 com\pointofsale\ReportsView$4.class
@@ -49,6 +54,7 @@ com\pointofsale\POSDashboard.class
 com\pointofsale\model\ProductSale.class
 com\pointofsale\model\Session.class
 com\pointofsale\TransactionsView$1.class
+com\pointofsale\AuditTrailView$3.class
 com\pointofsale\model\TerminalBlockingInfo.class
 com\pointofsale\data\Database.class
 com\pointofsale\model\CategoryRevenue.class
@@ -61,6 +67,7 @@ com\pointofsale\ProductManagement$5$1.class
 com\pointofsale\model\TaxTrend.class
 com\pointofsale\ReportsView$3.class
 com\pointofsale\POSDashboard$2.class
+com\pointofsale\model\AuditLog.class
 com\pointofsale\ProductManagement$4.class
 com\pointofsale\model\ApiError.class
 com\pointofsale\ReportsView$6.class
@@ -68,6 +75,7 @@ com\pointofsale\App.class
 com\pointofsale\TerminalConfirmationDialog$TerminalInfo.class
 com\pointofsale\ReportsView$2.class
 com\pointofsale\model\TaxBreakDown.class
+com\pointofsale\AuditLogger.class
 com\pointofsale\model\Product.class
 com\pointofsale\model\TerminalBlockingResponse.class
 com\pointofsale\model\Vat5CertificateDetails.class
@@ -75,3 +83,4 @@ com\pointofsale\ProductManagement$1.class
 com\pointofsale\TransactionsView$3.class
 com\pointofsale\model\LineItemDto.class
 com\pointofsale\CustomersView$2$1.class
+com\pointofsale\model\SecuritySettings.class

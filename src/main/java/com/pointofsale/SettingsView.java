@@ -12,6 +12,8 @@ import javafx.collections.FXCollections;
 import javafx.application.Platform;
 import com.pointofsale.helper.Helper;
 import com.pointofsale.model.User;
+import com.pointofsale.model.SecuritySettings;
+import com.pointofsale.model.Session;
 import java.util.List;
 import javafx.beans.property.SimpleStringProperty;
 
@@ -616,10 +618,40 @@ public class SettingsView {
     }
     
     private void loadSecuritySettings() {
-        requireLoginCheckBox.setSelected(true);
-        enableAuditLogCheckBox.setSelected(false);
+    SecuritySettings settings = Helper.getSettings();
+
+    requireLoginCheckBox.setSelected(settings.requireLogin);
+    enableAuditLogCheckBox.setSelected(settings.enableAuditLog);
+
+    switch (settings.sessionTimeoutMinutes) {
+        case 15 -> sessionTimeoutComboBox.setValue("15 minutes");
+        case 30 -> sessionTimeoutComboBox.setValue("30 minutes");
+        case 60 -> sessionTimeoutComboBox.setValue("1 hour");
+        case 120 -> sessionTimeoutComboBox.setValue("2 hours");
+        default -> sessionTimeoutComboBox.setValue("Never");
     }
-    
+}
+  
+  private void saveSecuritySettings() {
+    boolean requireLogin = requireLoginCheckBox.isSelected();
+    boolean enableAuditLog = enableAuditLogCheckBox.isSelected();
+
+    String timeoutValue = sessionTimeoutComboBox.getValue();
+    int timeoutMinutes = switch (timeoutValue) {
+        case "15 minutes" -> 15;
+        case "30 minutes" -> 30;
+        case "1 hour" -> 60;
+        case "2 hours" -> 120;
+        default -> -1; // represents "Never"
+    };
+
+    SecuritySettings settings = new SecuritySettings(requireLogin, timeoutMinutes, enableAuditLog);
+    boolean success = Helper.saveSettings(settings);
+
+    showAlert(success ? "Success" : "Error", 
+              success ? "Settings saved successfully." : "Failed to save settings.");
+}
+
     private void loadUsersData() {
     try {
         // Clear existing data
@@ -637,15 +669,32 @@ public class SettingsView {
 }
 
     
-    // Add User Dialog Implementation
+// Add User Dialog Implementation - Professional Version
 private void addUser() {
     Dialog<User> dialog = new Dialog<>();
     dialog.setTitle("Add New User");
     dialog.setHeaderText("Create a new user account");
     
-    // Set dialog styling
+    // Set dialog styling - clean professional look with blue header
     DialogPane dialogPane = dialog.getDialogPane();
-    dialogPane.setStyle("-fx-background-color: white; -fx-border-color: #1a237e; -fx-border-width: 2px;");
+    dialogPane.setStyle(
+        "-fx-background-color: white;" +
+        ".header-panel { -fx-background-color: #1a237e; -fx-padding: 15px; }" +
+        ".header-panel .label { -fx-text-fill: white; -fx-font-size: 16px; -fx-font-weight: bold; }" +
+        ".header-panel .text { -fx-fill: white; }"
+    );
+    
+    // Alternative approach - directly style the header after dialog is shown
+    Platform.runLater(() -> {
+        Node headerPanel = dialogPane.lookup(".header-panel");
+        if (headerPanel != null) {
+            headerPanel.setStyle("-fx-background-color: #1a237e; -fx-padding: 15px;");
+            Node headerText = headerPanel.lookup(".label");
+            if (headerText != null) {
+                headerText.setStyle("-fx-text-fill: white; -fx-font-size: 16px; -fx-font-weight: bold;");
+            }
+        }
+    });
     
     // Create form fields
     GridPane grid = new GridPane();
@@ -653,51 +702,51 @@ private void addUser() {
     grid.setVgap(15);
     grid.setPadding(new Insets(25, 25, 25, 25));
     
-    // Form fields
+    // Form fields with clean, minimal styling
     TextField firstNameField = new TextField();
     firstNameField.setPromptText("Enter first name");
-    firstNameField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    firstNameField.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
     
     TextField lastNameField = new TextField();
     lastNameField.setPromptText("Enter last name");
-    lastNameField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    lastNameField.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
     
     TextField usernameField = new TextField();
     usernameField.setPromptText("Enter username");
-    usernameField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    usernameField.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
     
     ComboBox<String> genderComboBox = new ComboBox<>();
     genderComboBox.getItems().addAll("MALE", "FEMALE");
     genderComboBox.setPromptText("Select gender");
-    genderComboBox.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    genderComboBox.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
     
     TextField phoneField = new TextField();
     phoneField.setPromptText("Enter phone number");
-    phoneField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    phoneField.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
     
     TextField emailField = new TextField();
     emailField.setPromptText("Enter email address");
-    emailField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    emailField.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
     
     TextArea addressArea = new TextArea();
     addressArea.setPromptText("Enter address");
     addressArea.setPrefRowCount(3);
-    addressArea.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    addressArea.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
     
     ComboBox<String> roleComboBox = new ComboBox<>();
     roleComboBox.getItems().addAll("ADMIN", "CASHIER");
     roleComboBox.setPromptText("Select role");
-    roleComboBox.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    roleComboBox.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
     
     PasswordField passwordField = new PasswordField();
     passwordField.setPromptText("Enter password");
-    passwordField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    passwordField.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
     
     PasswordField confirmPasswordField = new PasswordField();
     confirmPasswordField.setPromptText("Confirm password");
-    confirmPasswordField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    confirmPasswordField.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
     
-    // Create labels with corporate styling
+    // Create labels with professional styling - normal text color
     Label[] labels = {
         new Label("First Name:*"),
         new Label("Last Name:*"),
@@ -712,7 +761,7 @@ private void addUser() {
     };
     
     for (Label label : labels) {
-        label.setStyle("-fx-font-weight: bold; -fx-text-fill: #1a237e; -fx-font-size: 14px;");
+        label.setStyle("-fx-font-size: 14px; -fx-text-fill: #333333;");
     }
     
     // Add components to grid
@@ -752,14 +801,14 @@ private void addUser() {
     ButtonType cancelButtonType = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
     dialog.getDialogPane().getButtonTypes().addAll(addButtonType, cancelButtonType);
     
-    // Style buttons
+    // Style buttons with professional appearance
     Button addButton = (Button) dialog.getDialogPane().lookupButton(addButtonType);
     Button cancelButton = (Button) dialog.getDialogPane().lookupButton(cancelButtonType);
     
-    addButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; -fx-font-weight: bold; " +
-                     "-fx-padding: 10px 20px; -fx-border-radius: 5px; -fx-background-radius: 5px;");
-    cancelButton.setStyle("-fx-background-color: #757575; -fx-text-fill: white; -fx-font-weight: bold; " +
-                         "-fx-padding: 10px 20px; -fx-border-radius: 5px; -fx-background-radius: 5px;");
+    addButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; " +
+                     "-fx-padding: 10px 20px; -fx-cursor: hand;");
+    cancelButton.setStyle("-fx-background-color: #6c757d; -fx-text-fill: white; " +
+                         "-fx-padding: 10px 20px; -fx-cursor: hand;");
     
     // Add validation
     addButton.setDisable(true);
@@ -778,12 +827,12 @@ private void addUser() {
         // Update password field border color based on match
         if (!passwordField.getText().isEmpty() && !confirmPasswordField.getText().isEmpty()) {
             if (passwordField.getText().equals(confirmPasswordField.getText())) {
-                confirmPasswordField.setStyle("-fx-border-color: #4caf50; -fx-border-radius: 5px; -fx-padding: 10px;");
+                confirmPasswordField.setStyle("-fx-border-color: #28a745; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
             } else {
-                confirmPasswordField.setStyle("-fx-border-color: #f44336; -fx-border-radius: 5px; -fx-padding: 10px;");
+                confirmPasswordField.setStyle("-fx-border-color: #dc3545; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
             }
         } else {
-            confirmPasswordField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+            confirmPasswordField.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
         }
     };
     
@@ -833,8 +882,7 @@ private void addUser() {
         }
     });
 }
-
-// Edit User Dialog Implementation
+// Edit User Dialog Implementation - Professional Version
 private void editUser() {
     User selectedUser = usersTable.getSelectionModel().getSelectedItem();
     
@@ -847,9 +895,26 @@ private void editUser() {
     dialog.setTitle("Edit User");
     dialog.setHeaderText("Modify user information for: " + selectedUser.getUserName());
     
-    // Set dialog styling
+    // Set dialog styling - clean professional look with blue header
     DialogPane dialogPane = dialog.getDialogPane();
-    dialogPane.setStyle("-fx-background-color: white; -fx-border-color: #1a237e; -fx-border-width: 2px;");
+    dialogPane.setStyle(
+        "-fx-background-color: white;" +
+        ".header-panel { -fx-background-color: #1a237e; -fx-padding: 15px; }" +
+        ".header-panel .label { -fx-text-fill: white; -fx-font-size: 16px; -fx-font-weight: bold; }" +
+        ".header-panel .text { -fx-fill: white; }"
+    );
+    
+    // Alternative approach - directly style the header after dialog is shown
+    Platform.runLater(() -> {
+        Node headerPanel = dialogPane.lookup(".header-panel");
+        if (headerPanel != null) {
+            headerPanel.setStyle("-fx-background-color: #1a237e; -fx-padding: 15px;");
+            Node headerText = headerPanel.lookup(".label");
+            if (headerText != null) {
+                headerText.setStyle("-fx-text-fill: white; -fx-font-size: 16px; -fx-font-weight: bold;");
+            }
+        }
+    });
     
     // Create form fields
     GridPane grid = new GridPane();
@@ -857,48 +922,48 @@ private void editUser() {
     grid.setVgap(15);
     grid.setPadding(new Insets(25, 25, 25, 25));
     
-    // Form fields - pre-populated with existing data
+    // Form fields - pre-populated with existing data, clean professional styling
     TextField firstNameField = new TextField(selectedUser.getFirstName());
-    firstNameField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    firstNameField.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
     
     TextField lastNameField = new TextField(selectedUser.getLastName());
-    lastNameField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    lastNameField.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
     
     TextField usernameField = new TextField(selectedUser.getUserName());
     usernameField.setDisable(true); // Username shouldn't be editable
-    usernameField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px; -fx-opacity: 0.7;");
+    usernameField.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: #f5f5f5; -fx-padding: 8px; -fx-opacity: 0.8;");
     
     ComboBox<String> genderComboBox = new ComboBox<>();
     genderComboBox.getItems().addAll("MALE", "FEMALE");
     genderComboBox.setValue(selectedUser.getGender());
-    genderComboBox.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    genderComboBox.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
     
     TextField phoneField = new TextField(selectedUser.getPhoneNumber() != null ? selectedUser.getPhoneNumber() : "");
-    phoneField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    phoneField.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
     
     TextField emailField = new TextField(selectedUser.getEmailAddress() != null ? selectedUser.getEmailAddress() : "");
-    emailField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    emailField.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
     
     TextArea addressArea = new TextArea(selectedUser.getAddress() != null ? selectedUser.getAddress() : "");
     addressArea.setPrefRowCount(3);
-    addressArea.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    addressArea.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
     
     ComboBox<String> roleComboBox = new ComboBox<>();
     roleComboBox.getItems().addAll("ADMIN", "CASHIER");
     roleComboBox.setValue(selectedUser.getRole());
-    roleComboBox.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    roleComboBox.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
     
     CheckBox resetPasswordCheckBox = new CheckBox("Reset Password");
-    resetPasswordCheckBox.setStyle("-fx-text-fill: #1a237e; -fx-font-weight: bold;");
+    resetPasswordCheckBox.setStyle("-fx-text-fill: #333333; -fx-font-size: 14px;");
     
     PasswordField newPasswordField = new PasswordField();
     newPasswordField.setPromptText("New password");
-    newPasswordField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    newPasswordField.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
     newPasswordField.setDisable(true);
     
     PasswordField confirmNewPasswordField = new PasswordField();
     confirmNewPasswordField.setPromptText("Confirm new password");
-    confirmNewPasswordField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+    confirmNewPasswordField.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
     confirmNewPasswordField.setDisable(true);
     
     // Enable/disable password fields based on checkbox
@@ -908,10 +973,12 @@ private void editUser() {
         if (!newVal) {
             newPasswordField.clear();
             confirmNewPasswordField.clear();
+            newPasswordField.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
+            confirmNewPasswordField.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
         }
     });
     
-    // Create labels
+    // Create labels with professional styling - normal text color
     Label[] labels = {
         new Label("First Name:*"),
         new Label("Last Name:*"),
@@ -925,8 +992,15 @@ private void editUser() {
     };
     
     for (Label label : labels) {
-        label.setStyle("-fx-font-weight: bold; -fx-text-fill: #1a237e; -fx-font-size: 14px;");
+        label.setStyle("-fx-font-size: 14px; -fx-text-fill: #333333;");
     }
+    
+    // Additional labels for password fields
+    Label newPasswordLabel = new Label("New Password:");
+    newPasswordLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #333333;");
+    
+    Label confirmPasswordLabel = new Label("Confirm Password:");
+    confirmPasswordLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #333333;");
     
     // Add components to grid
     int row = 0;
@@ -948,9 +1022,9 @@ private void editUser() {
     grid.add(roleComboBox, 1, row++);
     grid.add(labels[8], 0, row);
     grid.add(resetPasswordCheckBox, 1, row++);
-    grid.add(new Label("New Password:"), 0, row);
+    grid.add(newPasswordLabel, 0, row);
     grid.add(newPasswordField, 1, row++);
-    grid.add(new Label("Confirm Password:"), 0, row);
+    grid.add(confirmPasswordLabel, 0, row);
     grid.add(confirmNewPasswordField, 1, row++);
     
     // Set column constraints
@@ -967,14 +1041,14 @@ private void editUser() {
     ButtonType cancelButtonType = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
     dialog.getDialogPane().getButtonTypes().addAll(updateButtonType, cancelButtonType);
     
-    // Style buttons
+    // Style buttons with professional appearance
     Button updateButton = (Button) dialog.getDialogPane().lookupButton(updateButtonType);
     Button cancelButton = (Button) dialog.getDialogPane().lookupButton(cancelButtonType);
     
-    updateButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; -fx-font-weight: bold; " +
-                         "-fx-padding: 10px 20px; -fx-border-radius: 5px; -fx-background-radius: 5px;");
-    cancelButton.setStyle("-fx-background-color: #757575; -fx-text-fill: white; -fx-font-weight: bold; " +
-                         "-fx-padding: 10px 20px; -fx-border-radius: 5px; -fx-background-radius: 5px;");
+    updateButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; " +
+                         "-fx-padding: 10px 20px; -fx-cursor: hand;");
+    cancelButton.setStyle("-fx-background-color: #6c757d; -fx-text-fill: white; " +
+                         "-fx-padding: 10px 20px; -fx-cursor: hand;");
     
     // Add validation for password fields
     Runnable validatePasswords = () -> {
@@ -982,12 +1056,12 @@ private void editUser() {
             !newPasswordField.getText().isEmpty() && 
             !confirmNewPasswordField.getText().isEmpty()) {
             if (newPasswordField.getText().equals(confirmNewPasswordField.getText())) {
-                confirmNewPasswordField.setStyle("-fx-border-color: #4caf50; -fx-border-radius: 5px; -fx-padding: 10px;");
+                confirmNewPasswordField.setStyle("-fx-border-color: #28a745; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
             } else {
-                confirmNewPasswordField.setStyle("-fx-border-color: #f44336; -fx-border-radius: 5px; -fx-padding: 10px;");
+                confirmNewPasswordField.setStyle("-fx-border-color: #dc3545; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
             }
         } else {
-            confirmNewPasswordField.setStyle("-fx-border-color: #e0e0e0; -fx-border-radius: 5px; -fx-padding: 10px;");
+            confirmNewPasswordField.setStyle("-fx-border-color: #d0d0d0; -fx-border-width: 1px; -fx-background-color: white; -fx-padding: 8px;");
         }
     };
     
@@ -1047,7 +1121,7 @@ private void editUser() {
     });
 }
 
-// Delete User Dialog Implementation
+// Delete User Dialog Implementation - Professional Version
 private void deleteUser() {
     User selectedUser = usersTable.getSelectionModel().getSelectedItem();
     
@@ -1066,15 +1140,26 @@ private void deleteUser() {
                                 "Role: " + selectedUser.getRole() + "\n\n" +
                                 "This action cannot be undone!");
     
-    // Style the dialog
+    // Style the dialog - clean professional look with blue header
     DialogPane dialogPane = confirmDialog.getDialogPane();
-    dialogPane.setStyle("-fx-background-color: white; -fx-border-color: #1a237e; -fx-border-width: 2px;");
+    dialogPane.setStyle(
+        "-fx-background-color: white;" +
+        ".header-panel { -fx-background-color: #1a237e; -fx-padding: 15px; }" +
+        ".header-panel .label { -fx-text-fill: white; -fx-font-size: 16px; -fx-font-weight: bold; }" +
+        ".header-panel .text { -fx-fill: white; }"
+    );
     
-    // Style the header
-    Label headerLabel = (Label) dialogPane.lookup(".header-panel .label");
-    if (headerLabel != null) {
-        headerLabel.setStyle("-fx-text-fill: #1a237e; -fx-font-weight: bold; -fx-font-size: 16px;");
-    }
+    // Alternative approach - directly style the header after dialog is shown
+    Platform.runLater(() -> {
+        Node headerPanel = dialogPane.lookup(".header-panel");
+        if (headerPanel != null) {
+            headerPanel.setStyle("-fx-background-color: #1a237e; -fx-padding: 15px;");
+            Node headerText = headerPanel.lookup(".label");
+            if (headerText != null) {
+                headerText.setStyle("-fx-text-fill: white; -fx-font-size: 16px; -fx-font-weight: bold;");
+            }
+        }
+    });
     
     // Get and style buttons
     ButtonType deleteButtonType = new ButtonType("Delete User", ButtonBar.ButtonData.OK_DONE);
@@ -1085,10 +1170,11 @@ private void deleteUser() {
     Button deleteButton = (Button) confirmDialog.getDialogPane().lookupButton(deleteButtonType);
     Button cancelButton = (Button) confirmDialog.getDialogPane().lookupButton(cancelButtonType);
     
-    deleteButton.setStyle("-fx-background-color: #c62828; -fx-text-fill: white; -fx-font-weight: bold; " +
-                         "-fx-padding: 10px 20px; -fx-border-radius: 5px; -fx-background-radius: 5px;");
-    cancelButton.setStyle("-fx-background-color: #757575; -fx-text-fill: white; -fx-font-weight: bold; " +
-                         "-fx-padding: 10px 20px; -fx-border-radius: 5px; -fx-background-radius: 5px;");
+    // Professional button styling without borders or excessive rounding
+    deleteButton.setStyle("-fx-background-color: #dc3545; -fx-text-fill: white; " +
+                         "-fx-padding: 10px 20px; -fx-cursor: hand;");
+    cancelButton.setStyle("-fx-background-color: #6c757d; -fx-text-fill: white; " +
+                         "-fx-padding: 10px 20px; -fx-cursor: hand;");
     
     // Show confirmation dialog
     Optional<ButtonType> result = confirmDialog.showAndWait();
@@ -1111,7 +1197,6 @@ private void deleteUser() {
         }
     }
 }
-
 // Helper methods for showing alerts
 private void showSuccessAlert(String title, String message) {
     Alert alert = new Alert(Alert.AlertType.INFORMATION);
@@ -1120,7 +1205,7 @@ private void showSuccessAlert(String title, String message) {
     alert.setContentText(message);
     
     DialogPane dialogPane = alert.getDialogPane();
-    dialogPane.setStyle("-fx-background-color: white; -fx-border-color: #1a237e; -fx-border-width: 2px;");
+    dialogPane.setStyle("-fx-background-color: white;");
     
     Button okButton = (Button) alert.getDialogPane().lookupButton(ButtonType.OK);
     okButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; -fx-font-weight: bold; " +
@@ -1136,7 +1221,7 @@ private void showErrorAlert(String title, String message) {
     alert.setContentText(message);
     
     DialogPane dialogPane = alert.getDialogPane();
-    dialogPane.setStyle("-fx-background-color: white; -fx-border-color: #c62828; -fx-border-width: 2px;");
+    dialogPane.setStyle("-fx-background-color: white;");
     
     Button okButton = (Button) alert.getDialogPane().lookupButton(ButtonType.OK);
     okButton.setStyle("-fx-background-color: #c62828; -fx-text-fill: white; -fx-font-weight: bold; " +
@@ -1152,7 +1237,7 @@ private void showWarningAlert(String title, String message) {
     alert.setContentText(message);
     
     DialogPane dialogPane = alert.getDialogPane();
-    dialogPane.setStyle("-fx-background-color: white; -fx-border-color: #ff8f00; -fx-border-width: 2px;");
+    dialogPane.setStyle("-fx-background-color: white;");
     
     Button okButton = (Button) alert.getDialogPane().lookupButton(ButtonType.OK);
     okButton.setStyle("-fx-background-color: #ff8f00; -fx-text-fill: white; -fx-font-weight: bold; " +
@@ -1160,39 +1245,52 @@ private void showWarningAlert(String title, String message) {
     
     alert.showAndWait();
 }
-    
-    private void showUserDialog(User user, String title) {
-        // Implementation for user add/edit dialog
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle(title);
-        // Add user form fields here
-        dialog.showAndWait();
+
+private void showUserDialog(User user, String title) {
+    // Implementation for user add/edit dialog
+    Dialog<ButtonType> dialog = new Dialog<>();
+    dialog.setTitle(title);
+    // Add user form fields here
+    dialog.showAndWait();
+}
+
+private void changePassword() {
+    String currentPassword = currentPasswordField.getText();
+    String newPassword = newPasswordField.getText();
+    String confirmPassword = confirmPasswordField.getText();
+
+    if (currentPassword.isEmpty() || newPassword.isEmpty() || confirmPassword.isEmpty()) {
+        showAlert("Validation Error", "Please fill in all password fields.");
+        return;
     }
-    
-    private void changePassword() {
-        if (currentPasswordField.getText().isEmpty() || 
-            newPasswordField.getText().isEmpty() || 
-            confirmPasswordField.getText().isEmpty()) {
-            showAlert("Validation Error", "Please fill in all password fields.");
-            return;
-        }
-        
-        if (!newPasswordField.getText().equals(confirmPasswordField.getText())) {
-            showAlert("Password Mismatch", "New password and confirmation do not match.");
-            return;
-        }
-        
-        // Implement password change logic here
+
+    if (!newPassword.equals(confirmPassword)) {
+        showAlert("Password Mismatch", "New password and confirmation do not match.");
+        return;
+    }
+
+    // Get the current logged-in username from your session manager or context
+    String username = Session.currentUsername;
+
+    if (!Helper.verifyPassword(username, currentPassword)) {
+        showAlert("Authentication Failed", "Current password is incorrect.");
+        return;
+    }
+
+    if (Helper.updatePassword(username, newPassword)) {
         showAlert("Success", "Password changed successfully.");
         currentPasswordField.clear();
         newPasswordField.clear();
         confirmPasswordField.clear();
+    } else {
+        showAlert("Database Error", "Failed to update password.");
     }
-    
-    private void createBackup() {
-        // Implement backup creation
-        showAlert("Backup Created", "Database backup created successfully.");
-    }
+}
+
+private void createBackup() {
+    //Implement the back up logic here
+    showAlert("Back up creation", "Back up has been successifully created");
+}
     
     private void scheduleBackup() {
         // Implement backup scheduling
@@ -1219,6 +1317,7 @@ private void showWarningAlert(String title, String message) {
     
     private void saveAllSettings() {
         // Implement save logic for all settings
+        saveSecuritySettings();
         showAlert("Settings Saved", "All settings have been saved successfully.");
     }
     

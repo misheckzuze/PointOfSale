@@ -217,8 +217,20 @@ public class Database {
                     "RegisteredDate TEXT DEFAULT (datetime('now')), " +
                     "Notes TEXT" +
                     ")";
-
-
+            
+            String createSecuritySettingsTable = "CREATE TABLE IF NOT EXISTS SecuritySettings (" +
+                    "ID INTEGER PRIMARY KEY CHECK (ID = 1)," +
+                    "RequireLogin BOOLEAN NOT NULL," +
+                    "SessionTimeoutMinutes INTEGER NOT NULL," +
+                    "EnableAuditLog BOOLEAN NOT NULL)";
+            
+            
+            String createAuditLogsTable = "CREATE TABLE IF NOT EXISTS AuditLogs (" +
+                   "Id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                   "Username TEXT NOT NULL, " +
+                   "Action TEXT NOT NULL, " +
+                   "Details TEXT, " +
+                   "Timestamp TEXT NOT NULL)";
 
             // Execute all statements
             stmt.execute(createProductsTable);
@@ -241,6 +253,8 @@ public class Database {
             stmt.execute(createHeldSalesTable);
             stmt.execute(createCustomersTable);
             stmt.execute(createHeldSaleItemsTable);
+            stmt.execute(createSecuritySettingsTable);
+            stmt.execute(createAuditLogsTable);
 
             System.out.println("✅ All SQLite tables created and initialized at: " + DB_PATH);
             Helper.insertDefaultAdminIfNotExists(); // ← Insert admin after table creation

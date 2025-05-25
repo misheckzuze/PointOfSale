@@ -188,6 +188,19 @@ private void loadCustomersManagement() {
     stage.setTitle("POS System - Customers Management");
 }
 
+private void loadAuditTrail() {
+    // Clear checkout panel when switching to non-sales views
+    root.setRight(null);
+    
+    // Create audit trail content
+    AuditTrailView auditTrail = new AuditTrailView();
+    Node auditContent = auditTrail.getView();
+    
+    // Set the content
+    setContent(auditContent);
+    stage.setTitle("POS System - Audit Trail");
+}
+
 private void loadSettings() {
     // Clear checkout panel when switching to non-sales views
     root.setRight(null);
@@ -353,6 +366,14 @@ private VBox createSidebar() {
         loadReports();
     });
     sidebar.getChildren().add(reportsMenuItem);
+    
+    HBox auditTrailMenuItem = createSidebarMenuItem("Audit Trail", false);
+    auditTrailMenuItem.setOnMouseClicked(e -> {
+        setActiveMenuItem(auditTrailMenuItem, "Audit Trail");
+        AuditLogger.log("View Audit Trail", "User accessed the Audit Trail page.");
+        loadAuditTrail();
+    });
+    sidebar.getChildren().add(auditTrailMenuItem);
 
     HBox settingsMenuItem = createSidebarMenuItem("Settings", false);
     settingsMenuItem.setOnMouseClicked(e -> {

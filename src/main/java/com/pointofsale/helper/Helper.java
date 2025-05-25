@@ -36,6 +36,7 @@ import com.pointofsale.model.InvoiceDetails;
 import com.pointofsale.model.Session;
 import com.pointofsale.model.HeldSale;
 import com.pointofsale.model.TaxTrend;
+import com.pointofsale.model.SecuritySettings;
 import com.pointofsale.model.Customer;
 import com.pointofsale.model.User;
 import com.pointofsale.model.TaxSummary;
@@ -2223,6 +2224,85 @@ public static List<User> getAllUsers() {
         return users;
     }
 
+public static boolean updatePassword(String username, String newPassword) {
+    String sql = "UPDATE Users SET Password = ? WHERE UserName = ?";
+
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+        stmt.setString(1, newPassword);
+        stmt.setString(2, username);
+
+        int rows = stmt.executeUpdate();
+        return rows > 0;
+
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to update password: " + e.getMessage());
+        return false;
+    }
+}
+
+public static boolean verifyPassword(String username, String inputPassword) {
+    String sql = "SELECT Password FROM Users WHERE UserName = ?";
+
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+        stmt.setString(1, username);
+        var rs = stmt.executeQuery();
+
+        if (rs.next()) {
+            String actualPassword = rs.getString("Password");
+            return actualPassword.equals(inputPassword); // Replace with hash check if needed
+        }
+
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to verify password: " + e.getMessage());
+    }
+
+    return false;
+}
+
+public static SecuritySettings getSettings() {
+        String sql = "SELECT * FROM SecuritySettings WHERE ID = 1";
+        try (Connection conn = Database.createConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql);
+             var rs = stmt.executeQuery()) {
+
+            if (rs.next()) {
+                return new SecuritySettings(
+                    rs.getBoolean("RequireLogin"),
+                    rs.getInt("SessionTimeoutMinutes"),
+                    rs.getBoolean("EnableAuditLog")
+                );
+            }
+        } catch (SQLException e) {
+            System.err.println("❌ Failed to load security settings: " + e.getMessage());
+        }
+        return new SecuritySettings(true, 30, false); // default values
+    }
+
+    public static boolean saveSettings(SecuritySettings settings) {
+        String sql = """
+            INSERT INTO SecuritySettings (ID, RequireLogin, SessionTimeoutMinutes, EnableAuditLog)
+            VALUES (1, ?, ?, ?)
+            ON CONFLICT(ID) DO UPDATE SET
+                RequireLogin = excluded.RequireLogin,
+                SessionTimeoutMinutes = excluded.SessionTimeoutMinutes,
+                EnableAuditLog = excluded.EnableAuditLog
+        """;
+        try (Connection conn = Database.createConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setBoolean(1, settings.requireLogin);
+            stmt.setInt(2, settings.sessionTimeoutMinutes);
+            stmt.setBoolean(3, settings.enableAuditLog);
+            return stmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.err.println("❌ Failed to save security settings: " + e.getMessage());
+            return false;
+        }
+    }
 
 }
 

@@ -17,6 +17,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 import javafx.stage.Stage;
 import javafx.util.Duration;
+import com.pointofsale.model.SecuritySettings;
 import java.io.InputStream;
 import javafx.scene.control.Alert;
 import com.pointofsale.model.Session;
@@ -291,10 +292,12 @@ public class LoginView extends Application {
           alert.setHeaderText(null);
           alert.setContentText("Invalid username or password.");
           alert.showAndWait();
+          AuditLogger.log("Login Attempt", "FAILED - Invalid credentials for " + username);
         } else {
           // Successful login
           Session.currentUsername = username;
           Session.currentPassword = password;
+          AuditLogger.log("Login Attempt", "SUCCESS - " + username);
 
           Helper.loadUserDetails();
           
@@ -302,6 +305,10 @@ public class LoginView extends Application {
             POSDashboard dashboard = new POSDashboard();
             try {
                 dashboard.start(stage);
+                SecuritySettings settings = Helper.getSettings(); // your existing code
+                Session.updateActivity();
+                new SessionTimeoutWatcher(settings.sessionTimeoutMinutes, stage).start();
+
             } catch (Exception ex) {
                 ex.printStackTrace();
             }
