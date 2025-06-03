@@ -397,6 +397,7 @@ public class ApiClient {
     new Thread(() -> {
         boolean success = false;
         String validationUrl = "";
+        boolean shouldDownloadConfig = false;
 
         try {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -417,6 +418,7 @@ public class ApiClient {
                     if (json.containsKey("data")) {
                         JsonObject data = json.getJsonObject("data");
                         validationUrl = data.getString("validationURL", "");
+                        shouldDownloadConfig = data.getBoolean("shouldDownloadLatestConfig", false);
                     }
                     System.out.println("✅ Transactions submitted successfully: " + remark);
                 } else {
@@ -429,6 +431,11 @@ public class ApiClient {
             System.err.println("❌ Error during transaction submission: " + e.getMessage());
             e.printStackTrace();
         }
+        
+         //fetch the latest config
+        if (shouldDownloadConfig) {
+            fetchLatestConfig(bearerToken);
+        }
 
         String finalValidationUrl = validationUrl;
         boolean finalSuccess = success;
@@ -436,6 +443,35 @@ public class ApiClient {
     }).start();
 }
   
+private void fetchLatestConfig(String bearerToken) {
+    String url = ApiEndpoints.BASE_URL + ApiEndpoints.GET_LATEST_CONFIG;
+    
+   HttpRequest configRequest = HttpRequest.newBuilder()
+        .uri(URI.create(url))
+        .header("Authorization", "Bearer " + bearerToken)
+        .header("Accept", "text/plain")
+        .header("Content-Type", "application/json")
+        .POST(HttpRequest.BodyPublishers.ofString("{}")) // <- send empty JSON body
+        .build();
+        
+    try {
+        HttpResponse<String> configResponse = httpClient.send(configRequest, HttpResponse.BodyHandlers.ofString());
+        System.out.println("🛠️ Fetching latest configuration...");
+        System.out.println("Status Code: " + configResponse.statusCode());
+        System.out.println("Response Body: " + configResponse.body());
+        
+        if (configResponse.statusCode() == 200) {
+            // Parse and persist/store the config locally
+            ActivationDataInserter.getLatestConfiguration(configResponse.body());
+        } else {
+            System.err.println("⚠️ Failed to fetch latest config: " + configResponse.statusCode());
+        }
+    } catch (Exception e) {
+        System.err.println("❌ Error fetching configuration: " + e.getMessage());
+        e.printStackTrace();
+    }
+}
+
   public void retryPendingTransactions() {
     String query = "SELECT * FROM Invoices WHERE State = 0";
 

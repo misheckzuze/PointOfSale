@@ -175,6 +175,14 @@ public class Database {
                     "ChargeMode TEXT, " +
                     "Ordinal INTEGER, " +
                     "Rate REAL)";
+            
+            String createActivatedTaxRatesTable = "CREATE TABLE IF NOT EXISTS ActivatedTaxRates (" +
+                    "Id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                    "TaxRateId TEXT NOT NULL," +
+                    "TaxpayerTin TEXT NOT NULL," +
+                    "FOREIGN KEY(TaxRateId) REFERENCES TaxRates(Id)," +
+                    "FOREIGN KEY(TaxpayerTin) REFERENCES TaxpayerConfiguration(TIN))";
+
 
             String createVoidReceiptRequestsTable = "CREATE TABLE IF NOT EXISTS VoidReceiptRequests (" +
                     "Id INTEGER PRIMARY KEY AUTOINCREMENT," +
@@ -255,6 +263,7 @@ public class Database {
             stmt.execute(createHeldSaleItemsTable);
             stmt.execute(createSecuritySettingsTable);
             stmt.execute(createAuditLogsTable);
+            stmt.execute(createActivatedTaxRatesTable);
 
             System.out.println("✅ All SQLite tables created and initialized at: " + DB_PATH);
             Helper.insertDefaultAdminIfNotExists(); // ← Insert admin after table creation

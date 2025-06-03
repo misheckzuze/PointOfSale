@@ -14,40 +14,28 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
-/**
- * Premium ESC/POS receipt printer implementation
- * Designed for professional, high-quality receipts with perfect formatting,
- * consistent alignment, and reliable QR code printing for validation.
- * Includes legal receipt demarcation for compliance and customer confidence.
- */
 public class EscPosReceiptPrinter {
 
     // ESC/POS Command Constants
-    private static final byte[] ESC_INIT = {0x1B, 0x40};           // Initialize printer
-    private static final byte[] LF = {0x0A};                       // Line Feed
-    private static final byte[] CR = {0x0D};                       // Carriage Return
-    private static final byte[] ESC_ALIGN_LEFT = {0x1B, 0x61, 0x00};  // Left alignment
-    private static final byte[] ESC_ALIGN_CENTER = {0x1B, 0x61, 0x01}; // Center alignment
-    private static final byte[] ESC_ALIGN_RIGHT = {0x1B, 0x61, 0x02};  // Right alignment
-    private static final byte[] ESC_EMPHASIZE_ON = {0x1B, 0x45, 0x01}; // Bold ON
-    private static final byte[] ESC_EMPHASIZE_OFF = {0x1B, 0x45, 0x00}; // Bold OFF
-    private static final byte[] ESC_DOUBLE_WIDTH_ON = {0x1B, 0x21, 0x10}; // Double width ON
-    private static final byte[] ESC_DOUBLE_WIDTH_OFF = {0x1B, 0x21, 0x00}; // Double width OFF
-    private static final byte[] ESC_DOUBLE_HEIGHT_ON = {0x1B, 0x21, 0x10}; // Double height ON
-    private static final byte[] ESC_DOUBLE_HEIGHT_OFF = {0x1B, 0x21, 0x00}; // Double height OFF
-    private static final byte[] ESC_UNDERLINE_ON = {0x1B, 0x2D, 0x01};     // Underline ON
-    private static final byte[] ESC_UNDERLINE_OFF = {0x1B, 0x2D, 0x00};    // Underline OFF
-    private static final byte[] GS_CUT_PAPER = {0x1D, 0x56, 0x41, 0x10}; // Cut paper with feed
-    private static final byte[] ESC_DRAWER_KICK = {0x1B, 0x70, 0x00, 0x32, (byte) 0xFA}; // Open cash drawer
+    private static final byte[] ESC_INIT = {0x1B, 0x40};
+    private static final byte[] LF = {0x0A}; 
+    private static final byte[] CR = {0x0D};
+    private static final byte[] ESC_ALIGN_LEFT = {0x1B, 0x61, 0x00}; 
+    private static final byte[] ESC_ALIGN_CENTER = {0x1B, 0x61, 0x01};
+    private static final byte[] ESC_ALIGN_RIGHT = {0x1B, 0x61, 0x02};
+    private static final byte[] ESC_EMPHASIZE_ON = {0x1B, 0x45, 0x01};
+    private static final byte[] ESC_EMPHASIZE_OFF = {0x1B, 0x45, 0x00};
+    private static final byte[] ESC_DOUBLE_SIZE_ON = {0x1B, 0x21, 0x10}; 
+    private static final byte[] ESC_DOUBLE_SIZE_OFF = {0x1B, 0x21, 0x00}; 
+    private static final byte[] ESC_UNDERLINE_ON = {0x1B, 0x2D, 0x01};
+    private static final byte[] ESC_UNDERLINE_OFF = {0x1B, 0x2D, 0x00};
+    private static final byte[] GS_CUT_PAPER = {0x1D, 0x56, 0x41, 0x10};
+    private static final byte[] ESC_DRAWER_KICK = {0x1B, 0x70, 0x00, 0x32, (byte) 0xFA};
     
     // Custom printer constants
-    private static final String CHARSET = "CP437"; // Standard ESC/POS character set
-    private static final int RECEIPT_WIDTH = 40; // Character width of receipt
-    private static final int LEFT_MARGIN = 0; // Left margin for consistent alignment
-    
-    /**
-     * Prints a premium receipt with QR code for validation
-     */
+    private static final String CHARSET = "CP437";
+    private static final int RECEIPT_WIDTH = 40;
+   
     public static void printReceipt(
             InvoiceHeader invoiceHeader,
             String buyersName,
@@ -78,9 +66,9 @@ public class EscPosReceiptPrinter {
             
             // Company Header Block
             output.write(ESC_EMPHASIZE_ON);
-            output.write(ESC_DOUBLE_WIDTH_ON);
+            output.write(ESC_DOUBLE_SIZE_ON);
             output.write(companyName.getBytes(CHARSET));
-            output.write(ESC_DOUBLE_WIDTH_OFF);
+            output.write(ESC_DOUBLE_SIZE_OFF);
             output.write(LF);
             output.write(ESC_EMPHASIZE_OFF);
             
@@ -109,135 +97,86 @@ public class EscPosReceiptPrinter {
             output.write(LF);
             
             // Pretty border
-            printStarDivider(output);
+            printDivider(output);
             
-            // Transaction Details - professionally formatted to match divider width
-            int fullWidth = RECEIPT_WIDTH;
-            int labelWidth = 10;
-            int valueWidth = fullWidth - labelWidth - 3; // 3 for " : "
-            
-            String receiptLabel = "Receipt#";
-            String receiptValue = invoiceHeader.getInvoiceNumber();
-            String receiptLine = String.format("%-" + labelWidth + "s : %-" + valueWidth + "s", receiptLabel, receiptValue);
-            output.write(receiptLine.getBytes(CHARSET));
-            output.write(LF);
-            
-            String dateLabel = "Date";
-            String dateValue = currentDateTime;
-            String dateLine = String.format("%-" + labelWidth + "s : %-" + valueWidth + "s", dateLabel, dateValue);
-            output.write(dateLine.getBytes(CHARSET));
-            output.write(LF);
-            
-            String customerLabel = "Customer";
-            String customerValue = buyersName;
-            String customerLine = String.format("%-" + labelWidth + "s : %-" + valueWidth + "s", customerLabel, customerValue);
-            output.write(customerLine.getBytes(CHARSET));
-            output.write(LF);
-
-            String buyerTinLabel = "Buyer TIN";
-            String buyerTinValue = buyersTIN;
-            String buyerTinLine = String.format("%-" + labelWidth + "s : %-" + valueWidth + "s", buyerTinLabel, buyerTinValue);
-            output.write(buyerTinLine.getBytes(CHARSET));
-            output.write(LF);
+            // Transaction Details - left-right aligned
+            printFormattedLine(output, "Receipt#", invoiceHeader.getInvoiceNumber(), 0);
+            printFormattedLine(output, "Date", currentDateTime, 0);
+            printFormattedLine(output, "Customer", buyersName, 0);
+            printFormattedLine(output, "Buyer TIN", buyersTIN, 0);
             
             // Divider before items
-            printSolidDivider(output);
+            printDivider(output);
             
             // Table header for items
-            StringBuilder header = new StringBuilder();
-            header.append(String.format("%-15s %-8s %5s %8s", "Item", "Unit", "Qty", "Amount"));
-            output.write(header.toString().getBytes(CHARSET));
+            String header = String.format("%-15s %-8s %5s %8s", "Item", "Unit", "Qty", "Amount");
+            output.write(header.getBytes(CHARSET));
             output.write(LF);
             
             // Divider again
-            printSolidDivider(output);
+            printDivider(output);
             
             // Line items with proper formatting
             for (LineItemDto item : lineItems) {
-                // Item description - may need to wrap for long descriptions
-                String description = item.getDescription();
-                if (description.length() > 15) {
-                    // Truncate or implement word wrapping as needed
-                    description = description.substring(0, 15);
-                }
+                // Item description - truncate if too long
+                String description = item.getDescription().length() > 15 ? 
+                    item.getDescription().substring(0, 15) : item.getDescription();
                 
-                StringBuilder itemLine = new StringBuilder();
-                itemLine.append(String.format("%-15s ", description));
-                itemLine.append(String.format("%-8s ", formatCurrency(item.getUnitPrice())));
-                itemLine.append(String.format("%5s ", item.getQuantity()));
-                itemLine.append(String.format("%8s", formatCurrency(item.getQuantity() * item.getUnitPrice())));
+                String itemLine = String.format("%-15s %-8s %5s %8s", 
+                    description,
+                    formatCurrency(item.getUnitPrice()),
+                    item.getQuantity(),
+                    formatCurrency(item.getQuantity() * item.getUnitPrice())
+                );
                 
-                output.write(itemLine.toString().getBytes(CHARSET));
+                output.write(itemLine.getBytes(CHARSET));
                 output.write(LF);
             }
             
             // Divider before totals
-            printSolidDivider(output);
+            printDivider(output);
             
             // Calculate totals
             double totalVAT = invoiceTaxBreakDown.stream().mapToDouble(TaxBreakDown::getTaxAmount).sum();
             double subtotal = invoiceTaxBreakDown.stream().mapToDouble(TaxBreakDown::getTaxableAmount).sum();
             double invoiceTotal = subtotal + totalVAT;
             
-            // Print subtotal with professional formatting - full width matching dividers
-            int totalLabelWidth = 12;
-            int totalValueWidth = fullWidth - totalLabelWidth - 3; // 3 for " : "
+            // Print totals with left-right alignment
+            printFormattedLine(output, "Subtotal", formatCurrency(subtotal), 0);
             
-            String subtotalLabel = "Subtotal";
-            String subtotalValue = formatCurrency(subtotal);
-            String subtotalLine = String.format("%-" + totalLabelWidth + "s : %-" + totalValueWidth + "s", subtotalLabel, subtotalValue);
-            output.write(subtotalLine.getBytes(CHARSET));
-            output.write(LF);
-            
-            // Tax breakdowns with professional formatting - full width matching dividers
+            // Tax breakdowns
             for (TaxBreakDown tax : invoiceTaxBreakDown) {
-                String taxLabel = "VAT " + tax.getRateId() + "%";
-                String taxValue = formatCurrency(tax.getTaxAmount());
-                String taxLine = String.format("%-" + totalLabelWidth + "s : %-" + totalValueWidth + "s", taxLabel, taxValue);
-                output.write(taxLine.getBytes(CHARSET));
-                output.write(LF);
+                printFormattedLine(output, "VAT " + tax.getRateId() + "%", formatCurrency(tax.getTaxAmount()), 0);
             }
             
-            // Total, emphasized with professional formatting - full width matching dividers
+            // Total, emphasized
             output.write(ESC_EMPHASIZE_ON);
-            String totalLabel = "TOTAL";
-            String totalValue = formatCurrency(invoiceTotal);
-            String totalLine = String.format("%-" + totalLabelWidth + "s : %-" + totalValueWidth + "s", totalLabel, totalValue);
-            output.write(totalLine.getBytes(CHARSET));
+            printFormattedLine(output, "TOTAL", formatCurrency(invoiceTotal), 0);
             output.write(ESC_EMPHASIZE_OFF);
-            output.write(LF);
             
-            // Payment information with professional formatting - full width matching dividers
-            String paidLabel = "Amount Paid";
-            String paidValue = formatCurrency(amountTendered);
-            String paidLine = String.format("%-" + totalLabelWidth + "s : %-" + totalValueWidth + "s", paidLabel, paidValue);
-            output.write(paidLine.getBytes(CHARSET));
-            output.write(LF);
+            // Payment information
+            printFormattedLine(output, "Amount Paid", formatCurrency(amountTendered), 0);
             
             if (change > 0) {
-                String changeLabel = "Change";
-                String changeValue = formatCurrency(change);
-                String changeLine = String.format("%-" + totalLabelWidth + "s : %-" + totalValueWidth + "s", changeLabel, changeValue);
-                output.write(changeLine.getBytes(CHARSET));
-                output.write(LF);
+                printFormattedLine(output, "Change", formatCurrency(change), 0);
             }
             
             output.write(LF);
             
             // Validation section
-            printStarDivider(output);
+            printDivider(output);
             
             output.write(ESC_EMPHASIZE_ON);
             output.write("*** VALIDATE YOUR RECEIPT ***".getBytes(CHARSET));
             output.write(ESC_EMPHASIZE_OFF);
             output.write(LF);
             
-            // QR Code - using ESC/POS native commands
+            // QR Code
             printQRCode(output, validationUrl);
             
             // Footer
             output.write(LF);
-            printStarDivider(output);
+            printDivider(output);
             
             output.write(ESC_EMPHASIZE_ON);
             output.write("*** THANK YOU FOR YOUR BUSINESS ***".getBytes(CHARSET));
@@ -268,21 +207,31 @@ public class EscPosReceiptPrinter {
     }
     
     /**
-     * Print a star-based divider line - keeps the existing alignment setting
+     * Print a formatted line with label and value aligned left-right
      */
-    private static void printStarDivider(ByteArrayOutputStream output) throws IOException {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < RECEIPT_WIDTH; i++) {
-            sb.append("*");
+    private static void printFormattedLine(ByteArrayOutputStream output, String label, String value, int labelWidth) throws IOException {
+        // Calculate spacing to push value to the right edge
+        int totalSpacing = RECEIPT_WIDTH - label.length() - value.length();
+        
+        // Create the line with proper spacing
+        StringBuilder line = new StringBuilder();
+        line.append(label);
+        
+        // Add spaces to push value to right edge
+        for (int i = 0; i < totalSpacing; i++) {
+            line.append(" ");
         }
-        output.write(sb.toString().getBytes(CHARSET));
+        
+        line.append(value);
+        
+        output.write(line.toString().getBytes(CHARSET));
         output.write(LF);
     }
     
     /**
-     * Print a solid divider line - keeps the existing alignment setting
+     * Print a divider line
      */
-    private static void printSolidDivider(ByteArrayOutputStream output) throws IOException {
+    private static void printDivider(ByteArrayOutputStream output) throws IOException {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < RECEIPT_WIDTH; i++) {
             sb.append("-");
@@ -292,7 +241,7 @@ public class EscPosReceiptPrinter {
     }
     
     /**
-     * Format currency value without currency symbol (added in formatValue method)
+     * Format currency value
      */
     private static String formatCurrency(double value) {
         return String.format("%,.2f", value);
@@ -304,10 +253,7 @@ public class EscPosReceiptPrinter {
     private static void printQRCode(ByteArrayOutputStream output, String data) throws IOException {
         try {
             // Make sure data isn't too long for QR code
-            String qrData = data;
-            if (qrData.length() > 300) {
-                qrData = qrData.substring(0, 300);
-            }
+            String qrData = data.length() > 300 ? data.substring(0, 300) : data;
             
             // Center the QR code
             output.write(ESC_ALIGN_CENTER);

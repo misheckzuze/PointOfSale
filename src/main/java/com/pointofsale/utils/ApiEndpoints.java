@@ -22,4 +22,7 @@ public class ApiEndpoints {
     //Authorization code validation
     public static final String VALIDATE_AUTHORIZATION_CODE = "/utilities/validate-authorization-code";
     
+    //Latest configurations
+    public static final String GET_LATEST_CONFIG = "/configuration/get-latest-configs";
+    
 }

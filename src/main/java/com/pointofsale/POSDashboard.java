@@ -331,7 +331,7 @@ private VBox createSidebar() {
     // Create the menu items
     sidebar.getChildren().add(createSidebarHeader());
 
-    HBox salesMenuItem = createSidebarMenuItem("New Sale", true);
+    HBox salesMenuItem = createSidebarMenuItem("💳 New Sale", true);
     activeMenuItem = salesMenuItem;
     salesMenuItem.setOnMouseClicked(e -> {
         setActiveMenuItem(salesMenuItem, "New Sale");
@@ -339,35 +339,35 @@ private VBox createSidebar() {
     });
     sidebar.getChildren().add(salesMenuItem);
 
-    HBox productsMenuItem = createSidebarMenuItem("Products", false);
+    HBox productsMenuItem = createSidebarMenuItem("📦 Products", false);
     productsMenuItem.setOnMouseClicked(e -> {
         setActiveMenuItem(productsMenuItem, "Products");
         loadProductsManagement();
     });
     sidebar.getChildren().add(productsMenuItem);
 
-    HBox transactionsMenuItem = createSidebarMenuItem("Transactions", false);
+    HBox transactionsMenuItem = createSidebarMenuItem("📊 Transactions", false);
     transactionsMenuItem.setOnMouseClicked(e -> {
         setActiveMenuItem(transactionsMenuItem, "Transactions");
         loadTransactions();
     });
     sidebar.getChildren().add(transactionsMenuItem);
 
-    HBox customersMenuItem = createSidebarMenuItem("Customers", false);
+    HBox customersMenuItem = createSidebarMenuItem("👥 Customers", false);
     customersMenuItem.setOnMouseClicked(e -> {
         setActiveMenuItem(customersMenuItem, "Customers");
         loadCustomersManagement();
     });
     sidebar.getChildren().add(customersMenuItem);
 
-    HBox reportsMenuItem = createSidebarMenuItem("Reports", false);
+    HBox reportsMenuItem = createSidebarMenuItem("📈 Reports", false);
     reportsMenuItem.setOnMouseClicked(e -> {
         setActiveMenuItem(reportsMenuItem, "Reports");
         loadReports();
     });
     sidebar.getChildren().add(reportsMenuItem);
     
-    HBox auditTrailMenuItem = createSidebarMenuItem("Audit Trail", false);
+    HBox auditTrailMenuItem = createSidebarMenuItem("🔍 Audit Trail", false);
     auditTrailMenuItem.setOnMouseClicked(e -> {
         setActiveMenuItem(auditTrailMenuItem, "Audit Trail");
         AuditLogger.log("View Audit Trail", "User accessed the Audit Trail page.");
@@ -375,9 +375,9 @@ private VBox createSidebar() {
     });
     sidebar.getChildren().add(auditTrailMenuItem);
 
-    HBox settingsMenuItem = createSidebarMenuItem("Settings", false);
+    HBox settingsMenuItem = createSidebarMenuItem("⚙️ Settings", false);
     settingsMenuItem.setOnMouseClicked(e -> {
-        setActiveMenuItem(settingsMenuItem, "Settings");
+        setActiveMenuItem(settingsMenuItem, "️Settings");
         loadSettings();
     });
     sidebar.getChildren().add(settingsMenuItem);
@@ -387,7 +387,7 @@ private VBox createSidebar() {
     VBox.setVgrow(spacer, Priority.ALWAYS);
     sidebar.getChildren().add(spacer);
 
-    HBox helpMenuItem = createSidebarMenuItem("Help & Support", false);
+    HBox helpMenuItem = createSidebarMenuItem("❓ Help & Support", false);
     helpMenuItem.setOnMouseClicked(e -> {
         setActiveMenuItem(helpMenuItem, "Help & Support");
         // loadHelp(); // Add this method if needed
@@ -1243,7 +1243,6 @@ private void updateChangeCalculation() {
     });
 }
 
-
     private void proceedWithPayment() {
         
         String selectedPaymentMethod = paymentMethodComboBox.getValue();
@@ -1263,8 +1262,7 @@ private void updateChangeCalculation() {
         if (cartItems.isEmpty()) {
             showAlert("Error", "Cart is empty. Please add items before processing payment.");
             return;
-        }
-        
+        }        
         // Show payment processing feedback
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.setTitle("Payment Processing");
@@ -1325,8 +1323,6 @@ private void updateChangeCalculation() {
    } else {
       System.err.println("⚠️ Failed to save transaction locally.");
    }
-
-
        // Step 5: Convert to JSON
        Gson gson = new Gson();
        String jsonPayload = gson.toJson(payload);
@@ -1490,7 +1486,7 @@ private void applyDiscount() {
     }
     
     content.getChildren().addAll(
-        new Label("Discount Type:"), 
+        new Label("Discount Type:"),
         percentageOption, 
         amountOption,
         new Label("Discount Value:"),
