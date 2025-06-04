@@ -25,4 +25,11 @@ public class ApiEndpoints {
     //Latest configurations
     public static final String GET_LATEST_CONFIG = "/configuration/get-latest-configs";
     
+    //OfflineSignature url
+    
+    public static String OFFLINE_VALIDATION_BASE_URL = "https://dev-eis-portal.mra.mw/api/api/v1/ReorderNotification/Validation/"; 
+    
+    
+    
+    
 }

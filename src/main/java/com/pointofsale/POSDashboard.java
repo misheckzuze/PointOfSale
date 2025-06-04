@@ -54,6 +54,7 @@ import javafx.scene.text.FontWeight;
 import com.pointofsale.model.Session;
 import com.pointofsale.model.InvoiceSummary;
 import com.pointofsale.model.InvoiceDetails;
+import com.pointofsale.model.InvoiceGenerationRequest;
 import javafx.scene.text.Text;
 import javafx.stage.Stage;
 import javax.sound.sampled.AudioInputStream;
@@ -1299,7 +1300,6 @@ private void updateChangeCalculation() {
         
       double totalVAT = invoiceSummary.getTotalVAT();
       String offlineSignature = invoiceSummary.getOfflineSignature();
-      String validationUrl = ""; 
       boolean isTransmitted = false; 
       String paymentId = paymentMethodComboBox.getValue();
       double amountPaid = totalAmount;
@@ -1312,7 +1312,7 @@ private void updateChangeCalculation() {
        totalAmount,
        totalVAT,
        offlineSignature,
-       validationUrl,
+       "",
        isTransmitted,
        paymentId,
        amountPaid
@@ -1369,14 +1369,40 @@ private void updateChangeCalculation() {
              failureAlert.setContentText("Transaction failed. Saved locally for later sync.");
              failureAlert.showAndWait();
              
+             long transactionCount = 0;
+
+             InvoiceDetails lastDetails = Helper.getLastInvoiceDetails();
+
+             if (lastDetails != null) {
+        
+              transactionCount = Helper.convertSequentialToBase10(lastDetails.getInvoiceNumber()) + 1;      
+            }
+             
              // Optional: Print offline receipt in case of failure
              try {
-                 EscPosReceiptPrinter.printReceipt(
-                     invoiceHeader, 
-                     "OFFLINE TRANSACTION",
+                 InvoiceGenerationRequest generationRequest = new InvoiceGenerationRequest();
+                    generationRequest.numItems = lineItems.size();
+                    generationRequest.transactiondate = LocalDateTime.now();
+                    generationRequest.transactionCount = transactionCount + 1;
+                    generationRequest.invoiceTotal = totalAmount;
+                    generationRequest.vatAmount = totalVAT;
+                    generationRequest.businessId = Helper.getTaxpayerId();
+                    generationRequest.terminalPosition = Helper.getTerminalPosition();
+
+                    String secretKey = Helper.getSecretKey();
+                    String validationUrl = Helper.generateOfflineReceiptSignature(generationRequest, secretKey);
+
+                   // Save to DB or print receipt with this
+                    invoiceSummary.setOfflineSignature(validationUrl.split("S=")[1]);
+                    
+                    Helper.updateOfflineTransactionDetails(invoiceHeader.getInvoiceNumber(), validationUrl, invoiceSummary.getOfflineSignature());
+
+                    EscPosReceiptPrinter.printReceipt(
+                     invoiceHeader,
+                     buyerName,
                      buyersTIN,
                      lineItems, 
-                     "", 
+                     validationUrl, 
                      amountPaid, 
                      amountPaid - totalAmount,
                      taxBreakdowns

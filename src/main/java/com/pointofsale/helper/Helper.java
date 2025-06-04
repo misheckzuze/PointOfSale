@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.temporal.ChronoField;
 import java.util.Base64;
+import java.net.URLEncoder;
 import java.time.temporal.ChronoUnit;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -29,8 +30,10 @@ import java.sql.SQLException;
 import javafx.scene.control.ButtonType;
 import javax.json.JsonObject;
 import com.pointofsale.model.Product;
+import com.pointofsale.utils.ApiEndpoints;
 import com.pointofsale.model.ProductSale;
 import com.pointofsale.model.TaxRates;
+import com.pointofsale.model.InvoiceGenerationRequest;
 import com.pointofsale.model.SaleSummary;
 import com.pointofsale.model.InvoiceDetails;
 import com.pointofsale.model.Session;
@@ -1052,6 +1055,19 @@ public static void updateValidationUrl(String invoiceNumber, String validationUr
         }
     } catch (SQLException e) {
         System.err.println("❌ Error updating validation URL: " + e.getMessage());
+    }
+}
+public static void updateOfflineTransactionDetails(String invoiceNumber, String validationUrl, String offlineSignature) {
+    try (Connection connection = Database.createConnection()) {
+        String updateQuery = "UPDATE Invoices SET ValidationUrl = ?, OfflineTransactionSignature = ? WHERE InvoiceNumber = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(updateQuery)) {
+            stmt.setString(1, validationUrl);
+            stmt.setString(2, offlineSignature);
+            stmt.setString(3, invoiceNumber);
+            stmt.executeUpdate();
+        }
+    } catch (SQLException e) {
+        System.err.println("❌ Error updating offline transaction details: " + e.getMessage());
     }
 }
 
@@ -2301,6 +2317,47 @@ public static SecuritySettings getSettings() {
         } catch (SQLException e) {
             System.err.println("❌ Failed to save security settings: " + e.getMessage());
             return false;
+        }
+    }
+    
+    public static String generateOfflineReceiptSignature(InvoiceGenerationRequest request, String secretKey) {
+        long julianDate = toJulianDate(request.transactiondate);
+        String julianBase64 = base10ToBase64(julianDate);
+
+        String combined = generateCombinedString(request.businessId, request.terminalPosition, julianDate, request.transactionCount);
+
+        String param = String.format("TI=%s&N=%d&I=%.2f&V=%.2f&T=%s",
+                combined, request.numItems, request.invoiceTotal, request.vatAmount, julianBase64);
+
+        String offlineDataSignature = computeHMACWithSHA256(param, secretKey);
+        try {
+            offlineDataSignature = URLEncoder.encode(offlineDataSignature, StandardCharsets.UTF_8);
+        } catch (Exception ignored) {}
+
+        String validationUrl = ApiEndpoints.OFFLINE_VALIDATION_BASE_URL + "?" + param + "&S=" + offlineDataSignature;
+
+        // For use in the calling method
+        return validationUrl;
+    }
+
+    private static long toJulianDate(LocalDateTime dateTime) {
+        return dateTime.getYear() * 1000L + dateTime.getDayOfYear();
+    }
+
+    private static String generateCombinedString(long taxpayerId, int terminalPos, long julianDate, int transCount) {
+        return String.format("%d%02d%05d%04d", taxpayerId, terminalPos, julianDate % 100000, transCount % 10000);
+    }
+
+    private static String computeHMACWithSHA256(String data, String key) {
+        try {
+            SecretKeySpec secretKey = new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(secretKey);
+            byte[] hmacBytes = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
+            return Base64.getEncoder().encodeToString(hmacBytes);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "";
         }
     }
 
