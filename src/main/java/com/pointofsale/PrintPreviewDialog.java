@@ -13,6 +13,8 @@ import javafx.scene.text.Text;
 import javafx.scene.text.TextAlignment;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
+import java.util.Locale;
+import java.text.NumberFormat;
 import com.pointofsale.model.Product;
 import javafx.stage.StageStyle;
 import com.pointofsale.helper.Helper;
@@ -20,11 +22,6 @@ import javafx.collections.ObservableList;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
-/**
- * Enhanced Print Preview Dialog for POS System Receipt
- * Features modern, professional receipt design with improved formatting,
- * visual hierarchy, and customer-friendly layout
- */
 public class PrintPreviewDialog {
     
     private Stage stage;
@@ -53,7 +50,7 @@ public class PrintPreviewDialog {
     private static final String PRIMARY_BUTTON_STYLE = "-fx-background-color: linear-gradient(to bottom, #4f46e5, #3730a3); -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand; -fx-border-radius: 4; -fx-background-radius: 4; -fx-padding: 8 16; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.2), 3, 0, 0, 1);";
     
     private static final int RECEIPT_WIDTH = 320;
-    private static final int SEPARATOR_LENGTH = 42;
+    private static final int SEPARATOR_LENGTH = 70;
     
     public PrintPreviewDialog(Stage parentStage, ObservableList<Product> cartItems, 
                             double subtotal, double tax, double total, 
@@ -570,9 +567,10 @@ public class PrintPreviewDialog {
     }
     
     private String formatCurrency(double amount) {
-        return String.format("$%.2f", amount);
+      Locale malawiLocale = new Locale.Builder().setLanguage("en").setRegion("MW").build();
+      NumberFormat currencyFormatter = NumberFormat.getCurrencyInstance(malawiLocale);
+      return currencyFormatter.format(amount);
     }
-    
     public void show() {
         stage.show();
     }

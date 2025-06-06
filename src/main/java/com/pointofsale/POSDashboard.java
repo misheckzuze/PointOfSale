@@ -310,13 +310,29 @@ private void loadTransactions() {
         
         cashierInfo.getChildren().addAll(avatarPane, cashierDetails);
         
+        // Create a refresh button to get latest configuration
+        Button refreshConfigBtn = new Button("⟳ Refresh Config");
+        refreshConfigBtn.setOnAction(e -> {
+        String bearerToken = Helper.getToken();
+        ApiClient apiClient = new ApiClient();
+        boolean success = apiClient.fetchLatestConfig(bearerToken);
+
+        Alert alert = new Alert(success ? Alert.AlertType.INFORMATION : Alert.AlertType.ERROR);
+        alert.setTitle(success ? "Success" : "Error");
+        alert.setHeaderText(null);
+        alert.setContentText(success ? 
+        "Configuration refreshed successfully!" : 
+        "Failed to refresh configuration. Check your connection or token.");
+        alert.showAndWait();
+        });
+        
         // Logout button
         Button logoutButton = new Button("Logout");
         logoutButton.setStyle("-fx-background-color: transparent; -fx-text-fill: #3949ab; -fx-font-weight: bold; -fx-cursor: hand;");
         logoutButton.setOnAction(e -> handleLogout());
         
         // Add all components to the top bar
-        topBar.getChildren().addAll(systemLabel, separator1, transactionInfo, dateTimeBox, spacer, cashierInfo, logoutButton);
+        topBar.getChildren().addAll(systemLabel, separator1, transactionInfo, dateTimeBox, spacer, cashierInfo, refreshConfigBtn, logoutButton);
         
         return topBar;
     }
@@ -1384,10 +1400,9 @@ private void updateChangeCalculation() {
                     generationRequest.numItems = lineItems.size();
                     generationRequest.transactiondate = LocalDateTime.now();
                     generationRequest.transactionCount = transactionCount + 1;
-                    generationRequest.invoiceTotal = totalAmount;
+                    generationRequest.invoiceTotal = amountPaid;
                     generationRequest.vatAmount = totalVAT;
-                    generationRequest.businessId = Helper.getTaxpayerId();
-                    generationRequest.terminalPosition = Helper.getTerminalPosition();
+                    generationRequest.invoiceNumber = invoiceNumber;
 
                     String secretKey = Helper.getSecretKey();
                     String validationUrl = Helper.generateOfflineReceiptSignature(generationRequest, secretKey);
@@ -1403,8 +1418,8 @@ private void updateChangeCalculation() {
                      buyersTIN,
                      lineItems, 
                      validationUrl, 
-                     amountPaid, 
-                     amountPaid - totalAmount,
+                     amountTendered, 
+                     changeValue,
                      taxBreakdowns
                  );
                  System.out.println("✅ Offline receipt printed.");

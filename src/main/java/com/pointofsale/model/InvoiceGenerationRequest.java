@@ -9,4 +9,5 @@ public class InvoiceGenerationRequest {
     public double vatAmount;
     public long businessId;
     public int terminalPosition;
+    public String invoiceNumber;
 }

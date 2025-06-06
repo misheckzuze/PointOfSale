@@ -14,6 +14,7 @@ import javafx.util.Pair;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import com.pointofsale.model.InvoiceSummary;
+import com.pointofsale.model.TerminalContactInfo;
 import com.google.gson.Gson;
 import com.pointofsale.model.InvoicePayload;
 import javax.crypto.spec.SecretKeySpec;
@@ -554,7 +555,28 @@ public static String getTerminalSiteId() {
 
         return trading;
     }
+    
+    public static TerminalContactInfo getTerminalContactInfo() {
+    String query = "SELECT Email, Phone, AddressLine FROM TerminalConfiguration LIMIT 1";
 
+    try (var conn = Database.createConnection();
+         var stmt = conn.prepareStatement(query);
+         var rs = stmt.executeQuery()) {
+
+        if (rs.next()) {
+            String email = rs.getString("Email");
+            String phone = rs.getString("Phone");
+            String address = rs.getString("AddressLine");
+
+            return new TerminalContactInfo(email, phone, address);
+        }
+
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+
+    return new TerminalContactInfo("", "", "");
+}
  
  public static void insertOrUpdateProduct(JsonObject product) {
     String sql = "INSERT OR REPLACE INTO Products (" +
@@ -852,7 +874,6 @@ public static boolean isVATRegistered() {
         return false;
        }
     }
-
    
  public static LineItemDto convertProductToLineItemDto(Product product) {
     double unitPrice = product.getPrice();
@@ -1405,30 +1426,6 @@ public static void retryPendingTransactions(
         }
     }
 }
-
-    /**
-     * Get the store name
-     */
-    public static String getStoreName() {
-        // Replace with your actual implementation or configuration
-        return "ACME Point of Sale";
-    }
-    
-    /**
-     * Get the store address
-     */
-    public static String getStoreAddress() {
-        // Replace with your actual implementation or configuration
-        return "123 Main Street, City";
-    }
-    
-    /**
-     * Get the store phone number
-     */
-    public static String getStorePhone() {
-        // Replace with your actual implementation or configuration
-        return "+265 1234 5678";
-    }
     
     public static List<SaleSummary> getDailySalesSummary(int daysBack) {
     String query = "SELECT " +
@@ -2269,7 +2266,7 @@ public static boolean verifyPassword(String username, String inputPassword) {
 
         if (rs.next()) {
             String actualPassword = rs.getString("Password");
-            return actualPassword.equals(inputPassword); // Replace with hash check if needed
+            return actualPassword.equals(inputPassword); 
         }
 
     } catch (SQLException e) {
@@ -2295,7 +2292,7 @@ public static SecuritySettings getSettings() {
         } catch (SQLException e) {
             System.err.println("❌ Failed to load security settings: " + e.getMessage());
         }
-        return new SecuritySettings(true, 30, false); // default values
+        return new SecuritySettings(true, 30, false);
     }
 
     public static boolean saveSettings(SecuritySettings settings) {
@@ -2320,32 +2317,31 @@ public static SecuritySettings getSettings() {
         }
     }
     
-    public static String generateOfflineReceiptSignature(InvoiceGenerationRequest request, String secretKey) {
-        long julianDate = toJulianDate(request.transactiondate);
-        String julianBase64 = base10ToBase64(julianDate);
+   public static String generateOfflineReceiptSignature(InvoiceGenerationRequest request, String secretKey) {
+    long julianDate = toJulianDate(request.transactiondate);
+    String julianBase64 = base10ToBase64(julianDate);
 
-        String combined = generateCombinedString(request.businessId, request.terminalPosition, julianDate, request.transactionCount);
+    // TI is now invoice number, T is now base64 of transaction date
+    String param = String.format("TI=%s&N=%d&I=%.2f&V=%.2f&T=%s",
+            request.invoiceNumber,
+            request.numItems,  
+            request.invoiceTotal, 
+            request.vatAmount, 
+            julianBase64 
+    );
 
-        String param = String.format("TI=%s&N=%d&I=%.2f&V=%.2f&T=%s",
-                combined, request.numItems, request.invoiceTotal, request.vatAmount, julianBase64);
+    String offlineDataSignature = computeHMACWithSHA256(param, secretKey);
+    try {
+        offlineDataSignature = URLEncoder.encode(offlineDataSignature, StandardCharsets.UTF_8);
+    } catch (Exception ignored) {}
 
-        String offlineDataSignature = computeHMACWithSHA256(param, secretKey);
-        try {
-            offlineDataSignature = URLEncoder.encode(offlineDataSignature, StandardCharsets.UTF_8);
-        } catch (Exception ignored) {}
+    String validationUrl = ApiEndpoints.OFFLINE_VALIDATION_BASE_URL + "?" + param + "&S=" + offlineDataSignature;
 
-        String validationUrl = ApiEndpoints.OFFLINE_VALIDATION_BASE_URL + "?" + param + "&S=" + offlineDataSignature;
-
-        // For use in the calling method
-        return validationUrl;
-    }
+    return validationUrl;
+}
 
     private static long toJulianDate(LocalDateTime dateTime) {
         return dateTime.getYear() * 1000L + dateTime.getDayOfYear();
-    }
-
-    private static String generateCombinedString(long taxpayerId, int terminalPos, long julianDate, int transCount) {
-        return String.format("%d%02d%05d%04d", taxpayerId, terminalPos, julianDate % 100000, transCount % 10000);
     }
 
     private static String computeHMACWithSHA256(String data, String key) {

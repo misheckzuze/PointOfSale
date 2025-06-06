@@ -6,6 +6,7 @@ import javax.print.attribute.PrintRequestAttributeSet;
 import javax.print.attribute.standard.Copies;
 import com.pointofsale.model.InvoiceHeader;
 import com.pointofsale.model.LineItemDto;
+import com.pointofsale.model.TerminalContactInfo;
 import com.pointofsale.model.TaxBreakDown;
 import com.pointofsale.helper.Helper;
 import java.io.ByteArrayOutputStream;
@@ -34,7 +35,7 @@ public class EscPosReceiptPrinter {
     
     // Custom printer constants
     private static final String CHARSET = "CP437";
-    private static final int RECEIPT_WIDTH = 40;
+    private static final int RECEIPT_WIDTH = 48;
    
     public static void printReceipt(
             InvoiceHeader invoiceHeader,
@@ -47,11 +48,14 @@ public class EscPosReceiptPrinter {
             List<TaxBreakDown> invoiceTaxBreakDown
     ) throws Exception {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
+        TerminalContactInfo contact = Helper.getTerminalContactInfo();
+
         String tin = Helper.getTin();
         String companyName = Helper.getTrading();
-        String storeName = Helper.getStoreName();
-        String storeAddress = Helper.getStoreAddress();
-        String storePhone = Helper.getStorePhone();
+        String storeEmail = contact.email;
+        String storeAddress = contact.addressLine;
+        String storePhone = contact.phone;
+        String vatStatus = Helper.isVATRegistered() ? "*VAT REGISTERED*" : "*NOT VAT REGISTERED*";
         
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         String currentDateTime = LocalDateTime.now().format(formatter);
@@ -63,6 +67,12 @@ public class EscPosReceiptPrinter {
             
             // Set center alignment for all content
             output.write(ESC_ALIGN_CENTER);
+            // Legal Receipt Start Marker
+            output.write(ESC_EMPHASIZE_ON);
+            output.write("*** START OF LEGAL RECEIPT ***".getBytes(CHARSET));
+            output.write(ESC_EMPHASIZE_OFF);
+            output.write(LF);
+            output.write(LF);
             
             // Company Header Block
             output.write(ESC_EMPHASIZE_ON);
@@ -73,20 +83,15 @@ public class EscPosReceiptPrinter {
             output.write(ESC_EMPHASIZE_OFF);
             
             // Store information
-            output.write(storeName.getBytes(CHARSET));
-            output.write(LF);
             output.write(storeAddress.getBytes(CHARSET));
             output.write(LF);
             output.write(("Tel: " + storePhone).getBytes(CHARSET));
             output.write(LF);
+            output.write(("E-MAIL: " + storeEmail).getBytes(CHARSET));
+            output.write(LF);
             output.write(("TIN: " + tin).getBytes(CHARSET));
             output.write(LF);
-            output.write(LF);
-            
-            // Legal Receipt Start Marker
-            output.write(ESC_EMPHASIZE_ON);
-            output.write("*** START OF LEGAL RECEIPT ***".getBytes(CHARSET));
-            output.write(ESC_EMPHASIZE_OFF);
+            output.write(vatStatus.getBytes(CHARSET));
             output.write(LF);
             output.write(LF);
             
@@ -108,64 +113,74 @@ public class EscPosReceiptPrinter {
             // Divider before items
             printDivider(output);
             
-            // Table header for items
-            String header = String.format("%-15s %-8s %5s %8s", "Item", "Unit", "Qty", "Amount");
-            output.write(header.getBytes(CHARSET));
-            output.write(LF);
-            
-            // Divider again
-            printDivider(output);
-            
-            // Line items with proper formatting
+            // Line items with new formatting - item name on first line, quantity and price details on second line
+            output.write(ESC_ALIGN_LEFT);
             for (LineItemDto item : lineItems) {
-                // Item description - truncate if too long
-                String description = item.getDescription().length() > 15 ? 
-                    item.getDescription().substring(0, 15) : item.getDescription();
-                
-                String itemLine = String.format("%-15s %-8s %5s %8s", 
-                    description,
-                    formatCurrency(item.getUnitPrice()),
-                    item.getQuantity(),
-                    formatCurrency(item.getQuantity() * item.getUnitPrice())
-                );
-                
-                output.write(itemLine.getBytes(CHARSET));
+                // Item description (full name, no truncation needed now)
+                output.write(item.getDescription().getBytes(CHARSET));
                 output.write(LF);
+                
+                // Quantity * Unit Price and Total Amount with tax rate - right aligned
+                String quantityPrice = String.format("%s X %s", 
+                    item.getQuantity(), 
+                    formatCurrency(item.getUnitPrice())
+                );
+                String totalAmount = formatCurrency(item.getQuantity() * item.getUnitPrice());
+                
+                String taxRateDisplay = Helper.isVATRegistered() ? totalAmount + " " + item.getTaxRateId() : totalAmount;
+                
+                printFormattedLine(output, quantityPrice, taxRateDisplay, 0);
             }
             
             // Divider before totals
             printDivider(output);
             
-            // Calculate totals
-            double totalVAT = invoiceTaxBreakDown.stream().mapToDouble(TaxBreakDown::getTaxAmount).sum();
-            double subtotal = invoiceTaxBreakDown.stream().mapToDouble(TaxBreakDown::getTaxableAmount).sum();
-            double invoiceTotal = subtotal + totalVAT;
-            
-            // Print totals with left-right alignment
-            printFormattedLine(output, "Subtotal", formatCurrency(subtotal), 0);
-            
-            // Tax breakdowns
-            for (TaxBreakDown tax : invoiceTaxBreakDown) {
-                printFormattedLine(output, "VAT " + tax.getRateId() + "%", formatCurrency(tax.getTaxAmount()), 0);
-            }
-            
-            // Total, emphasized
-            output.write(ESC_EMPHASIZE_ON);
-            printFormattedLine(output, "TOTAL", formatCurrency(invoiceTotal), 0);
-            output.write(ESC_EMPHASIZE_OFF);
-            
-            // Payment information
-            printFormattedLine(output, "Amount Paid", formatCurrency(amountTendered), 0);
-            
-            if (change > 0) {
-                printFormattedLine(output, "Change", formatCurrency(change), 0);
-            }
+// Calculate totals
+double totalVAT = 0;
+double subtotal = 0;
+
+if (Helper.isVATRegistered()) {
+    totalVAT = invoiceTaxBreakDown.stream().mapToDouble(TaxBreakDown::getTaxAmount).sum();
+    subtotal = invoiceTaxBreakDown.stream().mapToDouble(TaxBreakDown::getTaxableAmount).sum();
+} else {
+    // If NOT VAT registered, totalVAT is zero, subtotal is the sum of all amounts (or total amount if different source)
+    subtotal = invoiceTaxBreakDown.stream().mapToDouble(TaxBreakDown::getTaxableAmount).sum();
+    totalVAT = 0;
+}
+
+double invoiceTotal = subtotal + totalVAT;
+
+// Print totals with left-right alignment
+printFormattedLine(output, "Subtotal", formatCurrency(subtotal), 0);
+
+if (Helper.isVATRegistered()) {
+    // Tax breakdowns - print only if VAT registered
+    for (TaxBreakDown tax : invoiceTaxBreakDown) {
+        String taxRateStr = String.valueOf(Helper.getTaxRateById(tax.getRateId())); // e.g. "15.0"
+        String label = String.format("VAT %s - %s%%", tax.getRateId(), taxRateStr);
+        printFormattedLine(output, label, formatCurrency(tax.getTaxAmount()), 0);
+    }
+}
+
+// Total, emphasized
+output.write(ESC_EMPHASIZE_ON);
+printFormattedLine(output, "TOTAL", formatCurrency(invoiceTotal), 0);
+output.write(ESC_EMPHASIZE_OFF);
+
+// Payment information
+printFormattedLine(output, "Amount Paid", formatCurrency(amountTendered), 0);
+
+if (change > 0) {
+    printFormattedLine(output, "Change", formatCurrency(change), 0);
+}
+
             
             output.write(LF);
             
             // Validation section
             printDivider(output);
             
+            output.write(ESC_ALIGN_CENTER);
             output.write(ESC_EMPHASIZE_ON);
             output.write("*** VALIDATE YOUR RECEIPT ***".getBytes(CHARSET));
             output.write(ESC_EMPHASIZE_OFF);

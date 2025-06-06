@@ -27,7 +27,7 @@ public class ApiEndpoints {
     
     //OfflineSignature url
     
-    public static String OFFLINE_VALIDATION_BASE_URL = "https://dev-eis-portal.mra.mw/api/api/v1/ReorderNotification/Validation/"; 
+    public static String OFFLINE_VALIDATION_BASE_URL = "https://dev-eis-portal.mra.mw/ReceiptValidation/Validate"; 
     
     
     

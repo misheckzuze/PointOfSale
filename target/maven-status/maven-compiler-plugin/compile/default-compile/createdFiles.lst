@@ -25,6 +25,7 @@ com\pointofsale\model\Customer.class
 com\pointofsale\ProductManagement$2.class
 com\pointofsale\AuditTrailView$1.class
 com\pointofsale\TransactionsView$2.class
+com\pointofsale\model\TerminalContactInfo.class
 com\pointofsale\model\TaxSummary.class
 com\pointofsale\AuditTrailView$2.class
 com\pointofsale\helper\ApiClient$1.class
@@ -60,6 +61,7 @@ com\pointofsale\data\Database.class
 com\pointofsale\model\CategoryRevenue.class
 com\pointofsale\ReportsView.class
 com\pointofsale\CustomersView$3.class
+com\pointofsale\model\InvoiceGenerationRequest.class
 module-info.class
 com\pointofsale\SettingsView.class
 com\pointofsale\helper\ApiClient.class

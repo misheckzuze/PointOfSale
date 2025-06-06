@@ -443,32 +443,34 @@ public class ApiClient {
     }).start();
 }
   
-private void fetchLatestConfig(String bearerToken) {
+public boolean fetchLatestConfig(String bearerToken) {
     String url = ApiEndpoints.BASE_URL + ApiEndpoints.GET_LATEST_CONFIG;
-    
-   HttpRequest configRequest = HttpRequest.newBuilder()
+
+    HttpRequest configRequest = HttpRequest.newBuilder()
         .uri(URI.create(url))
         .header("Authorization", "Bearer " + bearerToken)
         .header("Accept", "text/plain")
         .header("Content-Type", "application/json")
-        .POST(HttpRequest.BodyPublishers.ofString("{}")) // <- send empty JSON body
+        .POST(HttpRequest.BodyPublishers.ofString("{}"))
         .build();
-        
+
     try {
         HttpResponse<String> configResponse = httpClient.send(configRequest, HttpResponse.BodyHandlers.ofString());
         System.out.println("🛠️ Fetching latest configuration...");
         System.out.println("Status Code: " + configResponse.statusCode());
         System.out.println("Response Body: " + configResponse.body());
-        
+
         if (configResponse.statusCode() == 200) {
-            // Parse and persist/store the config locally
             ActivationDataInserter.getLatestConfiguration(configResponse.body());
+            return true;
         } else {
             System.err.println("⚠️ Failed to fetch latest config: " + configResponse.statusCode());
+            return false;
         }
     } catch (Exception e) {
         System.err.println("❌ Error fetching configuration: " + e.getMessage());
         e.printStackTrace();
+        return false;
     }
 }
 
