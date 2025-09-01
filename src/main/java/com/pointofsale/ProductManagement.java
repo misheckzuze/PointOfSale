@@ -256,6 +256,21 @@ public class ProductManagement {
         TableColumn<Product, String> nameCol = new TableColumn<>("Product Name");
         nameCol.setCellValueFactory(new PropertyValueFactory<>("name"));
         nameCol.setPrefWidth(250);
+        
+        TableColumn<Product, Double> quantityCol = new TableColumn<>("Quantity");
+        quantityCol.setCellValueFactory(new PropertyValueFactory<>("quantity"));
+        quantityCol.setPrefWidth(80);
+        quantityCol.setCellFactory(col -> new TableCell<Product, Double>() {
+           @Override
+           protected void updateItem(Double quantity, boolean empty) {
+           super.updateItem(quantity, empty);
+            if (empty || quantity == null) {
+            setText(null);
+            } else {
+            setText(String.format("%.2f", quantity));
+            }
+           }
+        });
 
         TableColumn<Product, String> categoryCol = new TableColumn<>("Category");
         categoryCol.setCellValueFactory(new PropertyValueFactory<>("category"));
@@ -366,7 +381,7 @@ public class ProductManagement {
         actionsCol.setPrefWidth(180);
         actionsCol.setCellFactory(createActionButtonCellFactory());
 
-        productTable.getColumns().addAll(barcodeCol, nameCol, categoryCol, unitCol, priceCol, 
+        productTable.getColumns().addAll(barcodeCol, nameCol, quantityCol, categoryCol, unitCol, priceCol, 
                 discountCol, taxRateCol, totalVATCol, stockCol, statusCol, productTypeCol, actionsCol);
 
         // Set items to table (filtered list)

@@ -27,7 +27,11 @@ public class ApiEndpoints {
     
     //OfflineSignature url
     
-    public static String OFFLINE_VALIDATION_BASE_URL = "https://dev-eis-portal.mra.mw/ReceiptValidation/Validate"; 
+    public static String OFFLINE_VALIDATION_BASE_URL = "https://dev-eis-portal.mra.mw/ReceiptValidation/Validate";
+    
+    //ping endpoint
+    
+    public static String SERVER_PING = "/utilities/ping";
     
     
     

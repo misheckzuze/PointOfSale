@@ -20,7 +20,6 @@ import com.pointofsale.model.InvoicePayload;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
-import java.time.temporal.ChronoField;
 import java.util.Base64;
 import java.net.URLEncoder;
 import java.time.temporal.ChronoUnit;
@@ -210,6 +209,26 @@ public static String getTerminalSiteId() {
     }
     return tin;
 }
+   
+  public static List<String> getTaxRateNames() {
+    List<String> taxRates = new ArrayList<>();
+    try (Connection conn = Database.createConnection()) {
+        String query = "SELECT Name, Rate FROM TaxRates";
+        try (PreparedStatement stmt = conn.prepareStatement(query)) {
+            var rs = stmt.executeQuery();
+            while (rs.next()) {
+                String name = rs.getString("Name");
+                int rate = rs.getInt("Rate");
+                taxRates.add(rate + "% - " + name); // format: "12% - Standard Rated"
+            }
+        }
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to fetch tax rates: " + e.getMessage());
+    }
+    return taxRates;
+}
+
+
    public static int getTaxpayerId() {
     int taxpayerId = 0;
     try (Connection conn = Database.createConnection()) {
@@ -228,20 +247,20 @@ public static String getTerminalSiteId() {
 
 
    public static String getTerminalLabel() {
-    String label = "";
-    try (Connection conn = Database.createConnection()) {
-        String query = "SELECT Label FROM TerminalConfiguration LIMIT 1";
-        try (PreparedStatement stmt = conn.prepareStatement(query)) {
-            var rs = stmt.executeQuery();
-            if (rs.next()) {
-                label = rs.getString("Label");
-            }
+    String query = "SELECT Label FROM TerminalConfiguration LIMIT 1";
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(query);
+         var rs = stmt.executeQuery()) {
+         
+        if (rs.next()) {
+            return rs.getString("Label");
         }
     } catch (SQLException e) {
-        System.err.println("❌ Failed to fetch Terminal Label: " + e.getMessage());
+        System.err.println("❌ Failed to fetch terminal label: " + e.getMessage());
     }
-    return label;
-   }
+    return null;
+}
+
    
     public static String getTerminalId() {
         String terminalId = "";
@@ -723,9 +742,22 @@ public static void loadUserDetails() {
         return base64Taxpayer + "-" + base64Position + "-" + base64Julian + "-" + base64Count;
    }
     
-     public static long toJulianDate(LocalDate date) {
-        return date.getLong(ChronoField.YEAR) * 1000 + date.getDayOfYear();
+    public static long toJulianDate(LocalDate date) {
+    int year = date.getYear();
+    int month = date.getMonthValue();
+    int day = date.getDayOfMonth();
+
+    if (month <= 2) {
+        year -= 1;
+        month += 12;
     }
+    int A = year / 100;
+    int B = 2 - A + (A / 4);
+
+    return (long) (Math.floor(365.25 * (year + 4716))
+                 + Math.floor(30.6001 * (month + 1))
+                 + day + B - 1524);
+}
 
     public static String base10ToBase64(long number) {
        String base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -2318,7 +2350,7 @@ public static SecuritySettings getSettings() {
     }
     
    public static String generateOfflineReceiptSignature(InvoiceGenerationRequest request, String secretKey) {
-    long julianDate = toJulianDate(request.transactiondate);
+    long julianDate = toJulianDate(request.transactiondate.toLocalDate());
     String julianBase64 = base10ToBase64(julianDate);
 
     // TI is now invoice number, T is now base64 of transaction date
@@ -2340,22 +2372,27 @@ public static SecuritySettings getSettings() {
     return validationUrl;
 }
 
-    private static long toJulianDate(LocalDateTime dateTime) {
-        return dateTime.getYear() * 1000L + dateTime.getDayOfYear();
-    }
 
     private static String computeHMACWithSHA256(String data, String key) {
-        try {
-            SecretKeySpec secretKey = new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(secretKey);
-            byte[] hmacBytes = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
-            return Base64.getEncoder().encodeToString(hmacBytes);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return "";
-        }
+    try {
+        SecretKeySpec secretKey = new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(secretKey);
+        byte[] hmacBytes = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
+
+        // Standard Base64 first
+        String base64 = Base64.getEncoder().encodeToString(hmacBytes);
+
+        // Convert to Base64URL
+        return base64.replace("+", "-")
+                     .replace("/", "_")
+                     .replace("=", "");
+    } catch (Exception e) {
+        e.printStackTrace();
+        return "";
     }
+}
+
 
 }
 

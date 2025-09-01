@@ -25,6 +25,7 @@ import com.pointofsale.model.InvoiceSummary;
 import com.pointofsale.model.TerminalBlockingInfo;
 import com.pointofsale.model.TerminalBlockingResponse;
 import com.pointofsale.model.LineItemDto;
+import com.pointofsale.model.PingResponse;
 import com.pointofsale.model.TerminalUnblockStatusResponse;
 import com.pointofsale.model.CheckResult;
 import com.pointofsale.model.InvoiceHeader;
@@ -237,6 +238,48 @@ public class ApiClient {
     }).start();
 }
     
+    public void pingServer(String bearerToken, Consumer<PingResponse> onResult) {
+    System.out.println("Starting pingServer...");
+
+    new Thread(() -> {
+        try {
+            String url = ApiEndpoints.BASE_URL + ApiEndpoints.SERVER_PING;
+
+            System.out.println("Sending request to: " + url);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "application/json")
+                    .header("Authorization", "Bearer " + bearerToken)
+                    .timeout(Duration.ofSeconds(30))
+                    .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            System.out.println("Received response. Status code: " + response.statusCode());
+            System.out.println("Response body: " + response.body());
+
+            PingResponse result = null;
+
+            if (response.statusCode() == 200) {
+                ObjectMapper mapper = new ObjectMapper();
+                result = mapper.readValue(response.body(), PingResponse.class);
+            }
+
+            PingResponse finalResult = result;
+            Platform.runLater(() -> onResult.accept(finalResult));
+
+        } catch (Exception e) {
+            System.err.println("Exception during pingServer: " + e.getMessage());
+            e.printStackTrace();
+            Platform.runLater(() -> onResult.accept(null));
+        }
+    }).start();
+}
+
+    
     public void checkIfTerminalIsBlocked(String terminalId, String bearerToken, Consumer<CheckResult> onResult) {
     System.out.println("Starting checkIfTerminalIsBlocked...");
 
@@ -398,8 +441,16 @@ public class ApiClient {
         boolean success = false;
         String validationUrl = "";
         boolean shouldDownloadConfig = false;
+        String invoiceNumber = "";
 
         try {
+            // Extract invoice number from payload (for fallback marking)
+            JsonReader payloadReader = Json.createReader(new StringReader(payloadJson));
+            JsonObject payloadObj = payloadReader.readObject();
+            invoiceNumber = payloadObj
+                    .getJsonObject("invoiceHeader")
+                    .getString("invoiceNumber", "");
+
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             System.out.println("📨 Submitting Transactions...");
@@ -424,24 +475,51 @@ public class ApiClient {
                 } else {
                     System.err.println("⚠️ Submission failed: " + remark);
                 }
+
             } else {
                 System.err.println("❌ HTTP error while submitting: " + response.statusCode());
+
+                // Try to interpret the response body
+                try {
+                    JsonReader reader = Json.createReader(new StringReader(response.body()));
+                    JsonObject json = reader.readObject();
+
+                    int statusCode = json.getInt("statusCode", 0);
+                    String remark = json.getString("remark", "");
+
+                    // ✅ Invoice already exists — treat as success
+                    if (statusCode == -2 && remark.equalsIgnoreCase("Invoice Number already exists")) {
+                        System.out.println("ℹ️ Invoice already exists, marking as transmitted.");
+                        success = true;
+
+                        // Mark as transmitted
+                        Helper.markAsTransmitted(invoiceNumber);
+                    } else {
+                        System.err.println("⚠️ Submission failed: " + remark);
+                    }
+
+                } catch (Exception parseEx) {
+                    System.err.println("❌ Failed to parse error response body: " + parseEx.getMessage());
+                }
             }
+
         } catch (Exception e) {
             System.err.println("❌ Error during transaction submission: " + e.getMessage());
             e.printStackTrace();
         }
-        
-         //fetch the latest config
+
+        // Fetch the latest config if instructed
         if (shouldDownloadConfig) {
             fetchLatestConfig(bearerToken);
         }
 
         String finalValidationUrl = validationUrl;
         boolean finalSuccess = success;
+
         Platform.runLater(() -> callback.accept(finalSuccess, finalValidationUrl));
     }).start();
 }
+
   
 public boolean fetchLatestConfig(String bearerToken) {
     String url = ApiEndpoints.BASE_URL + ApiEndpoints.GET_LATEST_CONFIG;

@@ -1,5 +1,6 @@
 package com.pointofsale;
 
+import com.pointofsale.helper.ApiClient;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -55,6 +56,10 @@ public class SettingsView {
     private PasswordField currentPasswordField;
     private PasswordField newPasswordField;
     private PasswordField confirmPasswordField;
+    // Add these instance variables to your class
+private Label serverStatusIndicator;
+private Label serverStatusText;
+private Label serverTimeText;
     
     public Node getView() {
         createSettingsInterface();
@@ -178,99 +183,174 @@ public class SettingsView {
         return scrollPane;
     }
     
-    private ScrollPane createSystemSettingsTab() {
-        VBox content = new VBox(20);
-        content.setPadding(new Insets(25));
-        
-        // General System Settings
-        VBox systemSection = createSection("General Settings", 
-            "Configure general system behavior and preferences");
-        
-        GridPane systemGrid = new GridPane();
-        systemGrid.setHgap(15);
-        systemGrid.setVgap(15);
-        systemGrid.setPadding(new Insets(20));
-        
-        // Currency Settings
-        Label currencyLabel = new Label("Default Currency:");
-        currencyLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #555555;");
-        systemGrid.add(currencyLabel, 0, 0);
-        
-        currencyComboBox = new ComboBox<>(FXCollections.observableArrayList(
-            "PHP - Philippine Peso", "USD - US Dollar", "EUR - Euro", "GBP - British Pound"));
-        currencyComboBox.setValue("PHP - Philippine Peso");
-        currencyComboBox.setStyle(getComboBoxStyle());
-        currencyComboBox.setMaxWidth(Double.MAX_VALUE);
-        systemGrid.add(currencyComboBox, 1, 0);
-        
-        // Tax Rate Settings
-        Label taxLabel = new Label("Default Tax Rate:");
-        taxLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #555555;");
-        systemGrid.add(taxLabel, 0, 1);
-        
-        taxRateComboBox = new ComboBox<>(FXCollections.observableArrayList(
-            "0% - No Tax", "5% - Reduced Rate", "12% - Standard Rate", "15% - Higher Rate"));
-        taxRateComboBox.setValue("12% - Standard Rate");
-        taxRateComboBox.setStyle(getComboBoxStyle());
-        taxRateComboBox.setMaxWidth(Double.MAX_VALUE);
-        systemGrid.add(taxRateComboBox, 1, 1);
-        
-        systemSection.getChildren().add(systemGrid);
-        
-        // Feature Settings
-        VBox featuresSection = createSection("Features", 
-            "Enable or disable system features");
-        
-        VBox featuresBox = new VBox(15);
-        featuresBox.setPadding(new Insets(20));
-        
-        enableDiscountsCheckBox = createStyledCheckBox("Enable Discounts", 
-            "Allow discounts to be applied to products and transactions");
-        enableCustomerAccountsCheckBox = createStyledCheckBox("Enable Customer Accounts", 
-            "Allow customers to have accounts with stored information");
-        enableInventoryTrackingCheckBox = createStyledCheckBox("Enable Inventory Tracking", 
-            "Track product quantities and stock levels");
-        
-        featuresBox.getChildren().addAll(enableDiscountsCheckBox, enableCustomerAccountsCheckBox, 
-                                        enableInventoryTrackingCheckBox);
-        featuresSection.getChildren().add(featuresBox);
-        
-        // Receipt Settings
-        VBox receiptSection = createSection("Receipt Settings", 
-            "Configure receipt printing and formatting");
-        
-        GridPane receiptGrid = new GridPane();
-        receiptGrid.setHgap(15);
-        receiptGrid.setVgap(15);
-        receiptGrid.setPadding(new Insets(20));
-        
-        Label formatLabel = new Label("Receipt Format:");
-        formatLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #555555;");
-        receiptGrid.add(formatLabel, 0, 0);
-        
-        receiptFormatComboBox = new ComboBox<>(FXCollections.observableArrayList(
-            "Standard Format", "Compact Format", "Detailed Format"));
-        receiptFormatComboBox.setValue("Standard Format");
-        receiptFormatComboBox.setStyle(getComboBoxStyle());
-        receiptFormatComboBox.setMaxWidth(Double.MAX_VALUE);
-        receiptGrid.add(receiptFormatComboBox, 1, 0);
-        
-        autoPrintReceiptsCheckBox = createStyledCheckBox("Auto-print Receipts", 
-            "Automatically print receipts after each transaction");
-        receiptGrid.add(autoPrintReceiptsCheckBox, 0, 1, 2, 1);
-        
-        receiptSection.getChildren().add(receiptGrid);
-        
-        content.getChildren().addAll(systemSection, featuresSection, receiptSection);
-        
-        // Load existing settings
-        loadSystemSettings();
-        
-        ScrollPane scrollPane = new ScrollPane(content);
-        scrollPane.setFitToWidth(true);
-        scrollPane.setStyle("-fx-background-color: transparent;");
-        return scrollPane;
-    }
+  private ScrollPane createSystemSettingsTab() {
+    VBox content = new VBox(20);
+    content.setPadding(new Insets(25));
+    
+    // General System Settings
+    VBox systemSection = createSection("General Settings", 
+        "Configure general system behavior and preferences");
+    
+    GridPane systemGrid = new GridPane();
+    systemGrid.setHgap(15);
+    systemGrid.setVgap(15);
+    systemGrid.setPadding(new Insets(20));
+    
+    // Server Status Section
+    Label serverStatusLabel = new Label("Server Status:");
+    serverStatusLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #555555;");
+    systemGrid.add(serverStatusLabel, 0, 0);
+    
+    HBox serverStatusBox = new HBox(10);
+    serverStatusBox.setAlignment(Pos.CENTER_LEFT);
+    
+    serverStatusIndicator = new Label("●");
+    serverStatusIndicator.setStyle("-fx-font-size: 14px; -fx-text-fill: #ffa500;"); // Orange for checking
+    
+    serverStatusText = new Label("Checking connection...");
+    serverStatusText.setStyle("-fx-text-fill: #666666;");
+    
+    Button refreshButton = new Button("Refresh");
+    refreshButton.setStyle("-fx-background-color: #2196F3; -fx-text-fill: white; " +
+        "-fx-font-size: 12px; -fx-padding: 5 10 5 10; -fx-background-radius: 4; " +
+        "-fx-cursor: hand;");
+    refreshButton.setOnAction(e -> checkServerConnection());
+    
+    serverStatusBox.getChildren().addAll(serverStatusIndicator, serverStatusText, refreshButton);
+    systemGrid.add(serverStatusBox, 1, 0);
+    
+    // Server Time Display
+    Label serverTimeLabel = new Label("Server Time:");
+    serverTimeLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #555555;");
+    systemGrid.add(serverTimeLabel, 0, 1);
+    
+    serverTimeText = new Label("--");
+    serverTimeText.setStyle("-fx-text-fill: #666666; -fx-font-family: monospace;");
+    systemGrid.add(serverTimeText, 1, 1);
+    
+    // Currency Settings
+    Label currencyLabel = new Label("Default Currency:");
+    currencyLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #555555;");
+    systemGrid.add(currencyLabel, 0, 2);
+    
+    currencyComboBox = new ComboBox<>(FXCollections.observableArrayList(
+        "MWK - Malawi Kwacha", "USD - US Dollar"));
+    currencyComboBox.setValue("MWK - Malawi Kwacha");
+    currencyComboBox.setStyle(getComboBoxStyle());
+    currencyComboBox.setMaxWidth(Double.MAX_VALUE);
+    systemGrid.add(currencyComboBox, 1, 2);
+    
+    // Tax Rate Settings
+    Label taxLabel = new Label("Default Tax Rate:");
+    taxLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #555555;");
+    systemGrid.add(taxLabel, 0, 3);
+    
+    // Fetch tax rates from DB
+List<String> taxRates = Helper.getTaxRateNames();
+
+// Create ComboBox with DB values
+taxRateComboBox = new ComboBox<>(FXCollections.observableArrayList(taxRates));
+
+// Set default value to "Standard Rated" if available, otherwise first available
+if (taxRates.contains("Standard Rated")) {
+    taxRateComboBox.setValue("Standard Rated");
+} else if (!taxRates.isEmpty()) {
+    taxRateComboBox.setValue(taxRates.get(0));
+}
+
+// Keep your existing style and layout
+taxRateComboBox.setStyle(getComboBoxStyle());
+taxRateComboBox.setMaxWidth(Double.MAX_VALUE);
+systemGrid.add(taxRateComboBox, 1, 3);
+
+    
+    systemSection.getChildren().add(systemGrid);
+    
+    // Feature Settings
+    VBox featuresSection = createSection("Features", 
+        "Enable or disable system features");
+    
+    VBox featuresBox = new VBox(15);
+    featuresBox.setPadding(new Insets(20));
+    
+    enableDiscountsCheckBox = createStyledCheckBox("Enable Discounts", 
+        "Allow discounts to be applied to products and transactions");
+    enableCustomerAccountsCheckBox = createStyledCheckBox("Enable Customer Accounts", 
+        "Allow customers to have accounts with stored information");
+    enableInventoryTrackingCheckBox = createStyledCheckBox("Enable Inventory Tracking", 
+        "Track product quantities and stock levels");
+    
+    featuresBox.getChildren().addAll(enableDiscountsCheckBox, enableCustomerAccountsCheckBox, 
+                                    enableInventoryTrackingCheckBox);
+    featuresSection.getChildren().add(featuresBox);
+    
+    // Receipt Settings
+    VBox receiptSection = createSection("Receipt Settings", 
+        "Configure receipt printing and formatting");
+    
+    GridPane receiptGrid = new GridPane();
+    receiptGrid.setHgap(15);
+    receiptGrid.setVgap(15);
+    receiptGrid.setPadding(new Insets(20));
+    
+    Label formatLabel = new Label("Receipt Format:");
+    formatLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #555555;");
+    receiptGrid.add(formatLabel, 0, 0);
+    
+    receiptFormatComboBox = new ComboBox<>(FXCollections.observableArrayList(
+        "Standard Format", "Compact Format", "Detailed Format"));
+    receiptFormatComboBox.setValue("Standard Format");
+    receiptFormatComboBox.setStyle(getComboBoxStyle());
+    receiptFormatComboBox.setMaxWidth(Double.MAX_VALUE);
+    receiptGrid.add(receiptFormatComboBox, 1, 0);
+    
+    autoPrintReceiptsCheckBox = createStyledCheckBox("Auto-print Receipts", 
+        "Automatically print receipts after each transaction");
+    receiptGrid.add(autoPrintReceiptsCheckBox, 0, 1, 2, 1);
+    
+    receiptSection.getChildren().add(receiptGrid);
+    
+    content.getChildren().addAll(systemSection, featuresSection, receiptSection);
+    
+    // Load existing settings and check server connection
+    loadSystemSettings();
+    checkServerConnection();
+    
+    ScrollPane scrollPane = new ScrollPane(content);
+    scrollPane.setFitToWidth(true);
+    scrollPane.setStyle("-fx-background-color: transparent;");
+    return scrollPane;
+}
+// Method to check server connection
+private void checkServerConnection() {
+    // Update UI to show checking status
+    String bearerToken = Helper.getToken();  
+    Platform.runLater(() -> {
+        serverStatusIndicator.setStyle("-fx-font-size: 14px; -fx-text-fill: #ffa500;");
+        serverStatusText.setText("Checking connection...");
+        serverTimeText.setText("--");
+    });
+    
+    ApiClient apiClient = new ApiClient();
+    
+    apiClient.pingServer(bearerToken, result -> {
+        Platform.runLater(() -> {
+            if (result != null) {
+                // Connection successful
+                serverStatusIndicator.setStyle("-fx-font-size: 14px; -fx-text-fill: #4CAF50;"); // Green
+                serverStatusText.setText("Connected");
+                serverTimeText.setText(result.data.serverDate);
+                System.out.println("Server date: " + result.data.serverDate);
+            } else {
+                // Connection failed
+                serverStatusIndicator.setStyle("-fx-font-size: 14px; -fx-text-fill: #f44336;"); // Red
+                serverStatusText.setText("Connection failed");
+                serverTimeText.setText("--");
+                System.out.println("Ping failed.");
+            }
+        });
+    });
+}
     
     private ScrollPane createUserManagementTab() {
         VBox content = new VBox(20);

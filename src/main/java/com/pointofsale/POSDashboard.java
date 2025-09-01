@@ -8,6 +8,8 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import com.google.gson.Gson;
 import javafx.scene.Scene;
+import javafx.scene.Cursor;
+import javafx.geometry.HPos;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.input.KeyCode;
@@ -76,6 +78,8 @@ import java.time.LocalDateTime;
 import com.pointofsale.helper.Helper;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import javafx.geometry.Rectangle2D;
+import javafx.stage.Screen;
 import java.util.Random;
 import javafx.scene.Node;
 import java.util.ArrayList;
@@ -99,6 +103,7 @@ public class POSDashboard extends Application {
     private Label changeValueLabel;
     private TextField cashAmountField;
     private Button processPaymentButton;
+    private Button doneButton;
     private Label taxLabel;
     private TextField heldCustomerNameField;
     private Node currentContent;
@@ -116,6 +121,8 @@ public class POSDashboard extends Application {
     private String receiptNumber =  generateNewReceiptNumber();
     private String transactionNote = "";
     private Label noteIndicatorLabel;
+    private Stage numberPadDialog;
+    private TextField activeField;
 
     @Override
     public void start(Stage primaryStage) {
@@ -127,38 +134,46 @@ public class POSDashboard extends Application {
         stage.show();
     }
 
-    /**
-     * Creates the entire dashboard with all components
-     */
-    private void createDashboard() {
-        // Initialize cart items list if needed
-        cartItems = FXCollections.observableArrayList();
-        
-        // Create main layout
-        root = new BorderPane();
-        root.setStyle("-fx-background-color: #f5f5f7;");
-        
-        // Set up the different regions of the dashboard
-        root.setTop(createTopBar());
-        root.setLeft(createSidebar());
-        
-        // Load the default content (Sales Dashboard)
-        loadSalesDashboard();
-        
-        // Create scene and set to stage
-        Scene scene = new Scene(root, 1280, 800);
-        stage.setScene(scene);
-        stage.setTitle("POS System");
-        stage.setMaximized(true);
-    }
+   private void createDashboard() {
+    // Initialize cart items list if needed
+    cartItems = FXCollections.observableArrayList();
     
+    // Get screen size for responsive design
+    Rectangle2D screenBounds = Screen.getPrimary().getVisualBounds();
+    double screenWidth = screenBounds.getWidth();
+    double screenHeight = screenBounds.getHeight();
+    
+    // Create main layout
+    root = new BorderPane();
+    root.setStyle("-fx-background-color: #f5f5f7;");
+    
+    // Set up the different regions of the dashboard
+    root.setTop(createTopBar());
+    root.setLeft(createSidebar());
+    
+    // Calculate responsive window size (use 90% of screen, with minimums)
+    double windowWidth = Math.max(screenWidth * 0.9, 1024);  // Min 1024px
+    double windowHeight = Math.max(screenHeight * 0.9, 768); // Min 768px
+    
+    // Create scene with calculated dimensions
+    Scene scene = new Scene(root, windowWidth, windowHeight);
+    stage.setScene(scene);
+    stage.setTitle("POS System");
+    
+    // Always maximize for now during development
+    stage.setMaximized(true);
+    
+    
+    // Load the default content (Sales Dashboard)
+    loadSalesDashboard();
+}
      // Methods to load different content areas
     private void loadSalesDashboard() {
         // Clear current right panel (checkout) if any
         root.setRight(createCheckoutPanel());
         
         // Load sales dashboard content
-        Node salesContent = createMainContent(); // Your existing method for sales dashboard
+        Node salesContent = createMainContent();
         setContent(salesContent);
         stage.setTitle("POS System - Sales Dashboard");
     }
@@ -284,6 +299,16 @@ private void loadTransactions() {
         dateTimeLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #333333;");
         dateTimeBox.getChildren().addAll(dateTimeTextLabel, dateTimeLabel);
         
+        // Till info
+        String label = Helper.getTerminalLabel();
+        VBox tillInfo = new VBox(2);
+        Label tillTextLabel = new Label("Till:");
+        tillTextLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: #757575;");
+        Label tillLabel = new Label(label);
+        tillLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #333333;");
+        tillInfo.getChildren().addAll(tillTextLabel, tillLabel);
+
+        
         // Spacer to push cashier info to the right
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
@@ -332,7 +357,7 @@ private void loadTransactions() {
         logoutButton.setOnAction(e -> handleLogout());
         
         // Add all components to the top bar
-        topBar.getChildren().addAll(systemLabel, separator1, transactionInfo, dateTimeBox, spacer, cashierInfo, refreshConfigBtn, logoutButton);
+        topBar.getChildren().addAll(systemLabel, separator1, transactionInfo, dateTimeBox, tillInfo, spacer, cashierInfo, refreshConfigBtn, logoutButton);
         
         return topBar;
     }
@@ -347,7 +372,6 @@ private VBox createSidebar() {
 
     // Create the menu items
     sidebar.getChildren().add(createSidebarHeader());
-
     HBox salesMenuItem = createSidebarMenuItem("💳 New Sale", true);
     activeMenuItem = salesMenuItem;
     salesMenuItem.setOnMouseClicked(e -> {
@@ -439,30 +463,25 @@ private HBox createSidebarMenuItem(String text, boolean isSelected) {
     menuItem.setAlignment(Pos.CENTER_LEFT);
     menuItem.setPadding(new Insets(15, 20, 15, 20));
     menuItem.setCursor(javafx.scene.Cursor.HAND);
-
+    
     // Selection indicator (added at the beginning of the menu item)
     Rectangle indicator = new Rectangle(5, 25);
     indicator.setFill(Color.WHITE);
     indicator.setArcWidth(2);
     indicator.setArcHeight(2);
     indicator.setVisible(isSelected);
-
-    // Menu icon
-    Rectangle icon = new Rectangle(18, 18);
-    icon.setFill(Color.WHITE);
-    icon.setOpacity(0.8);
-    icon.setArcWidth(4);
-    icon.setArcHeight(4);
-
-    // Menu text
+    
+    // Menu text (now includes the emoji icon)
     Label menuText = new Label(text);
     menuText.setStyle("-fx-font-size: 14px; -fx-text-fill: white; -fx-font-weight: " + (isSelected ? "bold" : "normal") + ";");
-    HBox.setMargin(menuText, new Insets(0, 0, 0, 15));
-    HBox.setMargin(icon, new Insets(0, 0, 0, 10));
+    
+    // Adjust margins - removed icon margin, reduced text margin
+    HBox.setMargin(menuText, new Insets(0, 0, 0, 10)); // Reduced from 15 to 10
     HBox.setMargin(indicator, new Insets(0, 10, 0, 0));
-
-    menuItem.getChildren().addAll(indicator, icon, menuText);
-
+    
+    // Add only indicator and text (removed the rectangle icon)
+    menuItem.getChildren().addAll(indicator, menuText);
+    
     // Background styling
     if (isSelected) {
         menuItem.setStyle("-fx-background-color: rgba(255, 255, 255, 0.2);");
@@ -471,7 +490,7 @@ private HBox createSidebarMenuItem(String text, boolean isSelected) {
         menuItem.setOnMouseEntered(e -> menuItem.setStyle("-fx-background-color: rgba(255, 255, 255, 0.1);"));
         menuItem.setOnMouseExited(e -> menuItem.setStyle("-fx-background-color: transparent;"));
     }
-
+    
     return menuItem;
 }
 
@@ -562,102 +581,114 @@ private void showAlert(String title, String message) {
         });
         
         // Add this event handler to the quantityButton after it's created
-       quantityButton.setOnAction(e -> {
-          // Check if an item is selected in the cart
-          Product selectedProduct = cartTable.getSelectionModel().getSelectedItem();
-    
-          if (selectedProduct == null) {
-             // Show alert if no item is selected
-             Alert alert = new Alert(Alert.AlertType.WARNING);
-             alert.setTitle("No Item Selected");
-             alert.setHeaderText(null);
-             alert.setContentText("Please select a product from the cart to change its quantity.");
-             alert.showAndWait();
-            return;
-           }
-    
-           // Create a dialog to get the new quantity
-           TextInputDialog dialog = new TextInputDialog(String.valueOf(selectedProduct.getQuantity()));
-           dialog.setTitle("Change Quantity");
-           dialog.setHeaderText("Product: " + selectedProduct.getName());
-           dialog.setContentText("Enter new quantity:");
-    
-           // Set the dialog to only accept numbers
-           TextField quantityField = dialog.getEditor();
-           quantityField.textProperty().addListener((observable, oldValue, newValue) -> {
-           if (!newValue.matches("\\d*")) {
-             quantityField.setText(newValue.replaceAll("[^\\d]", ""));
-            }
-        });
-    
-            // Handle the result
-           dialog.showAndWait().ifPresent(result -> {
-           try {
+     quantityButton.setOnAction(e -> {
+    Product selectedProduct = cartTable.getSelectionModel().getSelectedItem();
+
+    if (selectedProduct == null) {
+        Alert alert = new Alert(Alert.AlertType.WARNING);
+        alert.setTitle("No Item Selected");
+        alert.setHeaderText(null);
+        alert.setContentText("Please select a product from the cart to change its quantity.");
+        alert.showAndWait();
+        return;
+    }
+
+    TextInputDialog dialog = new TextInputDialog(String.valueOf(selectedProduct.getQuantity()));
+    dialog.setTitle("Change Quantity");
+    dialog.setHeaderText("Product: " + selectedProduct.getName());
+    dialog.setContentText("Enter new quantity:");
+
+    TextField quantityField = dialog.getEditor();
+    quantityField.textProperty().addListener((observable, oldValue, newValue) -> {
+        if (!newValue.matches("\\d*")) {
+            quantityField.setText(newValue.replaceAll("[^\\d]", ""));
+        }
+    });
+
+    dialog.showAndWait().ifPresent(result -> {
+        try {
             int newQuantity = Integer.parseInt(result);
-            
-            if (newQuantity > 0) {
-                // Update the product quantity
-                selectedProduct.setQuantity(newQuantity);
-                
-                // Refresh the table to show updated quantities and totals
-                cartTable.refresh();
-                updateTotals();
-            } else if (newQuantity == 0) {
-                // Remove the item if quantity is set to zero
+
+            if (newQuantity < 0) {
+                showAlert("Invalid Quantity", "Quantity must be zero or more.");
+                return;
+            }
+
+            // 🔍 Validate stock
+            Product stockProduct = Helper.fetchProductByBarcode(selectedProduct.getBarcode());
+            double stockQty = stockProduct != null ? stockProduct.getQuantity() : 0;
+
+            if (newQuantity > stockQty) {
+                showAlert("Stock Error", "Only " + stockQty + " units available in stock.");
+                return;
+            }
+
+            if (newQuantity == 0) {
                 removeItemFromCart(selectedProduct);
             } else {
-                // Show error for negative quantity
-                Alert alert = new Alert(Alert.AlertType.ERROR);
-                alert.setTitle("Invalid Quantity");
-                alert.setHeaderText(null);
-                alert.setContentText("Quantity must be greater than or equal to 0.");
-                alert.showAndWait();
+                selectedProduct.setQuantity(newQuantity);
             }
-            } catch (NumberFormatException ex) {
-            // Handle invalid input
-            Alert alert = new Alert(Alert.AlertType.ERROR);
-            alert.setTitle("Invalid Input");
-            alert.setHeaderText(null);
-            alert.setContentText("Please enter a valid number.");
-            alert.showAndWait();
-           }
-        });
+
+            cartTable.refresh();
+            updateTotals();
+
+        } catch (NumberFormatException ex) {
+            showAlert("Invalid Input", "Please enter a valid number.");
+        }
     });
-        
+});       
         // Set action to open the Product Lookup dialog
         lookupButton.setOnAction(e -> {
-          ProductLookupDialog lookupDialog = new ProductLookupDialog(stage);
-          Product selectedProduct = lookupDialog.showAndSelect();
+    ProductLookupDialog lookupDialog = new ProductLookupDialog(stage);
+    Product selectedProduct = lookupDialog.showAndSelect();
 
-          if (selectedProduct != null) {
-          // Handle the selected product (add to cart, show details, etc.)
-          System.out.println("Selected product: " + selectedProduct.getName());
-          // Check if the product already exists in the cart
-          boolean found = false;
-          for (Product item : cartItems) {
-            if (item.getBarcode().equals(selectedProduct.getBarcode())) {
-                // If product exists, increase the quantity
-                item.increaseQuantity();
+    if (selectedProduct != null) {
+        String barcode = selectedProduct.getBarcode();
+
+        // Fetch current stock from DB
+        Product stockProduct = Helper.fetchProductByBarcode(barcode);
+        if (stockProduct == null) {
+            showAlert("Error", "Product not found in database.");
+            return;
+        }
+
+        double stockQty = stockProduct.getQuantity();
+        double cartQty = 0;
+
+        for (Product item : cartItems) {
+            if (item.getBarcode().equals(barcode)) {
+                cartQty = item.getQuantity();
+                break;
+            }
+        }
+
+        if (cartQty + 1 > stockQty) {
+            showAlert("Stock Limit", "Only " + stockQty + " units are available in stock.");
+            return;
+        }
+
+        boolean found = false;
+        for (Product item : cartItems) {
+            if (item.getBarcode().equals(barcode)) {
+                item.setQuantity(item.getQuantity() + 1);
+                item.updateTotal();
                 found = true;
                 break;
             }
-           }
+        }
 
-            // If the product doesn't exist in the cart, add the new product
-           if (!found) {
+        if (!found) {
+            selectedProduct.setQuantity(1);
             cartItems.add(selectedProduct);
-          }
+        }
 
-           // Update the cart table and totals
-           cartTable.refresh();
-           updateTotals(); // Assuming this method updates the cart totals
-
-           // Optionally, clear the barcode field and refocus
-           barcodeField.clear();
-           barcodeField.requestFocus();
-          }
-        });
-        
+        cartTable.refresh();
+        updateTotals();
+        barcodeField.clear();
+        barcodeField.requestFocus();
+    }
+});
+       
         quickActions.getChildren().addAll(scanButton, lookupButton, discountButton, quantityButton);
         
         searchSection.getChildren().addAll(searchTitle, searchBox, quickActions);
@@ -779,248 +810,231 @@ private void showAlert(String title, String message) {
         return mainContent;
     }
     
-/**
- * Creates the checkout panel on the right side with buyer authorization functionality
- */
 private VBox createCheckoutPanel() {
+    // Get screen size for responsive calculations
+    Rectangle2D screenBounds = Screen.getPrimary().getVisualBounds();
+    double screenWidth = screenBounds.getWidth();
+
+    // Calculate responsive panel width
+    double panelWidth;
+    if (screenWidth <= 1024) {
+        panelWidth = Math.max(screenWidth * 0.25, 250);
+    } else if (screenWidth <= 1440) {
+        panelWidth = Math.max(screenWidth * 0.22, 300);
+    } else {
+        panelWidth = Math.max(screenWidth * 0.20, 320);
+    }
+
     VBox checkoutPanel = new VBox(15);
-    checkoutPanel.setPrefWidth(300);
-    checkoutPanel.setPadding(new Insets(20, 20, 20, 0));
-    
-    // Create card panel with shadow effect
+    checkoutPanel.setPrefWidth(panelWidth);
+    checkoutPanel.setMinWidth(panelWidth);
+    checkoutPanel.setMaxWidth(panelWidth);
+
+    double padding = Math.max(panelWidth * 0.06, 15);
+    checkoutPanel.setPadding(new Insets(padding, padding, padding, 0));
+
+    // ===== CARD =====
     VBox card = new VBox(15);
-    card.setPadding(new Insets(20));
+    card.setPadding(new Insets(padding));
     card.setStyle("-fx-background-color: white; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
-                "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 10, 0, 0, 4);");
-    
+            "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 10, 0, 0, 4);");
+
+    double titleFontSize = Math.max(panelWidth * 0.06, 16);
+    double labelFontSize = Math.max(panelWidth * 0.047, 13);
+    double inputHeight = Math.max(panelWidth * 0.12, 35);
+
     // Payment summary title
     Label summaryTitle = new Label("Payment Summary");
-    summaryTitle.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #424242;");
-    
-    // Separator
+    summaryTitle.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #424242;", titleFontSize));
+
     Separator separator = new Separator();
-    
-    // Customer Information section
+
+    // Customer Info Section
     VBox customerInfoBox = new VBox(8);
     Label customerInfoLabel = new Label("Customer Information");
-    customerInfoLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #424242;");
-    
-    // Customer name field
+    customerInfoLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #424242;", labelFontSize));
+
     customerNamesField = new TextField();
     customerNamesField.setPromptText("Enter customer name");
-    customerNamesField.setPrefHeight(35);
-    customerNamesField.setStyle("-fx-font-size: 13px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
-                          "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;");
-    
-    // TIN field
+    customerNamesField.setPrefHeight(inputHeight);
+    customerNamesField.setStyle(String.format("-fx-font-size: %.0fpx; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+            "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;", labelFontSize));
+
     tinField = new TextField();
     tinField.setPromptText("Enter Tax Identification Number");
-    tinField.setPrefHeight(35);
-    tinField.setStyle("-fx-font-size: 13px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
-                   "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;");
-    
-    // Add buyer authorization code field (initially hidden)
+    tinField.setPrefHeight(inputHeight);
+    tinField.setStyle(String.format("-fx-font-size: %.0fpx; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+            "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;", labelFontSize));
+
     buyerAuthField = new TextField();
     buyerAuthField.setPromptText("Enter Buyer Authorization Code");
-    buyerAuthField.setPrefHeight(35);
-    buyerAuthField.setStyle("-fx-font-size: 13px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
-                   "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;");
+    buyerAuthField.setPrefHeight(inputHeight);
+    buyerAuthField.setStyle(String.format("-fx-font-size: %.0fpx; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+            "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;", labelFontSize));
     buyerAuthField.setVisible(false);
     buyerAuthField.setManaged(false);
-    
-    // Add listener to the TIN field to toggle buyer authorization code field
-    tinField.textProperty().addListener((observable, oldValue, newValue) -> {
-        boolean isBusiness = newValue != null && !newValue.trim().isEmpty();
+
+    tinField.textProperty().addListener((obs, oldVal, newVal) -> {
+        boolean isBusiness = newVal != null && !newVal.trim().isEmpty();
         buyerAuthField.setVisible(isBusiness);
         buyerAuthField.setManaged(isBusiness);
-        
-        // Reset auth field when TIN is cleared
-        if (!isBusiness) {
-            buyerAuthField.clear();
-        }
+        if (!isBusiness) buyerAuthField.clear();
     });
-    
+
     customerInfoBox.getChildren().addAll(customerInfoLabel, customerNamesField, tinField, buyerAuthField);
-    
-    // Subtotal section
+
+    // ===== SUMMARY GRID =====
     GridPane summaryGrid = new GridPane();
     summaryGrid.setVgap(12);
     summaryGrid.setHgap(10);
-    
     int row = 0;
-    
-    // Add subtotal row
+
     Label subtotalLabel = new Label("Subtotal:");
-    subtotalLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #757575;");
+    subtotalLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #757575;", labelFontSize));
     subtotalValueLabel = new Label(formatCurrency(0.0));
-    subtotalValueLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #424242; -fx-font-weight: bold;");
+    subtotalValueLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #424242; -fx-font-weight: bold;", labelFontSize));
     summaryGrid.add(subtotalLabel, 0, row);
-    summaryGrid.add(subtotalValueLabel, 1, row);
-    row++;
+    summaryGrid.add(subtotalValueLabel, 1, row++);
     
-    // Add discount row
     Label discountLabel = new Label("Discount:");
-    discountLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #757575;");
+    discountLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #757575;", labelFontSize));
     discountValueLabel = new Label(formatCurrency(0.0));
-    discountValueLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #c62828; -fx-font-weight: bold;");
+    discountValueLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #c62828; -fx-font-weight: bold;", labelFontSize));
     summaryGrid.add(discountLabel, 0, row);
-    summaryGrid.add(discountValueLabel, 1, row);
-    row++;
-    
-    // Add tax row
+    summaryGrid.add(discountValueLabel, 1, row++);
+
     taxLabel = new Label("VAT Amount:");
-    taxLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #757575;");
+    taxLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #757575;", labelFontSize));
     taxValueLabel = new Label(formatCurrency(0.0));
-    taxValueLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #424242; -fx-font-weight: bold;");
+    taxValueLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #424242; -fx-font-weight: bold;", labelFontSize));
     summaryGrid.add(taxLabel, 0, row);
-    summaryGrid.add(taxValueLabel, 1, row);
-    row++;
-    
-    // Add separator for total
+    summaryGrid.add(taxValueLabel, 1, row++);
+
     Separator totalSeparator = new Separator();
     GridPane.setColumnSpan(totalSeparator, 2);
-    summaryGrid.add(totalSeparator, 0, row);
-    row++;
-    
-    // Add total row
+    summaryGrid.add(totalSeparator, 0, row++);
+
     Label totalLabel = new Label("Total:");
-    totalLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #424242;");
+    totalLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #424242;", titleFontSize));
     totalAmountLabel = new Label(formatCurrency(0.0));
-    totalAmountLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #1a237e;");
+    totalAmountLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #1a237e;", titleFontSize * 1.1));
     summaryGrid.add(totalLabel, 0, row);
     summaryGrid.add(totalAmountLabel, 1, row);
-    
-    // Column constraints to push values to the right
+
     ColumnConstraints col1 = new ColumnConstraints();
     col1.setHgrow(Priority.ALWAYS);
-    
     ColumnConstraints col2 = new ColumnConstraints();
-    col2.setHalignment(javafx.geometry.HPos.RIGHT);
-    
+    col2.setHalignment(HPos.RIGHT);
     summaryGrid.getColumnConstraints().addAll(col1, col2);
-    
-    // Payment method selector
+
+    // ===== PAYMENT METHOD =====
     VBox paymentMethodBox = new VBox(8);
     Label paymentMethodLabel = new Label("Payment Method");
-    paymentMethodLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #424242;");
-    
+    paymentMethodLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #424242;", labelFontSize));
+
     paymentMethodComboBox = new ComboBox<>();
     paymentMethodComboBox.getItems().addAll("Cash", "Credit Card", "Debit Card", "Mobile Payment");
     paymentMethodComboBox.setValue("Cash");
     paymentMethodComboBox.setPrefWidth(Double.MAX_VALUE);
-    paymentMethodComboBox.setPrefHeight(40);
-    paymentMethodComboBox.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px;");
-    
+    paymentMethodComboBox.setPrefHeight(inputHeight);
+    paymentMethodComboBox.setStyle(String.format("-fx-font-size: %.0fpx; -fx-background-radius: 5px;", labelFontSize));
+
     paymentMethodBox.getChildren().addAll(paymentMethodLabel, paymentMethodComboBox);
-    
-    // Cash amount (visible only for cash payment)
-    VBox cashAmountBox = new VBox(8);
-    Label cashAmountLabel = new Label("Cash Amount");
-    cashAmountLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #424242;");
-    
-    cashAmountField = new TextField();
-    cashAmountField.setPromptText("Enter amount");
-    cashAmountField.setPrefHeight(40);
-    cashAmountField.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
-                          "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;");
-    
-    // Add change display
-    Label changeLabel = new Label("Change:");
-    changeLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #424242;");
-    
-    changeValueLabel = new Label(formatCurrency(0.0));
-    changeValueLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #009688;");
-    
-    HBox changeBox = new HBox(10);
-    changeBox.setAlignment(Pos.CENTER_LEFT);
-    changeBox.getChildren().addAll(changeLabel, changeValueLabel);
-    Region spacer = new Region();
-    HBox.setHgrow(spacer, Priority.ALWAYS);
-    changeBox.getChildren().add(0, spacer);
-    
-    // Add real-time change calculation when cash amount changes
-    cashAmountField.textProperty().addListener((observable, oldValue, newValue) -> {
-        // Validate input to allow only numbers and decimal points
-        if (!newValue.matches("\\d*\\.?\\d*")) {
-            cashAmountField.setText(oldValue);
-        } else {
-            updateChangeCalculation();
-        }
-    });
-    
-    cashAmountBox.getChildren().addAll(cashAmountLabel, cashAmountField, changeBox);
-    
-    // Process payment button
-    processPaymentButton = new Button("PROCESS PAYMENT");
-    processPaymentButton.setPrefHeight(50);
-    processPaymentButton.setPrefWidth(Double.MAX_VALUE);
-    processPaymentButton.setDisable(true); // Initially disabled
-    processPaymentButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; " +
-                               "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: hand; " +
-                               "-fx-background-radius: 5px;");
-    
-    // Add hover effect
-    processPaymentButton.setOnMouseEntered(e -> 
-        processPaymentButton.setStyle("-fx-background-color: #3949ab; -fx-text-fill: white; " +
-                                   "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: hand; " +
-                                   "-fx-background-radius: 5px;")
-    );
-    
-    processPaymentButton.setOnMouseExited(e -> 
-        processPaymentButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; " +
-                                   "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: hand; " +
-                                   "-fx-background-radius: 5px;")
-    );
-    
-    processPaymentButton.setOnAction(e -> processPayment());
-    
-    // Additional customer actions panel
+
+    VBox cashAmountBox = createCashAmountSection();
+
+    card.getChildren().addAll(summaryTitle, separator, customerInfoBox, summaryGrid, paymentMethodBox, cashAmountBox);
+
+    // ===== SECONDARY ACTION BUTTONS =====
     VBox customerActionsPanel = new VBox(10);
-    customerActionsPanel.setPadding(new Insets(20, 0, 0, 0));
-    
+    customerActionsPanel.setPadding(new Insets(padding, 0, 0, 0));
+
     Label customerActionsTitle = new Label("Customer Actions");
-    customerActionsTitle.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #424242;");
-    
-    Button addCustomerButton = createSecondaryActionButton("Add Customer");
-    Button addNoteButton = createSecondaryActionButton("Add Note");
-    Button holdSaleButton = createSecondaryActionButton("Hold Sale");
-    Button viewHeldSalesButton = createSecondaryActionButton("View Held Sales");
-    Button printReceiptButton = createSecondaryActionButton("Print Preview");
-    
+    customerActionsTitle.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #424242;", titleFontSize));
+
+    Button addCustomerButton = createResponsiveSecondaryActionButton("Add Customer", labelFontSize, inputHeight * 0.8);
+    Button addNoteButton = createResponsiveSecondaryActionButton("Add Note", labelFontSize, inputHeight * 0.8);
+    Button holdSaleButton = createResponsiveSecondaryActionButton("Hold Sale", labelFontSize, inputHeight * 0.8);
+    Button viewHeldSalesButton = createResponsiveSecondaryActionButton("View Held Sales", labelFontSize, inputHeight * 0.8);
+    Button printReceiptButton = createResponsiveSecondaryActionButton("Print Preview", labelFontSize, inputHeight * 0.8);
+
     holdSaleButton.setOnAction(e -> holdSale());
     viewHeldSalesButton.setOnAction(e -> showHeldSales());
     addCustomerButton.setOnAction(e -> addCustomer());
     printReceiptButton.setOnAction(e -> showPrintPreview());
     addNoteButton.setOnAction(e -> addNote());
-    
-    customerActionsPanel.getChildren().addAll(customerActionsTitle, addCustomerButton, addNoteButton, holdSaleButton, viewHeldSalesButton, printReceiptButton);
-    
-    // Add all elements to the card
-    card.getChildren().addAll(summaryTitle, separator, customerInfoBox, summaryGrid, paymentMethodBox, cashAmountBox, processPaymentButton);
-    
-    // Add card and customer actions to checkout panel
-    checkoutPanel.getChildren().addAll(card, customerActionsPanel);
-    
-    // Make sure the sidebar and panel stay at the top
-    VBox.setVgrow(card, Priority.NEVER);
-    VBox.setVgrow(customerActionsPanel, Priority.NEVER);
-    
+
+    // --- Grid layout for small screens (2 buttons per row) ---
+    if (screenWidth <= 1024) {
+        GridPane actionGrid = new GridPane();
+        actionGrid.setHgap(10);
+        actionGrid.setVgap(10);
+
+        actionGrid.add(addCustomerButton, 0, 0);
+        actionGrid.add(addNoteButton, 1, 0);
+        actionGrid.add(holdSaleButton, 0, 1);
+        actionGrid.add(viewHeldSalesButton, 1, 1);
+        actionGrid.add(printReceiptButton, 0, 2, 2, 1); // full width
+
+        customerActionsPanel.getChildren().addAll(customerActionsTitle, actionGrid);
+    } else {
+        customerActionsPanel.getChildren().addAll(customerActionsTitle, addCustomerButton, addNoteButton, holdSaleButton, viewHeldSalesButton, printReceiptButton);
+    }
+
+    // ===== SCROLLABLE CONTENT =====
+    VBox scrollContent = new VBox(20, card, customerActionsPanel);
+    ScrollPane scrollPane = new ScrollPane(scrollContent);
+    scrollPane.setFitToWidth(true);
+    scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+    scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+    scrollPane.setStyle("-fx-background-color: transparent;");
+
+    // ===== PROCESS PAYMENT BUTTON =====
+    double buttonHeight = Math.max(panelWidth * 0.17, 45);
+    processPaymentButton = new Button("PROCESS PAYMENT");
+    processPaymentButton.setPrefHeight(buttonHeight);
+    processPaymentButton.setPrefWidth(Double.MAX_VALUE);
+    processPaymentButton.setDisable(true);
+    processPaymentButton.setStyle(String.format(
+    "-fx-background-color: #1a237e; -fx-text-fill: white; -fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-background-radius: 5px;",
+    titleFontSize));
+
+    processPaymentButton.setCursor(Cursor.HAND);
+
+    processPaymentButton.setOnMouseEntered(e -> processPaymentButton.setStyle(String.format(
+    "-fx-background-color: #3949ab; -fx-text-fill: white; -fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-background-radius: 5px;",
+    titleFontSize)));
+
+    processPaymentButton.setOnMouseExited(e -> processPaymentButton.setStyle(String.format(
+    "-fx-background-color: #1a237e; -fx-text-fill: white; -fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-background-radius: 5px;",
+    titleFontSize)));
+
+    processPaymentButton.setOnAction(e -> processPayment());
+
+
+    // ===== FINAL LAYOUT =====
+    VBox finalLayout = new VBox();
+    VBox.setVgrow(scrollPane, Priority.ALWAYS);
+    finalLayout.getChildren().addAll(scrollPane, processPaymentButton);
+
+    checkoutPanel.getChildren().add(finalLayout);
+
     return checkoutPanel;
 }
 
- /**
-     * Creates a styled secondary action button for customer actions
-     */
-    private Button createSecondaryActionButton(String text) {
-        Button button = new Button(text);
-        button.setPrefHeight(35);
-        button.setMaxWidth(Double.MAX_VALUE);
-        button.setStyle("-fx-background-color: white; -fx-text-fill: #3949ab; " +
-                      "-fx-font-size: 13px; -fx-font-weight: bold; -fx-cursor: hand; " +
-                      "-fx-background-radius: 5px; -fx-border-color: #3949ab; -fx-border-radius: 5px;");
-        
-        return button;
-    }
+/**
+ * Helper method to create responsive secondary action buttons - maintains original style
+ */
+private Button createResponsiveSecondaryActionButton(String text, double fontSize, double height) {
+    Button button = new Button(text);
+    button.setPrefHeight(height);
+    button.setMaxWidth(Double.MAX_VALUE);
+    button.setStyle(String.format("-fx-background-color: white; -fx-text-fill: #3949ab; " +
+                   "-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-cursor: hand; " +
+                   "-fx-background-radius: 5px; -fx-border-color: #3949ab; -fx-border-radius: 5px;", fontSize));
+    
+    return button;
+}
     /**
      * Creates a styled action button for quick actions
      */
@@ -1059,14 +1073,25 @@ private VBox createCheckoutPanel() {
     boolean found = false;
     for (Product item : cartItems) {
         if (item.getBarcode().equals(newItem.getBarcode())) {
+            // Check available stock
+            if (item.getQuantity() + 1 > newItem.getQuantity()) {
+                showAlert("Out of Stock", "Cannot add more. Only " + newItem.getQuantity() + " available in stock.");
+                return;
+            }
+
             item.setQuantity(item.getQuantity() + 1);
             item.updateTotal();
             found = true;
             break;
         }
     }
-
     if (!found) {
+        if (newItem.getQuantity() < 1) {
+            showAlert("Out of Stock", "This product is currently out of stock.");
+            return;
+        }
+        newItem.setQuantity(1);
+        newItem.updateTotal();
         cartItems.add(newItem);
     }
 
@@ -1155,8 +1180,6 @@ private void updateTotals() {
 
     updateChangeCalculation();
 }
-
-
 /**
  * Updates the change calculation and payment button state
  */
@@ -1182,6 +1205,7 @@ private void updateChangeCalculation() {
     // Enable/disable process payment button based on whether customer has provided enough cash
     boolean isSufficientPayment = cashAmount >= totalAmount && totalAmount > 0;
     processPaymentButton.setDisable(!isSufficientPayment);
+    doneButton.setDisable(!isSufficientPayment);
     
     // Optionally change the button style when disabled
     if (isSufficientPayment) {
@@ -1281,12 +1305,23 @@ private void updateChangeCalculation() {
             return;
         }        
         // Show payment processing feedback
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setTitle("Payment Processing");
-        alert.setHeaderText("Processing Payment");
-        alert.setContentText("Processing " + selectedPaymentMethod + " payment for " + 
-                          formatCurrency(totalAmount) + "...");
-        alert.showAndWait();
+       Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
+       confirmAlert.setTitle("Confirm Payment");
+       confirmAlert.setHeaderText("Proceed with Payment?");
+       confirmAlert.setContentText("Do you want to continue with " 
+       + selectedPaymentMethod + " payment for " + formatCurrency(totalAmount) + "?");
+
+       ButtonType okButton = new ButtonType("Proceed", ButtonBar.ButtonData.OK_DONE);
+       ButtonType cancelButton = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+
+       confirmAlert.getButtonTypes().setAll(okButton, cancelButton);
+
+       Optional<ButtonType> result = confirmAlert.showAndWait();
+       if (result.isEmpty() || result.get() == cancelButton) {
+       System.out.println("❌ Payment cancelled by user.");
+       return;
+       }
+
         
         String invoiceNumber = generateNewReceiptNumber();
         String buyerAuthorizationCode = buyerAuthField.getText().trim();
@@ -1437,28 +1472,39 @@ private void updateChangeCalculation() {
        tinField.clear();
        buyerAuthField.clear();
        customerNamesField.clear();
-       updateTotals();
        receiptNumberLabel.setText(generateNewReceiptNumber());
+       updateTotals();
     }
     
     /**
       * Generates a new receipt number
     */
-    public String generateNewReceiptNumber() {
+    /**
+ * Generates a new receipt number
+ */
+public String generateNewReceiptNumber() {
     long taxpayerId = Helper.getTaxpayerId();
     int terminalPosition = Helper.getTerminalPosition();
     LocalDate transactionDate = LocalDate.now();
-    long transactionCount = 0;
+    long transactionCount = 1;
 
     InvoiceDetails lastDetails = Helper.getLastInvoiceDetails();
 
     if (lastDetails != null) {
-        
-            transactionCount = Helper.convertSequentialToBase10(lastDetails.getInvoiceNumber()) + 1;      
+        LocalDate lastDate = lastDetails.getInvoiceDateTime().toLocalDate();
+
+        // If last invoice is from today, continue counting
+        if (lastDate.equals(transactionDate)) {
+            transactionCount = Helper.convertSequentialToBase10(lastDetails.getInvoiceNumber()) + 1;
+        } else {
+            // new day → reset to 1
+            transactionCount = 1;
+        }
     }
 
     return Helper.generateReceiptNumber(taxpayerId, terminalPosition, transactionDate, transactionCount);
 }
+
 
 private void applyDiscount() {
     // Check if we have items in the cart
@@ -3657,6 +3703,317 @@ private void clearNote() {
 // Method to get the current note (for use in receipt generation or transaction saving)
 public String getTransactionNote() {
     return transactionNote;
+}
+
+private VBox createCashAmountSection() {
+    VBox cashAmountBox = new VBox(8);
+    Label cashAmountLabel = new Label("Cash Amount");
+    cashAmountLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #424242;");
+    
+    // Create HBox to hold the text field and number pad button - FIXED ALIGNMENT
+    HBox cashInputBox = new HBox(8); // Increased spacing for better look
+    cashInputBox.setAlignment(Pos.CENTER_LEFT); // Ensure proper alignment
+    
+    // Cash amount field
+    cashAmountField = new TextField();
+    cashAmountField.setPromptText("Enter amount");
+    cashAmountField.setPrefHeight(40);
+    cashAmountField.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+                          "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;");
+    
+    // Number pad button - FIXED SIZE AND STYLE
+    Button numberPadButton = new Button("🔢");
+    numberPadButton.setPrefHeight(40);
+    numberPadButton.setPrefWidth(45); // Slightly smaller for better proportion
+    numberPadButton.setMinWidth(45);
+    numberPadButton.setMaxWidth(45);
+    numberPadButton.setStyle("-fx-background-color: #2196f3; -fx-text-fill: white; " +
+                            "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: hand; " +
+                            "-fx-background-radius: 5px; -fx-border-radius: 5px;");
+    
+    // Hover effects
+    numberPadButton.setOnMouseEntered(e -> 
+        numberPadButton.setStyle("-fx-background-color: #1976d2; -fx-text-fill: white; " +
+                               "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: hand; " +
+                               "-fx-background-radius: 5px; -fx-border-radius: 5px;")
+    );
+    
+    numberPadButton.setOnMouseExited(e -> 
+        numberPadButton.setStyle("-fx-background-color: #2196f3; -fx-text-fill: white; " +
+                               "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: hand; " +
+                               "-fx-background-radius: 5px; -fx-border-radius: 5px;")
+    );
+    
+    numberPadButton.setOnAction(e -> {
+        activeField = cashAmountField;
+        showNumberPadDialog();
+    });
+    
+    // Add field and button to HBox - FIELD TAKES REMAINING SPACE
+    cashInputBox.getChildren().addAll(cashAmountField, numberPadButton);
+    HBox.setHgrow(cashAmountField, Priority.ALWAYS); // Field takes available space
+    HBox.setHgrow(numberPadButton, Priority.NEVER);  // Button stays fixed size
+    
+    // Validation listener
+    cashAmountField.textProperty().addListener((observable, oldValue, newValue) -> {
+        if (!newValue.matches("\\d*\\.?\\d*")) {
+            cashAmountField.setText(oldValue);
+        } else {
+            updateChangeCalculation();
+        }
+    });
+    
+    // Change display
+    Label changeLabel = new Label("Change:");
+    changeLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #424242;");
+    
+    changeValueLabel = new Label(formatCurrency(0.0));
+    changeValueLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #009688;");
+    
+    HBox changeBox = new HBox(10);
+    changeBox.setAlignment(Pos.CENTER_LEFT);
+    Region spacer = new Region();
+    HBox.setHgrow(spacer, Priority.ALWAYS);
+    changeBox.getChildren().addAll(spacer, changeLabel, changeValueLabel);
+    
+    // Add all components
+    cashAmountBox.getChildren().addAll(cashAmountLabel, cashInputBox, changeBox);
+    return cashAmountBox;
+}
+
+/**
+ * STEP 3: Shows the number pad dialog - FIXED CENTERING
+ */
+private void showNumberPadDialog() {
+    if (numberPadDialog != null && numberPadDialog.isShowing()) {
+        numberPadDialog.toFront();
+        updateDisplayField();
+        return;
+    }
+    
+    createNumberPadDialog();
+    
+    // FIXED CENTERING - Center the dialog on the screen
+    if (activeField != null && activeField.getScene() != null) {
+        Stage primaryStage = (Stage) activeField.getScene().getWindow();
+        
+        // Show dialog first to get its dimensions
+        numberPadDialog.show();
+        
+        // Center on primary stage
+        double centerX = primaryStage.getX() + (primaryStage.getWidth() / 2) - (numberPadDialog.getWidth() / 2);
+        double centerY = primaryStage.getY() + (primaryStage.getHeight() / 2) - (numberPadDialog.getHeight() / 2);
+        
+        numberPadDialog.setX(centerX);
+        numberPadDialog.setY(centerY);
+    } else {
+        numberPadDialog.show();
+        // Fallback - center on screen
+        numberPadDialog.centerOnScreen();
+    }
+}
+
+/**
+ * STEP 4: Creates the number pad dialog - FIXED WIDTH AND WHITE BUTTONS
+ */
+private void createNumberPadDialog() {
+    numberPadDialog = new Stage();
+    numberPadDialog.initModality(Modality.NONE);
+    numberPadDialog.setTitle("POS Number Pad");
+    numberPadDialog.setResizable(false);
+    numberPadDialog.setAlwaysOnTop(true);
+    
+    // FIXED DIALOG CONTENT - INCREASED WIDTH
+    VBox dialogContent = new VBox(20);
+    dialogContent.setPadding(new Insets(25));
+    dialogContent.setStyle("-fx-background-color: #f5f5f5; " +
+                          "-fx-background-radius: 10px; -fx-border-color: #ddd; " +
+                          "-fx-border-width: 2px; -fx-border-radius: 10px;");
+    dialogContent.setPrefWidth(400); // INCREASED WIDTH
+    dialogContent.setMinWidth(400);
+    
+    // Header
+    HBox titleBar = new HBox();
+    titleBar.setAlignment(Pos.CENTER_LEFT);
+    titleBar.setPadding(new Insets(15, 20, 15, 20));
+    titleBar.setStyle("-fx-background-color: #2196f3; -fx-background-radius: 8px;");
+    
+    Label titleLabel = new Label("CASH AMOUNT ENTRY");
+    titleLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: white;");
+    
+    Region titleSpacer = new Region();
+    HBox.setHgrow(titleSpacer, Priority.ALWAYS);
+    
+    Button closeButton = new Button("✕");
+    closeButton.setStyle("-fx-background-color: #f44336; -fx-text-fill: white; " +
+                        "-fx-font-size: 16px; -fx-font-weight: bold; " +
+                        "-fx-pref-width: 35px; -fx-pref-height: 35px; " +
+                        "-fx-background-radius: 50%; -fx-cursor: hand;");
+    closeButton.setOnAction(e -> numberPadDialog.hide());
+    
+    titleBar.getChildren().addAll(titleLabel, titleSpacer, closeButton);
+    
+    // Display field
+    TextField displayField = new TextField();
+    displayField.setId("displayField");
+    displayField.setEditable(false);
+    displayField.setPrefHeight(60);
+    displayField.setStyle("-fx-background-color: #000; -fx-border-color: #4caf50; " +
+                         "-fx-border-width: 2px; -fx-border-radius: 8px; " +
+                         "-fx-text-fill: #4caf50; -fx-font-size: 24px; -fx-font-weight: bold; " +
+                         "-fx-font-family: 'Courier New', monospace; -fx-alignment: center-right;");
+    
+    updateDisplayField();
+    
+    // FIXED NUMBER PAD GRID - WIDER BUTTONS
+    GridPane buttonGrid = new GridPane();
+    buttonGrid.setHgap(15); // Increased spacing
+    buttonGrid.setVgap(15);
+    buttonGrid.setAlignment(Pos.CENTER);
+    
+    // Number buttons layout (7-9, 4-6, 1-3)
+    int[][] layout = {{7, 8, 9}, {4, 5, 6}, {1, 2, 3}};
+    
+    for (int row = 0; row < 3; row++) {
+        for (int col = 0; col < 3; col++) {
+            Button numberButton = createWhiteNumberButton(String.valueOf(layout[row][col]));
+            buttonGrid.add(numberButton, col, row);
+        }
+    }
+    
+    // Bottom row: CLEAR, 0, DECIMAL
+    Button clearButton = new Button("CLEAR");
+    clearButton.setPrefSize(110, 60); // WIDER BUTTONS
+    clearButton.setStyle("-fx-background-color: white; -fx-text-fill: #f44336; " +
+                        "-fx-font-size: 14px; -fx-font-weight: bold; " +
+                        "-fx-border-color: #f44336; -fx-border-width: 2px; " +
+                        "-fx-background-radius: 8px; -fx-border-radius: 8px; -fx-cursor: hand;");
+    clearButton.setOnAction(e -> {
+        clearActiveField();
+        updateDisplayField();
+    });
+    addWhiteButtonHoverEffect(clearButton, "#f44336");
+    
+    Button zeroButton = createWhiteNumberButton("0");
+    Button decimalButton = createWhiteNumberButton(".");
+    
+    buttonGrid.add(clearButton, 0, 3);
+    buttonGrid.add(zeroButton, 1, 3);
+    buttonGrid.add(decimalButton, 2, 3);
+    
+    // Action buttons
+    HBox actionButtons = new HBox(15);
+    actionButtons.setAlignment(Pos.CENTER);
+    
+    Button backspaceButton = new Button("⌫ DELETE");
+    backspaceButton.setPrefSize(170, 50); // WIDER BUTTONS
+    backspaceButton.setStyle("-fx-background-color: white; -fx-text-fill: #ff9800; " +
+                            "-fx-font-size: 14px; -fx-font-weight: bold; " +
+                            "-fx-border-color: #ff9800; -fx-border-width: 2px; " +
+                            "-fx-background-radius: 8px; -fx-border-radius: 8px; -fx-cursor: hand;");
+    backspaceButton.setOnAction(e -> {
+        backspaceActiveField();
+        updateDisplayField();
+    });
+    addWhiteButtonHoverEffect(backspaceButton, "#ff9800");
+    
+    doneButton = new Button("✓ PROCESS PAYMENT");
+    doneButton.setPrefSize(200, 50); // WIDER BUTTONS
+    doneButton.setStyle("-fx-background-color: white; -fx-text-fill: #4caf50; " +
+                       "-fx-font-size: 14px; -fx-font-weight: bold; " +
+                       "-fx-border-color: #4caf50; -fx-border-width: 2px; " +
+                       "-fx-background-radius: 8px; -fx-border-radius: 8px; -fx-cursor: hand;");
+    doneButton.setOnAction(e -> {
+    processPayment();
+    numberPadDialog.hide();
+});
+     doneButton.setDisable(true);
+
+    addWhiteButtonHoverEffect(doneButton, "#4caf50");
+    
+    actionButtons.getChildren().addAll(backspaceButton, doneButton);
+    
+    // Add all components
+    dialogContent.getChildren().addAll(titleBar, displayField, buttonGrid, actionButtons);
+    
+    Scene scene = new Scene(dialogContent);
+    numberPadDialog.setScene(scene);
+}
+
+/**
+ * STEP 5: Creates white number buttons
+ */
+private Button createWhiteNumberButton(String text) {
+    Button button = new Button(text);
+    button.setPrefSize(110, 60); // WIDER BUTTONS
+    button.setStyle("-fx-background-color: white; -fx-text-fill: #333; " +
+                   "-fx-font-size: 20px; -fx-font-weight: bold; " +
+                   "-fx-border-color: #ddd; -fx-border-width: 2px; " +
+                   "-fx-background-radius: 8px; -fx-border-radius: 8px; -fx-cursor: hand;");
+    
+    button.setOnAction(e -> {
+        appendToActiveField(text);
+        updateDisplayField();
+    });
+    
+    addWhiteButtonHoverEffect(button, "#2196f3");
+    return button;
+}
+
+/**
+ * STEP 6: White button hover effects
+ */
+private void addWhiteButtonHoverEffect(Button button, String hoverColor) {
+    String originalStyle = button.getStyle();
+    
+    button.setOnMouseEntered(e -> 
+        button.setStyle("-fx-background-color: " + hoverColor + "; -fx-text-fill: white; " +
+                       "-fx-font-size: " + (button.getText().length() > 3 ? "14px" : "20px") + "; " +
+                       "-fx-font-weight: bold; -fx-background-radius: 8px; -fx-border-radius: 8px; " +
+                       "-fx-cursor: hand; -fx-border-color: " + hoverColor + "; -fx-border-width: 2px;")
+    );
+    
+    button.setOnMouseExited(e -> button.setStyle(originalStyle));
+}
+
+/**
+ * STEP 7: Helper methods (unchanged)
+ */
+private void updateDisplayField() {
+    if (numberPadDialog != null && numberPadDialog.getScene() != null) {
+        TextField displayField = (TextField) numberPadDialog.getScene().lookup("#displayField");
+        if (displayField != null && activeField != null) {
+            displayField.setText(activeField.getText());
+        }
+    }
+}
+
+private void appendToActiveField(String text) {
+    if (activeField != null) {
+        String currentText = activeField.getText();
+        
+        // Prevent multiple decimal points
+        if (text.equals(".") && currentText.contains(".")) {
+            return;
+        }
+        
+        activeField.setText(currentText + text);
+        activeField.positionCaret(activeField.getText().length());
+    }
+}
+
+private void clearActiveField() {
+    if (activeField != null) {
+        activeField.clear();
+    }
+}
+
+private void backspaceActiveField() {
+    if (activeField != null && !activeField.getText().isEmpty()) {
+        String currentText = activeField.getText();
+        activeField.setText(currentText.substring(0, currentText.length() - 1));
+        activeField.positionCaret(activeField.getText().length());
+    }
 }
 
 // Method to check if there's a note

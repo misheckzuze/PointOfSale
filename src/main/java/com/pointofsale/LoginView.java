@@ -192,31 +192,53 @@ public class LoginView extends Application {
         loginForm.setMaxWidth(400);
         loginForm.setAlignment(Pos.CENTER);
         
-        // Username field
+        // Username field with icon
         VBox usernameBox = new VBox(8);
         Label usernameLabel = new Label("Username");
         usernameLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #555555;");
-        
+
+        // Create username icon (using Unicode symbol)
+        Label usernameIcon = new Label("👤");
+        usernameIcon.setStyle("-fx-font-size: 16px; -fx-text-fill: #757575;");
+        usernameIcon.setPadding(new Insets(0, 0, 0, 8));
+
         usernameField = new TextField();
         usernameField.setPromptText("Enter your username");
         usernameField.setPrefHeight(40);
+        usernameField.setPadding(new Insets(0, 0, 0, 30)); // Add left padding for icon
         usernameField.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
                               "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: #f8f8f8;");
+
+        // Stack the icon over the text field
+        StackPane usernameStack = new StackPane();
+        usernameStack.getChildren().addAll(usernameField, usernameIcon);
+        StackPane.setAlignment(usernameIcon, Pos.CENTER_LEFT);
+
+        usernameBox.getChildren().addAll(usernameLabel, usernameStack);
         
-        usernameBox.getChildren().addAll(usernameLabel, usernameField);
-        
-        // Password field
+        // Password field with icon
         VBox passwordBox = new VBox(8);
         Label passwordLabel = new Label("Password");
         passwordLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #555555;");
-        
+
+        // Create password icon (using Unicode symbol)
+        Label passwordIcon = new Label("🔒");
+        passwordIcon.setStyle("-fx-font-size: 16px; -fx-text-fill: #757575;");
+        passwordIcon.setPadding(new Insets(0, 0, 0, 8));
+
         passwordField = new PasswordField();
         passwordField.setPromptText("Enter your password");
         passwordField.setPrefHeight(40);
+        passwordField.setPadding(new Insets(0, 0, 0, 30)); // Add left padding for icon
         passwordField.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
                               "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: #f8f8f8;");
-        
-        passwordBox.getChildren().addAll(passwordLabel, passwordField);
+
+        // Stack the icon over the password field
+        StackPane passwordStack = new StackPane();
+        passwordStack.getChildren().addAll(passwordField, passwordIcon);
+        StackPane.setAlignment(passwordIcon, Pos.CENTER_LEFT);
+
+        passwordBox.getChildren().addAll(passwordLabel, passwordStack);
         
         // Remember me checkbox and forgot password link
         HBox optionsBox = new HBox();

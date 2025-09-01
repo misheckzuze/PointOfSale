@@ -12,6 +12,10 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.collections.transformation.FilteredList;
 import javafx.geometry.Insets;
+import com.pointofsale.model.InvoiceHeader;
+import com.pointofsale.model.LineItemDto;
+import com.pointofsale.model.TerminalContactInfo;
+import com.pointofsale.model.TaxBreakDown;
 import com.pointofsale.helper.Helper;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -20,17 +24,27 @@ import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
+import com.google.zxing.*;
+import com.google.zxing.qrcode.QRCodeWriter;
+import javafx.embed.swing.SwingFXUtils;
+import javafx.scene.image.ImageView;
+import javafx.scene.image.WritableImage;
+import java.awt.image.BufferedImage;
+import java.util.Map;
+import java.util.HashMap;
 import javafx.scene.shape.Circle;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
 import javafx.util.Callback;
 import java.text.NumberFormat;
+import com.google.zxing.common.BitMatrix;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.List;
 import java.util.function.Predicate;
 
 public class TransactionsView {
@@ -346,54 +360,63 @@ actionCol.setCellFactory(createActionCellFactory());
         return tableSection;
     }
     
-    private Callback<TableColumn<InvoiceDetails, Void>, TableCell<InvoiceDetails, Void>> createActionCellFactory() {
-        return new Callback<>() {
-            @Override
-            public TableCell<InvoiceDetails, Void> call(final TableColumn<InvoiceDetails, Void> param) {
-                return new TableCell<>() {
-                    private final Button viewButton = new Button("View");
-                    private final Button syncButton = new Button("Sync");
-                    private final HBox buttonBox = new HBox(5);
+    // Updated createActionCellFactory method
+private Callback<TableColumn<InvoiceDetails, Void>, TableCell<InvoiceDetails, Void>> createActionCellFactory() {
+    return new Callback<>() {
+        @Override
+        public TableCell<InvoiceDetails, Void> call(final TableColumn<InvoiceDetails, Void> param) {
+            return new TableCell<>() {
+                private final Button viewButton = new Button("View");
+                private final Button previewButton = new Button("Preview");
+                private final Button syncButton = new Button("Sync");
+                private final HBox buttonBox = new HBox(5);
+                
+                {
+                    viewButton.setStyle("-fx-background-color: #3949ab; -fx-text-fill: white; -fx-cursor: hand; " +
+                                  "-fx-background-radius: 3px; -fx-font-size: 12px;");
+                    viewButton.setOnAction(event -> {
+                        InvoiceDetails invoice = getTableView().getItems().get(getIndex());
+                        viewTransaction(invoice);
+                    });
                     
-                    {
-                        viewButton.setStyle("-fx-background-color: #3949ab; -fx-text-fill: white; -fx-cursor: hand; " +
-                                      "-fx-background-radius: 3px; -fx-font-size: 12px;");
-                        viewButton.setOnAction(event -> {
-                            InvoiceDetails invoice = getTableView().getItems().get(getIndex());
-                            viewTransaction(invoice);
-                        });
-                        
-                        syncButton.setStyle("-fx-background-color: #ff8f00; -fx-text-fill: white; -fx-cursor: hand; " +
-                                      "-fx-background-radius: 3px; -fx-font-size: 12px;");
-                        syncButton.setOnAction(event -> {
-                            InvoiceDetails invoice = getTableView().getItems().get(getIndex());
-                            syncTransaction(invoice);
-                        });
-                        
-                        buttonBox.setAlignment(Pos.CENTER_LEFT);
-                    }
+                    previewButton.setStyle("-fx-background-color: #00796b; -fx-text-fill: white; -fx-cursor: hand; " +
+                                     "-fx-background-radius: 3px; -fx-font-size: 12px;");
+                    previewButton.setOnAction(event -> {
+                        InvoiceDetails invoice = getTableView().getItems().get(getIndex());
+                        previewReceipt(invoice);
+                    });
                     
-                    @Override
-                    protected void updateItem(Void item, boolean empty) {
-                        super.updateItem(item, empty);
-                        if (empty) {
-                            setGraphic(null);
-                        } else {
-                            buttonBox.getChildren().clear();
-                            buttonBox.getChildren().add(viewButton);
-                            
-                            InvoiceDetails invoice = getTableView().getItems().get(getIndex());
-                            if (!invoice.isTransmitted()) {
-                                buttonBox.getChildren().add(syncButton);
-                            }
-                            
-                            setGraphic(buttonBox);
+                    syncButton.setStyle("-fx-background-color: #ff8f00; -fx-text-fill: white; -fx-cursor: hand; " +
+                                  "-fx-background-radius: 3px; -fx-font-size: 12px;");
+                    syncButton.setOnAction(event -> {
+                        InvoiceDetails invoice = getTableView().getItems().get(getIndex());
+                        syncTransaction(invoice);
+                    });
+                    
+                    buttonBox.setAlignment(Pos.CENTER_LEFT);
+                }
+                
+                @Override
+                protected void updateItem(Void item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (empty) {
+                        setGraphic(null);
+                    } else {
+                        buttonBox.getChildren().clear();
+                        buttonBox.getChildren().addAll(viewButton, previewButton);
+                        
+                        InvoiceDetails invoice = getTableView().getItems().get(getIndex());
+                        if (!invoice.isTransmitted()) {
+                            buttonBox.getChildren().add(syncButton);
                         }
+                        
+                        setGraphic(buttonBox);
                     }
-                };
-            }
-        };
-    }
+                }
+            };
+        }
+    };
+}
     
     private HBox createActionsSection() {
         HBox actionsSection = new HBox(10);
@@ -816,6 +839,388 @@ private void syncTransaction(InvoiceDetails invoice) {
             }).start();
         }
     }
+    
+//method to preview receipt
+private void previewReceipt(InvoiceDetails invoice) {
+    Alert previewAlert = new Alert(Alert.AlertType.NONE);
+    previewAlert.setTitle("Receipt Preview");
+    previewAlert.setHeaderText("Receipt for Invoice: " + invoice.getInvoiceNumber());
+    
+    // Create receipt preview content
+    VBox receiptContent = createReceiptPreview(invoice);
+    
+    // Create scroll pane for long receipts
+    ScrollPane scrollPane = new ScrollPane(receiptContent);
+    scrollPane.setFitToWidth(true);
+    scrollPane.setPrefSize(400, 600);
+    scrollPane.setStyle("-fx-background-color: white;");
+    
+    // Create button bar
+    HBox buttonBar = new HBox(10);
+    buttonBar.setAlignment(Pos.CENTER_RIGHT);
+    buttonBar.setPadding(new Insets(10, 0, 0, 0));
+    
+    Button printButton = new Button("Print Receipt");
+    printButton.setStyle("-fx-background-color: #3949ab; -fx-text-fill: white; -fx-font-weight: bold;");
+    printButton.setOnAction(e -> {
+        previewAlert.close();
+        printReceipt(invoice);
+    });
+    
+    Button closeButton = new Button("Close");
+    closeButton.setStyle("-fx-background-color: #757575; -fx-text-fill: white;");
+    closeButton.setOnAction(e -> previewAlert.close());
+    
+    buttonBar.getChildren().addAll(printButton, closeButton);
+    
+    VBox mainContent = new VBox(10);
+    mainContent.getChildren().addAll(scrollPane, buttonBar);
+    mainContent.setPadding(new Insets(10));
+    
+    previewAlert.getDialogPane().setContent(mainContent);
+    
+    // Add a hidden ButtonType to enable the X button
+    ButtonType hiddenClose = new ButtonType("", ButtonBar.ButtonData.CANCEL_CLOSE);
+    previewAlert.getDialogPane().getButtonTypes().add(hiddenClose);
+    
+    // Hide the button but keep the functionality
+    previewAlert.getDialogPane().lookupButton(hiddenClose).setVisible(false);
+    previewAlert.getDialogPane().lookupButton(hiddenClose).setManaged(false);
+    
+     previewAlert.showAndWait();
+}
+    
+// Method to create receipt preview content - matches EscPosReceiptPrinter exactly
+private VBox createReceiptPreview(InvoiceDetails invoice) {
+    VBox receiptBox = new VBox();
+    receiptBox.setStyle("-fx-background-color: white; -fx-padding: 20px; -fx-border-color: #e0e0e0; -fx-border-width: 1px;");
+    receiptBox.setAlignment(Pos.TOP_CENTER);
+    receiptBox.setSpacing(0); // No spacing to match thermal printer
+    
+    // Get terminal contact info and company details (same as EscPosReceiptPrinter)
+    TerminalContactInfo contact = Helper.getTerminalContactInfo();
+    String tin = Helper.getTin();
+    String companyName = Helper.getTrading();
+    String storeEmail = contact.email;
+    String storeAddress = contact.addressLine;
+    String storePhone = contact.phone;
+    String vatStatus = Helper.isVATRegistered() ? "*VAT REGISTERED*" : "*NOT VAT REGISTERED*";
+    
+    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    String currentDateTime = LocalDateTime.now().format(formatter);
+    
+    // Get line items and tax breakdowns
+    List<LineItemDto> lineItems = Helper.getLineItems(invoice.getInvoiceNumber());
+    List<TaxBreakDown> taxBreakdowns = Helper.generateTaxBreakdown(lineItems);
+    String buyersName = invoice.getBuyerTin() != null && !invoice.getBuyerTin().isEmpty() ? 
+                      invoice.getBuyerTin() : "Walk-in Customer";
+    String buyersTIN = invoice.getBuyerTin() != null ? invoice.getBuyerTin() : "";
+    String validationUrl = invoice.getValidationUrl() != null ? invoice.getValidationUrl() : "";
+    
+    // Match the exact structure from EscPosReceiptPrinter
+    
+    // Empty line (from ESC_INIT + LF)
+    receiptBox.getChildren().add(createReceiptLabel(""));
+    
+    // Legal Receipt Start Marker (CENTER + EMPHASIZED)
+    receiptBox.getChildren().add(createBoldReceiptLabel("*** START OF LEGAL RECEIPT ***"));
+    receiptBox.getChildren().add(createReceiptLabel(""));
+    receiptBox.getChildren().add(createReceiptLabel(""));
+    
+    // Company Header Block (EMPHASIZED + DOUBLE_SIZE equivalent)
+    Label companyLabel = new Label(companyName);
+    companyLabel.setStyle("-fx-font-family: 'Courier New'; -fx-font-weight: bold; -fx-font-size: 16px; -fx-alignment: center;");
+    receiptBox.getChildren().add(companyLabel);
+    
+    // Store information (all centered)
+    receiptBox.getChildren().add(createReceiptLabel(storeAddress));
+    receiptBox.getChildren().add(createReceiptLabel("Tel: " + storePhone));
+    receiptBox.getChildren().add(createReceiptLabel("E-MAIL: " + storeEmail));
+    receiptBox.getChildren().add(createReceiptLabel("TIN: " + tin));
+    receiptBox.getChildren().add(createReceiptLabel(vatStatus));
+    receiptBox.getChildren().add(createReceiptLabel(""));
+    receiptBox.getChildren().add(createReceiptLabel(""));
+    
+    // Receipt Title (EMPHASIZED)
+    receiptBox.getChildren().add(createBoldReceiptLabel("*** TAX INVOICE ***"));
+    
+    // Pretty border
+    receiptBox.getChildren().add(createDividerLabel());
+    
+    // Transaction Details - left-right aligned (matching printFormattedLine)
+    receiptBox.getChildren().add(createReceiptLine("Receipt#", invoice.getInvoiceNumber()));
+    receiptBox.getChildren().add(createReceiptLine("Date", currentDateTime));
+    receiptBox.getChildren().add(createReceiptLine("Customer", buyersName));
+    receiptBox.getChildren().add(createReceiptLine("Buyer TIN", buyersTIN));
+    
+    // Divider before items
+    receiptBox.getChildren().add(createDividerLabel());
+    
+    // Line items with exact formatting from EscPosReceiptPrinter
+    for (LineItemDto item : lineItems) {
+        // Item description (full name, left aligned)
+        receiptBox.getChildren().add(createLeftAlignedLabel(item.getDescription()));
+        
+        // Quantity * Unit Price and Total Amount with tax rate
+        String quantityPrice = String.format("%s X %s", 
+            item.getQuantity(),
+            formatCurrency(item.getUnitPrice())
+        );
+        String totalAmount = formatCurrency(item.getQuantity() * item.getUnitPrice());
+        String taxRateDisplay = Helper.isVATRegistered() ? totalAmount + " " + item.getTaxRateId() : totalAmount;
+        
+        receiptBox.getChildren().add(createReceiptLine(quantityPrice, taxRateDisplay));
+    }
+    
+    // Divider before totals
+    receiptBox.getChildren().add(createDividerLabel());
+    
+    // Calculate totals (exact same logic as EscPosReceiptPrinter)
+    double totalVAT = 0;
+    double subtotal = 0;
+    
+    if (Helper.isVATRegistered()) {
+        totalVAT = taxBreakdowns.stream().mapToDouble(TaxBreakDown::getTaxAmount).sum();
+        subtotal = taxBreakdowns.stream().mapToDouble(TaxBreakDown::getTaxableAmount).sum();
+    } else {
+        subtotal = taxBreakdowns.stream().mapToDouble(TaxBreakDown::getTaxableAmount).sum();
+        totalVAT = 0;
+    }
+    
+    double invoiceTotal = subtotal + totalVAT;
+    
+    // Print totals with left-right alignment
+    receiptBox.getChildren().add(createReceiptLine("Subtotal", formatCurrency(subtotal)));
+    
+    if (Helper.isVATRegistered()) {
+        // Tax breakdowns - print only if VAT registered
+        for (TaxBreakDown tax : taxBreakdowns) {
+            String taxRateStr = String.valueOf(Helper.getTaxRateById(tax.getRateId()));
+            String label = String.format("VAT %s - %s%%", tax.getRateId(), taxRateStr);
+            receiptBox.getChildren().add(createReceiptLine(label, formatCurrency(tax.getTaxAmount())));
+        }
+    }
+    
+    // Total, emphasized
+    receiptBox.getChildren().add(createBoldReceiptLine("TOTAL", formatCurrency(invoiceTotal)));
+    
+    // Payment information (simplified - using invoice total as amount tendered)
+    receiptBox.getChildren().add(createReceiptLine("Amount Paid", formatCurrency(invoiceTotal)));
+    
+    // Change only if > 0 (assuming no change for existing invoices)
+    double change = 0.0;
+    if (change > 0) {
+        receiptBox.getChildren().add(createReceiptLine("Change", formatCurrency(change)));
+    }
+    
+    receiptBox.getChildren().add(createReceiptLabel(""));
+    
+    // Validation section
+    receiptBox.getChildren().add(createDividerLabel());
+    receiptBox.getChildren().add(createBoldReceiptLabel("*** VALIDATE YOUR RECEIPT ***"));
+    
+    // QR Code
+    printQRCode(receiptBox, validationUrl);
+    
+    // Footer
+    receiptBox.getChildren().add(createReceiptLabel(""));
+    receiptBox.getChildren().add(createDividerLabel());
+    receiptBox.getChildren().add(createBoldReceiptLabel("*** THANK YOU FOR YOUR BUSINESS ***"));
+    receiptBox.getChildren().add(createReceiptLabel("Keep this receipt for your records"));
+    receiptBox.getChildren().add(createReceiptLabel(""));
+    receiptBox.getChildren().add(createReceiptLabel(""));
+    
+    // Legal Receipt End Marker
+    receiptBox.getChildren().add(createBoldReceiptLabel("*** END OF LEGAL RECEIPT ***"));
+    receiptBox.getChildren().add(createReceiptLabel(""));
+    receiptBox.getChildren().add(createReceiptLabel(""));
+    receiptBox.getChildren().add(createReceiptLabel(""));
+    
+    return receiptBox;
+}
+
+/**
+ * Prints QR code for JavaFX receipt preview - matches thermal printer structure exactly
+ */
+private void printQRCode(VBox receiptBox, String data) {  
+    try {
+        // Make sure data isn't too long for QR code
+        String qrData = data.length() > 300 ? data.substring(0, 300) : data;
+        
+        // Center the QR code (equivalent to output.write(ESC_ALIGN_CENTER))
+        
+        // Clear QR code buffer (equivalent to ESC/POS command)
+        
+        // Set QR code model (equivalent to ESC/POS command)
+        
+        // Set QR code size (1-16), bigger numbers = larger QR code
+        byte qrSize = 4; // Larger size for better scanning
+        
+        // Set error correction level (48 = L, 49 = M, 50 = Q, 51 = H)
+        byte errorCorrectionLevel = 51; // H level = highest error correction
+        
+        // Store QR code data (equivalent to ESC/POS data storage)
+        
+        // Generate and display QR code (equivalent to Print QR code command)
+        BufferedImage qrImage = generateQRCodeImage(qrData, qrSize, errorCorrectionLevel);
+        
+        if (qrImage != null) {
+            // Convert BufferedImage to JavaFX Image
+            WritableImage fxImage = SwingFXUtils.toFXImage(qrImage, null);
+            
+            // Create ImageView to display the QR code
+            ImageView qrImageView = new ImageView(fxImage);
+            qrImageView.setFitWidth(120);
+            qrImageView.setFitHeight(120);
+            qrImageView.setPreserveRatio(true);
+            
+            receiptBox.getChildren().add(qrImageView);
+        } else {
+            throw new Exception("QR code generation failed");
+        }
+        
+    } catch (Exception e) {
+        // If QR code fails, write a message (matches thermal printer exactly)
+        receiptBox.getChildren().add(createReceiptLabel(""));
+        receiptBox.getChildren().add(createReceiptLabel("(QR Code Unavailable)"));
+        receiptBox.getChildren().add(createReceiptLabel(""));
+    }
+}
+
+/**
+ * Generate QR code image using ZXing - uses same parameters as thermal printer
+ */
+private BufferedImage generateQRCodeImage(String data, byte qrSize, byte errorCorrectionLevel) {
+    try {
+        QRCodeWriter qrCodeWriter = new QRCodeWriter();
+        
+        // Map error correction level from thermal printer values
+        com.google.zxing.qrcode.decoder.ErrorCorrectionLevel ecLevel;
+        switch (errorCorrectionLevel) {
+            case 48: ecLevel = com.google.zxing.qrcode.decoder.ErrorCorrectionLevel.L; break; // L
+            case 49: ecLevel = com.google.zxing.qrcode.decoder.ErrorCorrectionLevel.M; break; // M
+            case 50: ecLevel = com.google.zxing.qrcode.decoder.ErrorCorrectionLevel.Q; break; // Q
+            case 51: default: ecLevel = com.google.zxing.qrcode.decoder.ErrorCorrectionLevel.H; break; // H
+        }
+        
+        // Calculate size based on qrSize parameter (similar to thermal printer scaling)
+        int imageSize = Math.max(100, qrSize * 25);
+        
+        Map<EncodeHintType, Object> hints = new HashMap<>();
+        hints.put(EncodeHintType.ERROR_CORRECTION, ecLevel);
+        hints.put(EncodeHintType.MARGIN, 1);
+        
+        BitMatrix bitMatrix = qrCodeWriter.encode(data, BarcodeFormat.QR_CODE, imageSize, imageSize, hints);
+        
+        BufferedImage qrImage = new BufferedImage(imageSize, imageSize, BufferedImage.TYPE_INT_RGB);
+        for (int x = 0; x < imageSize; x++) {
+            for (int y = 0; y < imageSize; y++) {
+                qrImage.setRGB(x, y, bitMatrix.get(x, y) ? 0x000000 : 0xFFFFFF);
+            }
+        }
+        
+        return qrImage;
+        
+    } catch (Exception e) {
+        System.err.println("Failed to generate QR code: " + e.getMessage());
+        return null;
+    }
+}
+
+private Label createBoldReceiptLine(String left, String right) {
+    // Calculate spacing for 48 character width
+    int spacing = Math.max(1, 48 - left.length() - right.length());
+    StringBuilder line = new StringBuilder(left);
+    for (int i = 0; i < spacing; i++) {
+        line.append(" ");
+    }
+    line.append(right);
+    
+    Label label = new Label(line.toString());
+    label.setStyle("-fx-font-family: 'Courier New'; -fx-font-weight: bold; -fx-font-size: 12px; -fx-alignment: center;");
+    return label;
+}
+
+// Helper methods for receipt preview
+private Label createReceiptLabel(String text) {
+    Label label = new Label(text);
+    label.setStyle("-fx-font-family: 'Courier New'; -fx-font-size: 12px;");
+    return label;
+}
+
+private Label createBoldReceiptLabel(String text) {
+    Label label = new Label(text);
+    label.setStyle("-fx-font-family: 'Courier New'; -fx-font-weight: bold; -fx-font-size: 12px;");
+    return label;
+}
+
+private Label createReceiptLine(String left, String right) {
+    // Calculate spacing for 48 character width
+    int spacing = Math.max(1, 48 - left.length() - right.length());
+    StringBuilder line = new StringBuilder(left);
+    for (int i = 0; i < spacing; i++) {
+        line.append(" ");
+    }
+    line.append(right);
+    
+    Label label = new Label(line.toString());
+    label.setStyle("-fx-font-family: 'Courier New'; -fx-font-size: 12px;");
+    return label;
+}
+
+private Label createDividerLabel() {
+    StringBuilder divider = new StringBuilder();
+    for (int i = 0; i < 48; i++) {
+        divider.append("-");
+    }
+    Label label = new Label(divider.toString());
+    label.setStyle("-fx-font-family: 'Courier New'; -fx-font-size: 12px;");
+    return label;
+}
+
+private void printReceipt(InvoiceDetails invoice) {
+    try {
+        // Get all necessary data for printing
+        List<LineItemDto> lineItems = Helper.getLineItems(invoice.getInvoiceNumber());
+        List<TaxBreakDown> taxBreakdowns = Helper.generateTaxBreakdown(lineItems);
+        String validationUrl = invoice.getValidationUrl() != null ? invoice.getValidationUrl() : "";
+        
+        // Create invoice header object
+        InvoiceHeader invoiceHeader = new InvoiceHeader();
+        invoiceHeader.setInvoiceNumber(invoice.getInvoiceNumber());
+        
+        // For simplicity, assuming payment details - you may need to get these from your data
+        double amountTendered = invoice.getInvoiceTotal();
+        double change = 0.0;
+        
+        String buyersName = invoice.getBuyerTin() != null && !invoice.getBuyerTin().isEmpty() ? 
+                          invoice.getBuyerTin() : "Walk-in Customer";
+        String buyersTIN = invoice.getBuyerTin() != null ? invoice.getBuyerTin() : "";
+        
+        // Call the actual print method
+        EscPosReceiptPrinter.printReceipt(
+            invoiceHeader,
+            buyersName,
+            buyersTIN,
+            lineItems,
+            validationUrl,
+            amountTendered,
+            change,
+            taxBreakdowns
+        );
+        
+        showAlert("Print Success", "Receipt printed successfully for " + invoice.getInvoiceNumber());
+        
+    } catch (Exception e) {
+        showAlert("Print Error", "Failed to print receipt: " + e.getMessage());
+    }
+}
+
+private Label createLeftAlignedLabel(String text) {
+    Label label = new Label(text);
+    label.setStyle("-fx-font-family: 'Courier New'; -fx-font-size: 12px; -fx-alignment: center-left;");
+    return label;
+}
     
     private String formatCurrency(double value) {
         NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(Locale.US);

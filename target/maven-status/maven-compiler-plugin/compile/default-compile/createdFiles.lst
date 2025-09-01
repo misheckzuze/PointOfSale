@@ -1,8 +1,10 @@
 com\pointofsale\model\InvoiceHeader.class
 com\pointofsale\ReportsView$5.class
+com\pointofsale\ProductManagement$6$1.class
 com\pointofsale\SystemInfo.class
 com\pointofsale\utils\ApiEndpoints.class
 com\pointofsale\model\InvoicePayload.class
+com\pointofsale\model\PingResponse$ApiError.class
 com\pointofsale\AuditTrailView.class
 com\pointofsale\POSDashboard$3.class
 com\pointofsale\ProductLookupDialog$1.class
@@ -33,6 +35,7 @@ com\pointofsale\model\InvoiceDetails.class
 com\pointofsale\CustomersView$PurchaseRecord.class
 com\pointofsale\POSDashboard$4.class
 com\pointofsale\ReportsView$1.class
+com\pointofsale\ProductManagement$6.class
 com\pointofsale\CustomersView$2.class
 com\pointofsale\LoginView.class
 com\pointofsale\TransactionsView.class
@@ -65,7 +68,6 @@ com\pointofsale\model\InvoiceGenerationRequest.class
 module-info.class
 com\pointofsale\SettingsView.class
 com\pointofsale\helper\ApiClient.class
-com\pointofsale\ProductManagement$5$1.class
 com\pointofsale\model\TaxTrend.class
 com\pointofsale\ReportsView$3.class
 com\pointofsale\POSDashboard$2.class
@@ -74,7 +76,9 @@ com\pointofsale\ProductManagement$4.class
 com\pointofsale\model\ApiError.class
 com\pointofsale\ReportsView$6.class
 com\pointofsale\App.class
+com\pointofsale\model\PingResponse$Data.class
 com\pointofsale\TerminalConfirmationDialog$TerminalInfo.class
+com\pointofsale\model\PingResponse.class
 com\pointofsale\ReportsView$2.class
 com\pointofsale\model\TaxBreakDown.class
 com\pointofsale\AuditLogger.class
