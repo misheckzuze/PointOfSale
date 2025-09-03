@@ -749,7 +749,7 @@ private void checkServerConnection() {
 }
 
     
-// Add User Dialog Implementation - Professional Version
+// Add User Dialog Implementation
 private void addUser() {
     Dialog<User> dialog = new Dialog<>();
     dialog.setTitle("Add New User");
@@ -962,7 +962,7 @@ private void addUser() {
         }
     });
 }
-// Edit User Dialog Implementation - Professional Version
+// Edit User Dialog Implementation
 private void editUser() {
     User selectedUser = usersTable.getSelectionModel().getSelectedItem();
     
@@ -1201,7 +1201,7 @@ private void editUser() {
     });
 }
 
-// Delete User Dialog Implementation - Professional Version
+// Delete User Dialog Implementation
 private void deleteUser() {
     User selectedUser = usersTable.getSelectionModel().getSelectedItem();
     

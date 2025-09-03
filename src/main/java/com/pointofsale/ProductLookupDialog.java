@@ -686,8 +686,8 @@ private VBox createTableArea() {
         // Return the selected product
         return selectedProduct;
     }
-/**
-       * Formats a number as Malawi Kwacha currency
+    /**
+    * Formats a number as Malawi Kwacha currency
     */
     private String formatCurrency(double amount) {
       Locale malawiLocale = new Locale.Builder().setLanguage("en").setRegion("MW").build();

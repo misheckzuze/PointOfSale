@@ -96,12 +96,12 @@ public class LoginView extends Application {
     placeholderLogo.setArcWidth(20);
     placeholderLogo.setArcHeight(20);
     
-    Label logoText = new Label("POS\nSYSTEM");
+    Label logoText = new Label("MQ POS\nSYSTEM");
     logoText.setStyle("-fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: #3949ab;");
     logoText.setAlignment(Pos.CENTER);
     
     StackPane logoStack = new StackPane(placeholderLogo, logoText);
-    sidebar.getChildren().add(logoStack);        
+    sidebar.getChildren().add(logoStack);      
         // Tagline
         Label taglineLabel = new Label("Streamlining Your Business");
         taglineLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: normal; -fx-text-fill: white; -fx-opacity: 0.9;");
@@ -129,7 +129,7 @@ public class LoginView extends Application {
         featuresList.getChildren().addAll(feature1, feature2, feature3, feature4);
         
         // Footer with version info
-        Label versionLabel = new Label("Version 2.5.0");
+        Label versionLabel = new Label("Version 1.0.0");
         versionLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: white; -fx-opacity: 0.6;");
         VBox.setMargin(versionLabel, new Insets(40, 0, 20, 0));
         

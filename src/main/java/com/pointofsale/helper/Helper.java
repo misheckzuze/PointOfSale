@@ -115,7 +115,7 @@ public class Helper {
     }
 
     public static String getAppVersion() {
-        return "EIS_POINTOFSALE_V1";
+        return "MQ_POS_Version_1.0.0";
     }
 
     public static String getOSBuild() {

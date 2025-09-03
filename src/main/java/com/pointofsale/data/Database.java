@@ -6,7 +6,7 @@ import com.pointofsale.helper.Helper;
 
 public class Database {
 
-    private static final String DB_NAME = "EISTerminalDb.db";
+    private static final String DB_NAME = "EISPointOfSaleDb.db";
     private static final String DB_PATH;
 
     static {
@@ -14,7 +14,7 @@ public class Database {
                 .getInputArguments().toString().contains("jdwp");
 
         if (isDevelopment) {
-            DB_PATH = System.getProperty("user.dir") + File.separator + "EISPointOfSaleDesktop" + File.separator + DB_NAME;
+            DB_PATH = System.getProperty("user.dir") + File.separator + "MQPointOfSale" + File.separator + DB_NAME;
         } else {
             DB_PATH = System.getProperty("user.home") + File.separator + "AppData" + File.separator + "Roaming"
                     + File.separator + "POSSetup" + File.separator + DB_NAME;

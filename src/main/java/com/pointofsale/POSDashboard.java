@@ -158,7 +158,7 @@ public class POSDashboard extends Application {
     // Create scene with calculated dimensions
     Scene scene = new Scene(root, windowWidth, windowHeight);
     stage.setScene(scene);
-    stage.setTitle("POS System");
+    stage.setTitle("MQ POS System");
     
     // Always maximize for now during development
     stage.setMaximized(true);
@@ -175,7 +175,7 @@ public class POSDashboard extends Application {
         // Load sales dashboard content
         Node salesContent = createMainContent();
         setContent(salesContent);
-        stage.setTitle("POS System - Sales Dashboard");
+        stage.setTitle("MQ POS System - Sales Dashboard");
     }
     
 private void loadProductsManagement() {
@@ -188,7 +188,7 @@ private void loadProductsManagement() {
     
     // Set the content
     setContent(productsContent);
-    stage.setTitle("POS System - Products Management");
+    stage.setTitle("MQ POS System - Products Management");
 }
 
 private void loadCustomersManagement() {
@@ -201,7 +201,7 @@ private void loadCustomersManagement() {
     
     // Set the content
     setContent(customersContent);
-    stage.setTitle("POS System - Customers Management");
+    stage.setTitle("MQ POS System - Customers Management");
 }
 
 private void loadAuditTrail() {
@@ -214,7 +214,7 @@ private void loadAuditTrail() {
     
     // Set the content
     setContent(auditContent);
-    stage.setTitle("POS System - Audit Trail");
+    stage.setTitle("MQ POS System - Audit Trail");
 }
 
 private void loadSettings() {
@@ -227,7 +227,7 @@ private void loadSettings() {
     
     // Set the content
     setContent(settengsContent );
-    stage.setTitle("POS System - Settings");
+    stage.setTitle("MQ POS System - Settings");
 }
 
 
@@ -241,7 +241,7 @@ private void loadReports() {
     
     // Set the content
     setContent(posReports);
-    stage.setTitle("POS System - Reports");
+    stage.setTitle("MQ POS System - Reports");
 }
 
 private void loadTransactions() {
@@ -254,7 +254,7 @@ private void loadTransactions() {
     
     // Set the content
     setContent(productsContent);
-    stage.setTitle("POS System - Transactions");
+    stage.setTitle("MQ POS System - Transactions");
 }
     
     // Helper method to set content
@@ -449,7 +449,7 @@ private VBox createSidebarHeader() {
     placeholderLogo.setArcWidth(10);
     placeholderLogo.setArcHeight(10);
 
-    Label logoText = new Label("POS");
+    Label logoText = new Label("MQ POS");
     logoText.setStyle("-fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: #3949ab;");
 
     StackPane logoStack = new StackPane(placeholderLogo, logoText);
@@ -637,8 +637,8 @@ private void showAlert(String title, String message) {
         }
     });
 });       
-        // Set action to open the Product Lookup dialog
-        lookupButton.setOnAction(e -> {
+ // Set action to open the Product Lookup dialog
+ lookupButton.setOnAction(e -> {
     ProductLookupDialog lookupDialog = new ProductLookupDialog(stage);
     Product selectedProduct = lookupDialog.showAndSelect();
 

@@ -84,7 +84,7 @@ public class TerminalActivationView extends Application {
         placeholderLogo.setArcWidth(20);
         placeholderLogo.setArcHeight(20);
         
-        Label logoText = new Label("POS\nSYSTEM");
+        Label logoText = new Label("MQ POS\nSYSTEM");
         logoText.setStyle("-fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: " + SECONDARY_COLOR + ";");
         logoText.setAlignment(Pos.CENTER);
         
@@ -117,7 +117,7 @@ public class TerminalActivationView extends Application {
         stepsList.getChildren().addAll(step1, step2, step3, step4);
         
         // Footer with version info
-        Label versionLabel = new Label("Version 2.5.0");
+        Label versionLabel = new Label("Version 1.0.0");
         versionLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: white; -fx-opacity: 0.6;");
         VBox.setMargin(versionLabel, new Insets(40, 0, 20, 0));
         
