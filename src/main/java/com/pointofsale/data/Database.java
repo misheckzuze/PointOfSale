@@ -36,6 +36,7 @@ public class Database {
 
     public static void initializeDatabase() {
         try (Connection conn = connOpen(); Statement stmt = conn.createStatement()) {
+            stmt.execute("PRAGMA foreign_keys = ON;");
 
             // Creating existing tables
             String createProductsTable = "CREATE TABLE IF NOT EXISTS Products (" +
@@ -94,31 +95,26 @@ public class Database {
 
             
             String createTerminalConfigurationTable = "CREATE TABLE IF NOT EXISTS TerminalConfiguration (" +
-                    "TerminalId TEXT PRIMARY KEY, " +
-                    "Label TEXT, " +
-                    "IsActive INTEGER, " +
-                    "Email TEXT, " +
-                    "Phone TEXT, " +
-                    "VersionNo INTEGER NOT NULL, " +
-                    "TradingName TEXT, " +
-                    "AddressLine TEXT)";
+                   "Id INTEGER PRIMARY KEY CHECK (Id = 1), " +  // Single row table
+                   "TerminalId TEXT, " +  // No longer PRIMARY KEY
+                   "Label TEXT, " +
+                   "IsActive INTEGER, " +
+                   "Email TEXT, " +
+                   "Phone TEXT, " +
+                   "VersionNo INTEGER NOT NULL, " +
+                   "TradingName TEXT, " +
+                   "AddressLine TEXT)";
             
             String createInvoiceTaxBreakdownTable = "CREATE TABLE IF NOT EXISTS InvoiceTaxBreakDown (" + 
                     "InvoiceNumber TEXT, " +
                     "RateID TEXT, " +
                     "TaxableAmount REAL, " + 
                     "TaxAmount REAL)";
-            
-            String createPaymentTypeTable = "CREATE TABLE IF NOT EXISTS PaymentType (" + 
-                    "ID INTEGER PRIMARY KEY AUTOINCREMENT, " +
-                    "PaymentId TEXT, " +
-                    "Name TEXT, " +
-                    "AmountPaid REAL)";
                     
             
             String createGloblaConfigurationsTable = "CREATE TABLE IF NOT EXISTS GlobalConfiguration (" +
-                     "Id INTEGER NOT NULL, " +
-                     "VersionNo INTEGER NOT NULL )";
+                     "Id INTEGER PRIMARY KEY, " +  // Changed to PRIMARY KEY
+                     "VersionNo INTEGER NOT NULL)";
             
             String createOfflineLimitTable = "CREATE TABLE IF NOT EXISTS OfflineLimit (" +
                     "TerminalId TEXT PRIMARY KEY, " +
@@ -128,7 +124,7 @@ public class Database {
             
             String createTaxpayerConfigurationTable = "CREATE TABLE IF NOT EXISTS TaxpayerConfiguration (" +
                    "TaxpayerId INTEGER PRIMARY KEY, " +
-                   "TIN TEXT, " +
+                   "TIN TEXT UNIQUE NOT NULL, " +  // Added UNIQUE constraint
                    "IsVATRegistered INTEGER, " +
                    "VersionNo INTEGER NOT NULL, " +
                    "TaxOfficeCode TEXT)";
@@ -176,12 +172,14 @@ public class Database {
                     "Ordinal INTEGER, " +
                     "Rate REAL)";
             
-            String createActivatedTaxRatesTable = "CREATE TABLE IF NOT EXISTS ActivatedTaxRates (" +
-                    "Id INTEGER PRIMARY KEY AUTOINCREMENT," +
-                    "TaxRateId TEXT NOT NULL," +
-                    "TaxpayerTin TEXT NOT NULL," +
-                    "FOREIGN KEY(TaxRateId) REFERENCES TaxRates(Id)," +
-                    "FOREIGN KEY(TaxpayerTin) REFERENCES TaxpayerConfiguration(TIN))";
+            String createActivatedTaxRatesTable =
+                   "CREATE TABLE IF NOT EXISTS ActivatedTaxRates (" +
+                   "Id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                   "TaxType TEXT NOT NULL," + 
+                   "TaxpayerTin TEXT NOT NULL," +
+                   "UNIQUE(TaxType, TaxpayerTin)," + 
+                   "FOREIGN KEY(TaxpayerTin) REFERENCES TaxpayerConfiguration(TIN)" +
+                   ")";
 
 
             String createVoidReceiptRequestsTable = "CREATE TABLE IF NOT EXISTS VoidReceiptRequests (" +
@@ -239,6 +237,23 @@ public class Database {
                    "Action TEXT NOT NULL, " +
                    "Details TEXT, " +
                    "Timestamp TEXT NOT NULL)";
+            
+            String createLeviesTable = "CREATE TABLE IF NOT EXISTS Levies (" +
+                   "Id TEXT PRIMARY KEY, " +
+                   "Name TEXT NOT NULL, " +
+                   "ChargeMode TEXT NOT NULL, " +
+                   "Rate REAL NOT NULL, " +
+                   "IsActive INTEGER NOT NULL" + 
+                   ")";
+            String createInvoiceLeviesTable =
+                   "CREATE TABLE IF NOT EXISTS InvoiceLevies (" +
+                   "Id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                   "InvoiceNumber TEXT NOT NULL, " +
+                   "LevyId TEXT NOT NULL, " +
+                   "LevyAmount REAL NOT NULL, " +
+                   "FOREIGN KEY(InvoiceNumber) REFERENCES Invoices(InvoiceNumber), " +
+                   "FOREIGN KEY(LevyId) REFERENCES Levies(Id)" +
+                   ")";
 
             // Execute all statements
             stmt.execute(createProductsTable);
@@ -257,20 +272,22 @@ public class Database {
             stmt.execute(createActivationCodeTable);
             stmt.execute(createGloblaConfigurationsTable);
             stmt.execute(createInvoiceTaxBreakdownTable);
-            stmt.execute(createPaymentTypeTable);
             stmt.execute(createHeldSalesTable);
             stmt.execute(createCustomersTable);
             stmt.execute(createHeldSaleItemsTable);
             stmt.execute(createSecuritySettingsTable);
             stmt.execute(createAuditLogsTable);
             stmt.execute(createActivatedTaxRatesTable);
+            stmt.execute(createLeviesTable);
+            stmt.execute(createInvoiceLeviesTable);
 
-            System.out.println("✅ All SQLite tables created and initialized at: " + DB_PATH);
+
+            System.out.println("All SQLite tables created and initialized at: " + DB_PATH);
             Helper.insertDefaultAdminIfNotExists(); // ← Insert admin after table creation
 
 
         } catch (SQLException e) {
-            System.out.println("❌ Error initializing database: " + e.getMessage());
+            System.out.println("Error initializing database: " + e.getMessage());
         }
     }
 

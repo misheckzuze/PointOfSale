@@ -167,6 +167,9 @@ output.write(ESC_EMPHASIZE_ON);
 printFormattedLine(output, "TOTAL", formatCurrency(invoiceTotal), 0);
 output.write(ESC_EMPHASIZE_OFF);
 
+//Transaction type
+printFormattedLine(output, "Transaction", invoiceHeader.getPaymentMethod(), 0);
+
 // Payment information
 printFormattedLine(output, "Amount Paid", formatCurrency(amountTendered), 0);
 

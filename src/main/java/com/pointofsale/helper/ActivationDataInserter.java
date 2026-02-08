@@ -32,7 +32,7 @@ public class ActivationDataInserter {
                 stmt.setString(2, siteName);
                 stmt.setString(3, ""); // No location info in response
                 stmt.executeUpdate();
-                System.out.println("✅ Inserted TerminalSite: " + siteId);
+                System.out.println("Inserted TerminalSite: " + siteId);
             }
             
             //===GlobalConfiguration===
@@ -77,6 +77,39 @@ public class ActivationDataInserter {
                 stmt.executeBatch();
                 System.out.println("✅ Inserted TaxRates");
             }
+            
+            // === Activated Levies ===
+            JsonArray activatedLevies = data
+                 .getJsonObject("configuration")
+                 .getJsonObject("taxpayerConfiguration")
+                 .getJsonArray("activatedLevies");
+
+            if (activatedLevies != null) {
+                String insertLevySQL =
+                   "INSERT OR REPLACE INTO Levies (Id, Name, ChargeMode, Rate, IsActive) VALUES (?, ?, ?, ?, ?)";
+
+                try (PreparedStatement stmt = conn.prepareStatement(insertLevySQL)) {
+                    for (JsonValue levyValue : activatedLevies) {
+                    JsonObject levyObj = levyValue.asJsonObject();
+
+                    String levyId = levyObj.getString("id", "");
+                    String levyName = levyObj.getString("name", "");
+                    String chargeMode = levyObj.getString("chargeMode", "");
+                    double rate = levyObj.getJsonNumber("rate").doubleValue();
+                    boolean isActive = levyObj.getBoolean("isActive", false);
+
+                    stmt.setString(1, levyId);
+                    stmt.setString(2, levyName);
+                    stmt.setString(3, chargeMode);
+                    stmt.setDouble(4, rate);
+                    stmt.setInt(5, isActive ? 1 : 0);
+                    stmt.addBatch();
+                    }
+                    stmt.executeBatch();
+                    System.out.println("Inserted/Updated Levies");
+                } 
+            }
+
 
             // === ActivatedTerminal ===
             JsonObject activatedTerminal = data.getJsonObject("activatedTerminal");
@@ -98,7 +131,7 @@ public class ActivationDataInserter {
                 stmt.setString(5, jwtToken);
                 stmt.setString(6, secretKey);
                 stmt.executeUpdate();
-                System.out.println("✅ Inserted ActivatedTerminal");
+                System.out.println("Inserted ActivatedTerminal");
             }
 
             // === TerminalConfiguration ===
@@ -122,7 +155,7 @@ public class ActivationDataInserter {
                 stmt.setString(7, tradingName);
                 stmt.setString(8, addressLine);
                 stmt.executeUpdate();
-                System.out.println("✅ Inserted TerminalConfiguration");
+                System.out.println("Inserted TerminalConfiguration");
             }
 
             // === OfflineLimit ===
@@ -136,7 +169,7 @@ public class ActivationDataInserter {
                 stmt.setInt(2, maxAge);
                 stmt.setDouble(3, maxAmount);
                 stmt.executeUpdate();
-                System.out.println("✅ Inserted OfflineLimit");
+                System.out.println("Inserted OfflineLimit");
             }
 
             // === TaxpayerConfiguration & TaxOffice ===
@@ -158,7 +191,7 @@ public class ActivationDataInserter {
                 stmt.setInt(4, taxpayerVersionNo);
                 stmt.setString(5, taxOfficeCode);
                 stmt.executeUpdate();
-                System.out.println("✅ Inserted TaxpayerConfiguration");
+                System.out.println("Inserted TaxpayerConfiguration");
             }
 
             String insertOfficeSQL = "INSERT OR REPLACE INTO TaxOffices (Code, Name) VALUES (?, ?)";
@@ -166,11 +199,11 @@ public class ActivationDataInserter {
                 stmt.setString(1, taxOfficeCode);
                 stmt.setString(2, officeName);
                 stmt.executeUpdate();
-                System.out.println("✅ Inserted TaxOffice");
+                System.out.println("Inserted TaxOffice");
             }
 
         } catch (Exception e) {
-            System.err.println("❌ Failed to insert activation data: " + e.getMessage());
+            System.err.println("Failed to insert activation data: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -182,10 +215,10 @@ public class ActivationDataInserter {
         try (PreparedStatement stmt = conn.prepareStatement(insertSQL)) {
             stmt.setString(1, activationCode);
             stmt.executeUpdate();
-            System.out.println("✅ Inserted ActivationCode: " + activationCode);
+            System.out.println("Inserted ActivationCode: " + activationCode);
         }
     } catch (SQLException e) {
-        System.err.println("❌ Failed to insert into ActivationCode table: " + e.getMessage());
+        System.err.println("Failed to insert into ActivationCode table: " + e.getMessage());
         e.printStackTrace();
     }
 }
@@ -197,7 +230,7 @@ public static void getLatestConfiguration(String responseBody) {
         JsonObject root = reader.readObject();
         JsonObject data = root.getJsonObject("data");
         if (data == null) {
-            System.out.println("⚠️ No data object found in response");
+            System.out.println(" No data object found in response");
             return;
         }
 
@@ -215,7 +248,7 @@ public static void getLatestConfiguration(String responseBody) {
             stmt.setString(2, siteName);
             stmt.setString(3, ""); // No location info in response
             stmt.executeUpdate();
-            System.out.println("✅ Inserted TerminalSite: " + siteId);
+            System.out.println("Inserted TerminalSite: " + siteId);
         }
 
         // === GlobalConfiguration ===
@@ -229,7 +262,7 @@ public static void getLatestConfiguration(String responseBody) {
             stmt.setInt(1, globalId);
             stmt.setInt(2, globalVersionNo);
             stmt.executeUpdate();
-            System.out.println("✅ Inserted GlobalConfiguration");
+            System.out.println("Inserted GlobalConfiguration");
         }
 
         // === TaxRates ===
@@ -253,10 +286,10 @@ public static void getLatestConfiguration(String responseBody) {
                     stmt.addBatch();
                 }
                 stmt.executeBatch();
-                System.out.println("✅ Inserted TaxRates");
+                System.out.println("Inserted TaxRates");
             }
         } else {
-            System.out.println("⚠️ taxrates array missing, empty, or null");
+            System.out.println("taxrates array missing, empty, or null");
         }
 
         // === TerminalConfiguration ===
@@ -270,19 +303,27 @@ public static void getLatestConfiguration(String responseBody) {
         String addressLine = (addressLines != null && !addressLines.isEmpty()) ? addressLines.getString(0, "") : "";
         int versionNo = terminalConfig.getInt("versionNo", 0);
 
-        String insertConfigSQL = "INSERT OR REPLACE INTO TerminalConfiguration (TerminalId, Label, IsActive, Email, Phone, VersionNo, TradingName, AddressLine) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-        try (PreparedStatement stmt = conn.prepareStatement(insertConfigSQL)) {
-            stmt.setString(1, ""); // TerminalId not available in this structure
-            stmt.setString(2, terminalLabel);
-            stmt.setBoolean(3, isActive);
-            stmt.setString(4, email);
-            stmt.setString(5, phone);
-            stmt.setInt(6, versionNo);
-            stmt.setString(7, tradingName);
-            stmt.setString(8, addressLine);
-            stmt.executeUpdate();
-            System.out.println("✅ Inserted TerminalConfiguration");
-        }
+        String updateConfigSQL =
+    "UPDATE TerminalConfiguration SET " +
+    "Label = ?, " +
+    "Email = ?, " +
+    "Phone = ?, " +
+    "VersionNo = ?, " +
+    "TradingName = ?, " +
+    "AddressLine = ? " +
+    "WHERE TerminalId IS NOT NULL";
+
+       try (PreparedStatement stmt = conn.prepareStatement(updateConfigSQL)) {
+    stmt.setString(1, terminalLabel);
+    stmt.setString(2, email);
+    stmt.setString(3, phone);
+    stmt.setInt(4, versionNo);
+    stmt.setString(5, tradingName);
+    stmt.setString(6, addressLine);
+    stmt.executeUpdate();
+
+    System.out.println(" Updated TerminalConfiguration (TerminalId & IsActive preserved)");
+}
 
         // === OfflineLimit ===
         JsonObject offlineLimit = terminalConfig.getJsonObject("offlineLimit");
@@ -290,52 +331,83 @@ public static void getLatestConfiguration(String responseBody) {
         double maxAmount = offlineLimit.getJsonNumber("maxCummulativeAmount").doubleValue();
 
         String insertLimitSQL = "INSERT OR REPLACE INTO OfflineLimit (TerminalId, MaxTransactionAgeInHours, MaxCummulativeAmount) VALUES (?, ?, ?)";
-        try (PreparedStatement stmt = conn.prepareStatement(insertLimitSQL)) {
-            stmt.setString(1, ""); // TerminalId not available here either
-            stmt.setInt(2, maxAge);
-            stmt.setDouble(3, maxAmount);
-            stmt.executeUpdate();
-            System.out.println("✅ Inserted OfflineLimit");
-        }
+try (PreparedStatement stmt = conn.prepareStatement(insertLimitSQL)) {
+    stmt.setString(1, ""); // or use a valid TerminalId if you have one
+    stmt.setInt(2, maxAge);
+    stmt.setDouble(3, maxAmount);
+    stmt.executeUpdate();
+    System.out.println("Inserted OfflineLimit");
+}
+
 
         // === TaxpayerConfiguration & TaxOffice ===
         JsonObject taxpayerConfig = data.getJsonObject("taxpayerConfiguration");
         String tin = taxpayerConfig.getString("tin", "");
         boolean isVATRegistered = taxpayerConfig.getBoolean("isVATRegistered", false);
-        String taxOfficeCode = taxpayerConfig.isNull("taxOfficeCode") ? null : taxpayerConfig.getString("taxOfficeCode", null);
         int taxpayerVersionNo = taxpayerConfig.getInt("versionNo", 0);
 
+        // ✅ FIX: Get taxOfficeCode from taxOffice.code, NOT from taxOfficeCode field
         JsonObject taxOffice = taxpayerConfig.getJsonObject("taxOffice");
-        String officeName = (taxOffice != null) ? taxOffice.getString("name", "") : "";
-
-        String insertTaxpayerSQL = "INSERT OR REPLACE INTO TaxpayerConfiguration (TIN, IsVATRegistered, VersionNo, TaxOfficeCode) VALUES (?, ?, ?, ?)";
-        try (PreparedStatement stmt = conn.prepareStatement(insertTaxpayerSQL)) {
-            stmt.setString(1, tin);
-            stmt.setBoolean(2, isVATRegistered);
-            stmt.setInt(3, taxpayerVersionNo);
-            if (taxOfficeCode != null) {
-                stmt.setString(4, taxOfficeCode);
-            } else {
-                stmt.setNull(4, java.sql.Types.VARCHAR);
-            }
-            stmt.executeUpdate();
-            System.out.println("✅ Inserted TaxpayerConfiguration");
+        String taxOfficeCode = null;
+        String officeName = "";
+        
+        if (taxOffice != null && !taxOffice.isNull("code")) {
+            taxOfficeCode = taxOffice.getString("code", null);
+            officeName = taxOffice.getString("name", "");
         }
 
+        String updateTaxpayerSQL =
+    "UPDATE TaxpayerConfiguration SET " +
+    "IsVATRegistered = ?, " +
+    "VersionNo = ?, " +
+    "TaxOfficeCode = ? " +
+    "WHERE TIN = ?";
+
+        try (PreparedStatement stmt = conn.prepareStatement(updateTaxpayerSQL)) {
+    stmt.setBoolean(1, isVATRegistered);
+    stmt.setInt(2, taxpayerVersionNo);
+
+    if (taxOfficeCode != null) {
+        stmt.setString(3, taxOfficeCode);
+    } else {
+        stmt.setNull(3, java.sql.Types.VARCHAR);
+    }
+
+    stmt.setString(4, tin);
+
+    int rows = stmt.executeUpdate();
+
+    if (rows == 0) {
+        System.err.println("⚠️ No TaxpayerConfiguration row found for TIN: " + tin);
+    } else {
+        System.out.println("✅ Updated TaxpayerConfiguration for TIN: " + tin);
+    }
+}
+
+
+        // Insert TaxOffice
         String insertOfficeSQL = "INSERT OR REPLACE INTO TaxOffices (Code, Name) VALUES (?, ?)";
         if (taxOfficeCode != null) {
             try (PreparedStatement stmt = conn.prepareStatement(insertOfficeSQL)) {
                 stmt.setString(1, taxOfficeCode);
                 stmt.setString(2, officeName);
                 stmt.executeUpdate();
-                System.out.println("✅ Inserted TaxOffice");
+                System.out.println("✅ Inserted TaxOffice: " + taxOfficeCode + " - " + officeName);
             }
         }
 
         // === Activated Tax Rates from activatedTaxRateIds (array of strings) ===
         JsonArray activatedTaxRateIds = taxpayerConfig.getJsonArray("activatedTaxRateIds");
         if (activatedTaxRateIds != null && !activatedTaxRateIds.isEmpty()) {
-            String insertActivatedTaxSQL = "INSERT OR REPLACE INTO ActivatedTaxRates (TaxRateId, TaxpayerTin) VALUES (?, ?)";
+            // ✅ FIX: Delete old records first, then insert new ones
+            String deleteOldSQL = "DELETE FROM ActivatedTaxRates WHERE TaxpayerTin = ?";
+            try (PreparedStatement stmt = conn.prepareStatement(deleteOldSQL)) {
+                stmt.setString(1, tin);
+                stmt.executeUpdate();
+                System.out.println("✅ Cleared old ActivatedTaxRates for TIN: " + tin);
+            }
+            
+            String insertActivatedTaxSQL = "INSERT INTO ActivatedTaxRates (TaxType, TaxpayerTin) VALUES (?, ?)";
             try (PreparedStatement stmt = conn.prepareStatement(insertActivatedTaxSQL)) {
                 for (JsonValue val : activatedTaxRateIds) {
                     if (val.getValueType() == JsonValue.ValueType.STRING) {
@@ -346,14 +418,46 @@ public static void getLatestConfiguration(String responseBody) {
                     }
                 }
                 stmt.executeBatch();
-                System.out.println("✅ Inserted ActivatedTaxRates from activatedTaxRateIds");
+                System.out.println("✅ Inserted ActivatedTaxRates: " + activatedTaxRateIds);
             }
         } else {
             System.out.println("⚠️ activatedTaxRateIds is missing, empty, or null; skipping insertion.");
         }
+        // Activated Levies 
+JsonArray activatedLevies = taxpayerConfig.getJsonArray("activatedLevies");
+
+if (activatedLevies != null && !activatedLevies.isEmpty()) {
+
+    String insertLevySQL =
+        "INSERT OR REPLACE INTO Levies (Id, Name, ChargeMode, Rate, IsActive) VALUES (?, ?, ?, ?, ?)";
+
+    try (PreparedStatement stmt = conn.prepareStatement(insertLevySQL)) {
+        for (JsonValue levyValue : activatedLevies) {
+            JsonObject levyObj = levyValue.asJsonObject();
+
+            String levyId = levyObj.getString("id", "");
+            String levyName = levyObj.getString("name", "");
+            String chargeMode = levyObj.getString("chargeMode", "");
+            double rate = levyObj.getJsonNumber("rate").doubleValue();
+            boolean isLevyActive = levyObj.getBoolean("isActive", true);
+
+            stmt.setString(1, levyId);
+            stmt.setString(2, levyName);
+            stmt.setString(3, chargeMode);
+            stmt.setDouble(4, rate);
+            stmt.setInt(5, isLevyActive ? 1 : 0);
+            stmt.addBatch();
+        }
+        stmt.executeBatch();
+        System.out.println("Synced Activated Levies");
+    }
+} else {
+    System.out.println("activatedLevies missing, empty, or null; skipping levy sync.");
+}
+
 
     } catch (Exception e) {
-        System.err.println("❌ Failed to insert activation data: " + e.getMessage());
+        System.err.println("Failed to insert activation data: " + e.getMessage());
         e.printStackTrace();
     }
 }

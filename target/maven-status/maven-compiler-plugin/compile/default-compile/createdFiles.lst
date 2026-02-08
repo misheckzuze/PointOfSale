@@ -3,6 +3,7 @@ com\pointofsale\ReportsView$5.class
 com\pointofsale\ProductManagement$6$1.class
 com\pointofsale\SystemInfo.class
 com\pointofsale\utils\ApiEndpoints.class
+com\pointofsale\model\Vat5Data.class
 com\pointofsale\model\InvoicePayload.class
 com\pointofsale\model\PingResponse$ApiError.class
 com\pointofsale\AuditTrailView.class
@@ -34,6 +35,7 @@ com\pointofsale\helper\ApiClient$1.class
 com\pointofsale\model\InvoiceDetails.class
 com\pointofsale\CustomersView$PurchaseRecord.class
 com\pointofsale\POSDashboard$4.class
+com\pointofsale\model\Vat5ValidationResponse.class
 com\pointofsale\ReportsView$1.class
 com\pointofsale\ProductManagement$6.class
 com\pointofsale\CustomersView$2.class

@@ -67,9 +67,11 @@ import javafx.animation.PauseTransition;
 import javafx.animation.TranslateTransition;
 import javafx.application.Platform;
 import com.pointofsale.model.Product;
+import com.pointofsale.model.Vat5CertificateDetails;
 import com.pointofsale.model.LineItemDto;
 import com.pointofsale.model.InvoiceHeader;
 import com.pointofsale.model.HeldSale;
+import com.pointofsale.model.Vat5Data;
 import com.pointofsale.model.InvoicePayload;
 import com.pointofsale.model.TaxBreakDown;
 import java.text.NumberFormat;
@@ -123,6 +125,10 @@ public class POSDashboard extends Application {
     private Label noteIndicatorLabel;
     private Stage numberPadDialog;
     private TextField activeField;
+    private boolean isVat5Exempt = false;
+    private Vat5Data currentVat5Data = null;
+    private TextField vat5ProjectField;
+    private TextField vat5CertificateField;
 
     @Override
     public void start(Stage primaryStage) {
@@ -443,7 +449,7 @@ private VBox createSidebarHeader() {
     header.setAlignment(Pos.CENTER);
     header.setPadding(new Insets(25, 0, 25, 0));
 
-    Rectangle placeholderLogo = new Rectangle(50, 50);
+    Rectangle placeholderLogo = new Rectangle(100, 50);
     placeholderLogo.setFill(Color.WHITE);
     placeholderLogo.setOpacity(0.9);
     placeholderLogo.setArcWidth(10);
@@ -933,7 +939,7 @@ private VBox createCheckoutPanel() {
     paymentMethodLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #424242;", labelFontSize));
 
     paymentMethodComboBox = new ComboBox<>();
-    paymentMethodComboBox.getItems().addAll("Cash", "Credit Card", "Debit Card", "Mobile Payment");
+    paymentMethodComboBox.getItems().addAll("Cash", "Credit Card", "Debit Card", "Invoice", "Cheque", "Mobile Payment", "Mixed Payment");
     paymentMethodComboBox.setValue("Cash");
     paymentMethodComboBox.setPrefWidth(Double.MAX_VALUE);
     paymentMethodComboBox.setPrefHeight(inputHeight);
@@ -951,7 +957,8 @@ private VBox createCheckoutPanel() {
 
     Label customerActionsTitle = new Label("Customer Actions");
     customerActionsTitle.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #424242;", titleFontSize));
-
+    
+    Button validateVat5Button = createResponsiveSecondaryActionButton("Validate VAT5", labelFontSize, inputHeight * 0.8);
     Button addCustomerButton = createResponsiveSecondaryActionButton("Add Customer", labelFontSize, inputHeight * 0.8);
     Button addNoteButton = createResponsiveSecondaryActionButton("Add Note", labelFontSize, inputHeight * 0.8);
     Button holdSaleButton = createResponsiveSecondaryActionButton("Hold Sale", labelFontSize, inputHeight * 0.8);
@@ -959,6 +966,7 @@ private VBox createCheckoutPanel() {
     Button printReceiptButton = createResponsiveSecondaryActionButton("Print Preview", labelFontSize, inputHeight * 0.8);
 
     holdSaleButton.setOnAction(e -> holdSale());
+    validateVat5Button.setOnAction(e -> showVat5ValidationDialog());
     viewHeldSalesButton.setOnAction(e -> showHeldSales());
     addCustomerButton.setOnAction(e -> addCustomer());
     printReceiptButton.setOnAction(e -> showPrintPreview());
@@ -974,11 +982,12 @@ private VBox createCheckoutPanel() {
         actionGrid.add(addNoteButton, 1, 0);
         actionGrid.add(holdSaleButton, 0, 1);
         actionGrid.add(viewHeldSalesButton, 1, 1);
-        actionGrid.add(printReceiptButton, 0, 2, 2, 1); // full width
+         actionGrid.add(validateVat5Button, 0, 2);
+        actionGrid.add(printReceiptButton, 0, 2, 2, 1); //full width
 
         customerActionsPanel.getChildren().addAll(customerActionsTitle, actionGrid);
     } else {
-        customerActionsPanel.getChildren().addAll(customerActionsTitle, addCustomerButton, addNoteButton, holdSaleButton, viewHeldSalesButton, printReceiptButton);
+        customerActionsPanel.getChildren().addAll(customerActionsTitle, addCustomerButton, addNoteButton, holdSaleButton, viewHeldSalesButton, validateVat5Button, printReceiptButton);
     }
 
     // ===== SCROLLABLE CONTENT =====
@@ -1020,6 +1029,132 @@ private VBox createCheckoutPanel() {
     checkoutPanel.getChildren().add(finalLayout);
 
     return checkoutPanel;
+}
+
+private void showVat5ValidationDialog() {
+    Dialog<ButtonType> dialog = new Dialog<>();
+    dialog.setTitle("VAT5 Certificate Validation");
+    dialog.setHeaderText("Enter VAT5 Certificate Details");
+
+    // Create form
+    GridPane grid = new GridPane();
+    grid.setHgap(10);
+    grid.setVgap(10);
+    grid.setPadding(new Insets(20, 150, 10, 10));
+
+    vat5ProjectField = new TextField();
+    vat5ProjectField.setPromptText("Project Number");
+    vat5ProjectField.setPrefWidth(250);
+
+    vat5CertificateField = new TextField();
+    vat5CertificateField.setPromptText("Certificate Number");
+    vat5CertificateField.setPrefWidth(250);
+
+    // Calculate total quantity from cart
+    double totalQuantity = cartItems.stream()
+        .mapToDouble(Product::getQuantity)
+        .sum();
+    
+    TextField quantityField = new TextField(String.valueOf(totalQuantity));
+    quantityField.setPromptText("Quantity");
+    quantityField.setDisable(true); // Auto-calculated
+    quantityField.setPrefWidth(250);
+
+    Label statusLabel = new Label("");
+    statusLabel.setStyle("-fx-font-weight: bold;");
+
+    grid.add(new Label("Project Number:"), 0, 0);
+    grid.add(vat5ProjectField, 1, 0);
+    grid.add(new Label("Certificate Number:"), 0, 1);
+    grid.add(vat5CertificateField, 1, 1);
+    grid.add(new Label("Quantity:"), 0, 2);
+    grid.add(quantityField, 1, 2);
+    grid.add(statusLabel, 0, 3, 2, 1);
+
+    dialog.getDialogPane().setContent(grid);
+
+    ButtonType validateButtonType = new ButtonType("Validate", ButtonBar.ButtonData.OK_DONE);
+    ButtonType cancelButtonType = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+    dialog.getDialogPane().getButtonTypes().addAll(validateButtonType, cancelButtonType);
+
+    Button validateButton = (Button) dialog.getDialogPane().lookupButton(validateButtonType);
+    validateButton.setDisable(true);
+
+    // Enable validate button only when both fields have text
+    vat5ProjectField.textProperty().addListener((obs, oldVal, newVal) -> {
+        validateButton.setDisable(newVal.trim().isEmpty() || vat5CertificateField.getText().trim().isEmpty());
+    });
+    vat5CertificateField.textProperty().addListener((obs, oldVal, newVal) -> {
+        validateButton.setDisable(newVal.trim().isEmpty() || vat5ProjectField.getText().trim().isEmpty());
+    });
+
+    dialog.setResultConverter(dialogButton -> {
+        if (dialogButton == validateButtonType) {
+            return validateButtonType;
+        }
+        return null;
+    });
+
+    Optional<ButtonType> result = dialog.showAndWait();
+    
+    if (result.isPresent() && result.get() == validateButtonType) {
+        String projectNum = vat5ProjectField.getText().trim();
+        String certNum = vat5CertificateField.getText().trim();
+        
+        // Show loading indicator
+        statusLabel.setText("Validating...");
+        statusLabel.setStyle("-fx-text-fill: #1a237e; -fx-font-weight: bold;");
+        String bearerToken = Helper.getToken(); 
+        
+         ApiClient apiClient = new ApiClient();
+        // Call API
+        apiClient.validateVat5Certificate(projectNum, certNum, totalQuantity, 
+            bearerToken, 
+            vat5Data -> handleVat5ValidationResult(vat5Data, dialog, statusLabel));
+    }
+}
+
+private void handleVat5ValidationResult(Vat5Data vat5Data, Dialog<ButtonType> dialog, Label statusLabel) {
+    if (vat5Data != null && vat5Data.isValid) {
+        // Certificate is valid - apply VAT exemptions
+        isVat5Exempt = true;
+        currentVat5Data = vat5Data;
+        
+        statusLabel.setText("✓ Valid Certificate - VAT Exempted");
+        statusLabel.setStyle("-fx-text-fill: #2e7d32; -fx-font-weight: bold;");
+        
+        // Update totals to remove VAT
+        updateTotals();
+        
+        // Show success message
+        Platform.runLater(() -> {
+            Alert successAlert = new Alert(Alert.AlertType.INFORMATION);
+            successAlert.setTitle("VAT5 Validation Success");
+            successAlert.setHeaderText("Certificate Validated Successfully");
+            successAlert.setContentText(
+                "Project: " + vat5Data.projectNumber + "\n" +
+                "Certificate: " + vat5Data.vat5CertificateNumber + "\n" +
+                "VAT has been exempted for this transaction."
+            );
+            successAlert.showAndWait();
+            dialog.close();
+        });
+    } else {
+        // Certificate is invalid
+        isVat5Exempt = false;
+        currentVat5Data = null;
+        
+        statusLabel.setText("✗ Invalid Certificate");
+        statusLabel.setStyle("-fx-text-fill: #c62828; -fx-font-weight: bold;");
+        
+        Platform.runLater(() -> {
+            Alert errorAlert = new Alert(Alert.AlertType.ERROR);
+            errorAlert.setTitle("VAT5 Validation Failed");
+            errorAlert.setHeaderText("Certificate Validation Failed");
+            errorAlert.setContentText("The VAT5 certificate is invalid or has expired.");
+            errorAlert.showAndWait();
+        });
+    }
 }
 
 /**
@@ -1134,29 +1269,25 @@ private void updateTotals() {
     int totalQuantity = 0;
     double itemLevelDiscountTotal = 0.0;
 
+    // Step 1: Item-level discounts
     for (Product item : cartItems) {
         double discount = item.getDiscount();
         applyDiscountToItem(item, discount, false);    
+
         double itemPrice = item.getPrice();
         double itemQuantity = item.getQuantity();
         double itemSubtotal = itemPrice * itemQuantity;
 
-        // Calculate item-level discount from originalPrice
+        // Track item-level discount from original price
         double originalPrice = item.getOriginalPrice();
         double discountPerItem = (originalPrice - itemPrice) * itemQuantity;
         itemLevelDiscountTotal += discountPerItem;
 
-        // Get tax rate from DB using TaxRate ID
-        double taxRate = Helper.getTaxRateById(item.getTaxRate());
-        boolean isVATRegistered = Helper.isVATRegistered();
-        double itemVAT = isVATRegistered ? (itemSubtotal * taxRate) / (100 + taxRate) : 0;
-
         subtotal += itemSubtotal;
-        totalTax += itemVAT;
         totalQuantity += itemQuantity;
     }
 
-    // Cart-level discount
+    // Step 2: Cart-level discount
     double cartLevelDiscount = 0.0;
     if (cartDiscountPercent > 0) {
         cartLevelDiscount = subtotal * (cartDiscountPercent / 100.0);
@@ -1164,11 +1295,27 @@ private void updateTotals() {
         cartLevelDiscount = Math.min(cartDiscountAmount, subtotal);
     }
 
+    double discountedSubtotal = subtotal - cartLevelDiscount;
+
+    // Step 3: VAT after discount
+    boolean isVATRegistered = Helper.isVATRegistered();
+    for (Product item : cartItems) {
+        double taxRate = Helper.getTaxRateById(item.getTaxRate());
+        if (isVATRegistered && !isVat5Exempt) {
+            // Pro-rate discount across items for accurate VAT
+            double proportion = (item.getPrice() * item.getQuantity()) / subtotal;
+            double itemDiscountedSubtotal = (item.getPrice() * item.getQuantity()) - (cartLevelDiscount * proportion);
+            double itemVAT = (itemDiscountedSubtotal * taxRate) / (100 + taxRate);
+            totalTax += itemVAT;
+        }
+    }
+
+    // Step 4: Totals
     double totalDiscount = itemLevelDiscountTotal + cartLevelDiscount;
-    double total = subtotal - cartLevelDiscount;
+    double total = discountedSubtotal;
 
     // Update UI
-    subtotalValueLabel.setText(formatCurrency(subtotal - totalTax)); 
+    subtotalValueLabel.setText(formatCurrency(discountedSubtotal - totalTax));
     taxValueLabel.setText(formatCurrency(totalTax));
     discountValueLabel.setText(formatCurrency(totalDiscount));
     totalAmountLabel.setText(formatCurrency(total));
@@ -1180,6 +1327,7 @@ private void updateTotals() {
 
     updateChangeCalculation();
 }
+
 /**
  * Updates the change calculation and payment button state
  */
@@ -1285,153 +1433,180 @@ private void updateChangeCalculation() {
 }
 
     private void proceedWithPayment() {
-        
-        String selectedPaymentMethod = paymentMethodComboBox.getValue();
-        String buyerTIN = tinField.getText().trim();
-        String buyersName =  customerNamesField.getText().trim();
-        String amountTenderedText = cashAmountField.getText().trim();
-        double amountTendered = Double.parseDouble(amountTenderedText);
-        String changeValueText = changeValueLabel.getText();
-        changeValueText = changeValueText.replace("MK", "").replace(",", "").trim();
-        double changeValue = Double.parseDouble(changeValueText);
-        String buyersTIN = !buyerTIN.isEmpty() ? buyerTIN : "";
+    
+    String selectedPaymentMethod = paymentMethodComboBox.getValue();
+    String buyerTIN = tinField.getText().trim();
+    String buyersName = customerNamesField.getText().trim();
+    String amountTenderedText = cashAmountField.getText().trim();
+    double amountTendered = Double.parseDouble(amountTenderedText);
+    String changeValueText = changeValueLabel.getText();
+    changeValueText = changeValueText.replace("MK", "").replace(",", "").trim();
+    double changeValue = Double.parseDouble(changeValueText);
+    String buyersTIN = !buyerTIN.isEmpty() ? buyerTIN : "";
 
-        // Fallback to "Walk-in Customer" if empty
-        String buyerName = !buyersName.isEmpty() ? buyersName : "";
-        
-        
-        if (cartItems.isEmpty()) {
-            showAlert("Error", "Cart is empty. Please add items before processing payment.");
-            return;
-        }        
-        // Show payment processing feedback
-       Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
-       confirmAlert.setTitle("Confirm Payment");
-       confirmAlert.setHeaderText("Proceed with Payment?");
-       confirmAlert.setContentText("Do you want to continue with " 
-       + selectedPaymentMethod + " payment for " + formatCurrency(totalAmount) + "?");
+    String buyerName = !buyersName.isEmpty() ? buyersName : "";
+    
+    if (cartItems.isEmpty()) {
+        showAlert("Error", "Cart is empty. Please add items before processing payment.");
+        return;
+    }        
+    
+    Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
+    confirmAlert.setTitle("Confirm Payment");
+    confirmAlert.setHeaderText("Proceed with Payment?");
+    
+    // Add VAT5 exemption notice to confirmation
+    String confirmMessage = "Do you want to continue with " 
+        + selectedPaymentMethod + " payment for " + formatCurrency(totalAmount) + "?";
+    
+    if (isVat5Exempt && currentVat5Data != null) {
+        confirmMessage += "\n\n✓ VAT5 Certificate Applied"
+            + "\nProject: " + currentVat5Data.projectNumber
+            + "\nCertificate: " + currentVat5Data.vat5CertificateNumber
+            + "\n\nVAT has been exempted for this transaction.";
+    }
+    
+    confirmAlert.setContentText(confirmMessage);
 
-       ButtonType okButton = new ButtonType("Proceed", ButtonBar.ButtonData.OK_DONE);
-       ButtonType cancelButton = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+    ButtonType okButton = new ButtonType("Proceed", ButtonBar.ButtonData.OK_DONE);
+    ButtonType cancelButton = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
 
-       confirmAlert.getButtonTypes().setAll(okButton, cancelButton);
+    confirmAlert.getButtonTypes().setAll(okButton, cancelButton);
 
-       Optional<ButtonType> result = confirmAlert.showAndWait();
-       if (result.isEmpty() || result.get() == cancelButton) {
-       System.out.println("❌ Payment cancelled by user.");
-       return;
-       }
-
-        
-        String invoiceNumber = generateNewReceiptNumber();
-        String buyerAuthorizationCode = buyerAuthField.getText().trim();
-        
-       InvoiceHeader invoiceHeader = Helper.getInvoiceHeader(invoiceNumber, buyerTIN, buyerAuthorizationCode, selectedPaymentMethod);
-
-    // 2. Convert products to line items
-    List<LineItemDto> lineItems = new ArrayList<>();
-    for (Product product : cartItems) {
-       LineItemDto lineItemDto = Helper.convertProductToLineItemDto(product);
-       lineItems.add(lineItemDto);
+    Optional<ButtonType> result = confirmAlert.showAndWait();
+    if (result.isEmpty() || result.get() == cancelButton) {
+        System.out.println("❌ Payment cancelled by user.");
+        return;
     }
 
-        // 3. Build invoice summary
-       InvoiceSummary invoiceSummary = new InvoiceSummary();
-       List<TaxBreakDown> taxBreakdowns = Helper.generateTaxBreakdown(lineItems);
-       invoiceSummary.setTaxBreakDown(taxBreakdowns);
-       invoiceSummary.setTotalVAT(lineItems.stream().mapToDouble(LineItemDto::getTotalVAT).sum());
-       invoiceSummary.setInvoiceTotal(lineItems.stream().mapToDouble(LineItemDto::getTotal).sum());
-       invoiceSummary.setOfflineSignature("");
+    String invoiceNumber = generateNewReceiptNumber();
+    String buyerAuthorizationCode = buyerAuthField.getText().trim();
+    
+    // 1. Build invoice header
+    InvoiceHeader invoiceHeader = Helper.getInvoiceHeader(invoiceNumber, buyerTIN, buyerAuthorizationCode, selectedPaymentMethod);
+    
+    // ADD VAT5 CERTIFICATE INFO TO INVOICE HEADER IF EXEMPT
+    if (isVat5Exempt && currentVat5Data != null) {
+    Vat5CertificateDetails vat5Details = new Vat5CertificateDetails();
+    vat5Details.projectNumber = currentVat5Data.projectNumber;
+    vat5Details.certificateNumber = currentVat5Data.vat5CertificateNumber;
+    vat5Details.quantity = currentVat5Data.quantity;
+    
+    invoiceHeader.setVat5CertificateDetails(vat5Details);
+}
 
-       // 4. Put everything into the payload
-       InvoicePayload payload = new InvoicePayload();
-       payload.setInvoiceHeader(invoiceHeader);
-       payload.setInvoiceLineItems(lineItems);
-       payload.setInvoiceSummary(invoiceSummary);
-        
-      double totalVAT = invoiceSummary.getTotalVAT();
-      String offlineSignature = invoiceSummary.getOfflineSignature();
-      boolean isTransmitted = false; 
-      String paymentId = paymentMethodComboBox.getValue();
-      double amountPaid = totalAmount;
+    // 2. Convert products to line items WITH VAT5 EXEMPTION APPLIED
+    List<LineItemDto> lineItems = createLineItems(); // Use new method
+
+    // 3. Build invoice summary WITH CORRECT VAT CALCULATION
+    InvoiceSummary invoiceSummary = new InvoiceSummary();
+    List<TaxBreakDown> taxBreakdowns = Helper.generateTaxBreakdown(lineItems);
+    
+    // Calculate totals from line items (which already have VAT exemption applied)
+    double totalVATAmount = lineItems.stream().mapToDouble(LineItemDto::getTotalVAT).sum();
+    double invoiceTotal = lineItems.stream().mapToDouble(LineItemDto::getTotal).sum();
+    
+    invoiceSummary.setTaxBreakDown(taxBreakdowns);
+    invoiceSummary.setTotalVAT(totalVATAmount);
+    invoiceSummary.setInvoiceTotal(invoiceTotal);
+    invoiceSummary.setOfflineSignature("");
+    invoiceSummary.setAmountTendered(amountTendered); 
+
+    // 4. Put everything into the payload
+    InvoicePayload payload = new InvoicePayload();
+    payload.setInvoiceHeader(invoiceHeader);
+    payload.setInvoiceLineItems(lineItems);
+    payload.setInvoiceSummary(invoiceSummary);
+    
+    double totalVAT = invoiceSummary.getTotalVAT();
+    String offlineSignature = invoiceSummary.getOfflineSignature();
+    boolean isTransmitted = false; 
+    String paymentId = paymentMethodComboBox.getValue();
+    double amountPaid = totalAmount;
 
     // Save locally before transmitting
-     boolean saveSuccess = Helper.saveTransaction(
-       invoiceHeader,
-       lineItems,
-       taxBreakdowns,
-       totalAmount,
-       totalVAT,
-       offlineSignature,
-       "",
-       isTransmitted,
-       paymentId,
-       amountPaid
+    boolean saveSuccess = Helper.saveTransaction(
+        invoiceHeader,
+        lineItems,
+        taxBreakdowns,
+        totalAmount,
+        totalVAT,
+        offlineSignature,
+        "",
+        isTransmitted,
+        paymentId,
+        amountTendered
     );
 
-   if (saveSuccess) {
-      System.out.println("✅ Transaction saved locally.");
-   } else {
-      System.err.println("⚠️ Failed to save transaction locally.");
-   }
-       // Step 5: Convert to JSON
-       Gson gson = new Gson();
-       String jsonPayload = gson.toJson(payload);
-       String bearerToken = Helper.getToken();
+    if (saveSuccess) {
+        System.out.println("✅ Transaction saved locally.");
+        if (isVat5Exempt) {
+            System.out.println("✅ VAT5 Certificate Applied - VAT Amount: " + formatCurrency(totalVAT));
+        }
+    } else {
+        System.err.println("⚠️ Failed to save transaction locally.");
+    }
+    
+    // Step 5: Convert to JSON
+    Gson gson = new Gson();
+    String jsonPayload = gson.toJson(payload);
+    String bearerToken = Helper.getToken();
+    System.out.println("Payload: " + jsonPayload);
 
-       // Step 6: Submit the request
-       ApiClient apiClient = new ApiClient();
-       
-       apiClient.submitTransactions(jsonPayload, bearerToken, (success, returnedValidationUrl) -> {
-         Platform.runLater(() -> {
-           if (success) {
-             // Update the validation URL in the database
-             Helper.updateValidationUrl(invoiceHeader.getInvoiceNumber(), returnedValidationUrl);
-             
-             // Mark as transmitted
-             Helper.markAsTransmitted(invoiceHeader.getInvoiceNumber());
-             
-    // Print the premium receipt with validation URL
-    try {
+    // Step 6: Submit the request
+    ApiClient apiClient = new ApiClient();
+    
+    apiClient.submitTransactions(jsonPayload, bearerToken, (success, returnedValidationUrl) -> {
+        Platform.runLater(() -> {
+            if (success) {
+                Helper.updateValidationUrl(invoiceHeader.getInvoiceNumber(), returnedValidationUrl);
+                Helper.markAsTransmitted(invoiceHeader.getInvoiceNumber());
+                
+                try {
+                    EscPosReceiptPrinter.printReceipt(
+                        invoiceHeader,
+                        buyerName,
+                        buyersTIN,
+                        lineItems, 
+                        returnedValidationUrl, 
+                        amountTendered, 
+                        changeValue,
+                        taxBreakdowns
+                    );
+                    System.out.println("✅ Premium receipt printed successfully.");
+                } catch (Exception e) {
+                    System.err.println("⚠️ Failed to print receipt: " + e.getMessage());
+                    e.printStackTrace();
+                }
+                
+                Alert successAlert = new Alert(Alert.AlertType.INFORMATION);
+                successAlert.setTitle("Transaction Status");
+                successAlert.setHeaderText("🎉 Transaction Processed!");
+                
+                String successMessage = "The transaction was processed successfully.";
+                if (isVat5Exempt) {
+                    successMessage += "\n\n✓ VAT5 Certificate Applied"
+                        + "\nVAT Amount: " + formatCurrency(totalVAT);
+                }
+                
+                successAlert.setContentText(successMessage);
+                successAlert.showAndWait();
+            } else {
+                Alert failureAlert = new Alert(Alert.AlertType.ERROR);
+                failureAlert.setTitle("Transaction Status");
+                failureAlert.setHeaderText("🚨 Processing Failed!");
+                failureAlert.setContentText("Transaction failed. Saved locally for later sync.");
+                failureAlert.showAndWait();
+                
+                long transactionCount = 0;
+                InvoiceDetails lastDetails = Helper.getLastInvoiceDetails();
 
-     EscPosReceiptPrinter.printReceipt(
-      invoiceHeader,
-      buyerName,
-      buyersTIN,
-      lineItems, 
-      returnedValidationUrl, 
-      amountTendered, 
-      changeValue,
-      taxBreakdowns
-    );
-    System.out.println("✅ Premium receipt printed successfully.");
-} catch (Exception e) {
-    System.err.println("⚠️ Failed to print receipt: " + e.getMessage());
-    e.printStackTrace();
-}           Alert successAlert = new Alert(Alert.AlertType.INFORMATION);
-             successAlert.setTitle("Transaction Status");
-             successAlert.setHeaderText("🎉 Transaction Processed!");
-             successAlert.setContentText("The transaction was processed successfully.");
-             successAlert.showAndWait();
-           } else {
-             Alert failureAlert = new Alert(Alert.AlertType.ERROR);
-             failureAlert.setTitle("Transaction Status");
-             failureAlert.setHeaderText("🚨 Processing Failed!");
-             failureAlert.setContentText("Transaction failed. Saved locally for later sync.");
-             failureAlert.showAndWait();
-             
-             long transactionCount = 0;
-
-             InvoiceDetails lastDetails = Helper.getLastInvoiceDetails();
-
-             if (lastDetails != null) {
-        
-              transactionCount = Helper.convertSequentialToBase10(lastDetails.getInvoiceNumber()) + 1;      
-            }
-             
-             // Optional: Print offline receipt in case of failure
-             try {
-                 InvoiceGenerationRequest generationRequest = new InvoiceGenerationRequest();
+                if (lastDetails != null) {
+                    transactionCount = Helper.convertSequentialToBase10(lastDetails.getInvoiceNumber()) + 1;      
+                }
+                
+                try {
+                    InvoiceGenerationRequest generationRequest = new InvoiceGenerationRequest();
                     generationRequest.numItems = lineItems.size();
                     generationRequest.transactiondate = LocalDateTime.now();
                     generationRequest.transactionCount = transactionCount + 1;
@@ -1442,39 +1617,40 @@ private void updateChangeCalculation() {
                     String secretKey = Helper.getSecretKey();
                     String validationUrl = Helper.generateOfflineReceiptSignature(generationRequest, secretKey);
 
-                   // Save to DB or print receipt with this
                     invoiceSummary.setOfflineSignature(validationUrl.split("S=")[1]);
                     
                     Helper.updateOfflineTransactionDetails(invoiceHeader.getInvoiceNumber(), validationUrl, invoiceSummary.getOfflineSignature());
 
                     EscPosReceiptPrinter.printReceipt(
-                     invoiceHeader,
-                     buyerName,
-                     buyersTIN,
-                     lineItems, 
-                     validationUrl, 
-                     amountTendered, 
-                     changeValue,
-                     taxBreakdowns
-                 );
-                 System.out.println("✅ Offline receipt printed.");
-             } catch (Exception e) {
-                 e.printStackTrace();
-                 System.err.println("⚠️ Failed to print offline receipt.");
-             }
-           }
-         });
-       });
-       
-       // Reset cart and generate new receipt number
-       cartItems.clear();
-       cashAmountField.clear();
-       tinField.clear();
-       buyerAuthField.clear();
-       customerNamesField.clear();
-       receiptNumberLabel.setText(generateNewReceiptNumber());
-       updateTotals();
-    }
+                        invoiceHeader,
+                        buyerName,
+                        buyersTIN,
+                        lineItems, 
+                        validationUrl, 
+                        amountTendered, 
+                        changeValue,
+                        taxBreakdowns
+                    );
+                    System.out.println("✅ Offline receipt printed.");
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    System.err.println("⚠️ Failed to print offline receipt.");
+                }
+            }
+        });
+    });
+    
+    // Reset cart and generate new receipt number
+    cartItems.clear();
+    cashAmountField.clear();
+    tinField.clear();
+    isVat5Exempt = false;  // Reset VAT5 exemption
+    currentVat5Data = null;  // Clear VAT5 data
+    buyerAuthField.clear();
+    customerNamesField.clear();
+    receiptNumberLabel.setText(generateNewReceiptNumber());
+    updateTotals();
+}
     
     /**
       * Generates a new receipt number
@@ -4014,6 +4190,28 @@ private void backspaceActiveField() {
         activeField.setText(currentText.substring(0, currentText.length() - 1));
         activeField.positionCaret(activeField.getText().length());
     }
+}
+
+private List<LineItemDto> createLineItems() {
+    List<LineItemDto> lineItems = new ArrayList<>();
+    
+    for (Product product : cartItems) {
+        LineItemDto lineItemDto = Helper.convertProductToLineItemDto(product);
+        
+        // If VAT5 exempt, zero out the VAT amounts
+        if (isVat5Exempt) {
+            lineItemDto.setTotalVAT(0.0);
+            lineItemDto.setTaxRateId(lineItemDto.getTaxRateId());
+            // Recalculate total without VAT
+            double itemTotal = lineItemDto.getUnitPrice() * lineItemDto.getQuantity();
+            double discountAmount = itemTotal * (lineItemDto.getDiscount() / 100.0);
+            lineItemDto.setTotal(itemTotal - discountAmount);
+        }
+        
+        lineItems.add(lineItemDto);
+    }
+    
+    return lineItems;
 }
 
 // Method to check if there's a note

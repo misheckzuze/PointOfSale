@@ -9,6 +9,8 @@ public class InvoiceDetails {
     private int itemCount;
     private double invoiceTotal;
     private double totalVAT;
+    private String transactionType;
+    private double amountPaid;
     private boolean transmitted;
     private String validationUrl;
     
@@ -18,13 +20,15 @@ public class InvoiceDetails {
 
     // Constructor
     public InvoiceDetails(String invoiceNumber, LocalDateTime invoiceDateTime, String buyerTin,
-                          int itemCount, double invoiceTotal, double totalVAT, boolean transmitted, String validationUrl) {
+                          int itemCount, double invoiceTotal, double totalVAT, String transactionType, double amountPaid, boolean transmitted, String validationUrl) {
         this.invoiceNumber = invoiceNumber;
         this.invoiceDateTime = invoiceDateTime;
         this.buyerTin = buyerTin;
         this.itemCount = itemCount;
         this.invoiceTotal = invoiceTotal;
         this.totalVAT = totalVAT;
+        this.transactionType = transactionType;
+        this.amountPaid = amountPaid;
         this.transmitted = transmitted;
         this.validationUrl = validationUrl;
     }
@@ -52,6 +56,14 @@ public class InvoiceDetails {
 
     public double getTotalVAT() {
         return totalVAT;
+    }
+    
+    public String getTransactionType() {
+    return transactionType;
+    }
+
+     public double getAmountPaid() {
+        return amountPaid;
     }
 
     public boolean isTransmitted() {
@@ -85,6 +97,13 @@ public class InvoiceDetails {
 
     public void setTotalVAT(double totalVAT) {
         this.totalVAT = totalVAT;
+    }
+    
+    public void setTransactionType(String transactionType) {
+    this.transactionType = transactionType;
+    }
+     public void setAmountPaid(double amountPaid) {
+        this.amountPaid = amountPaid;
     }
 
     public void setTransmitted(boolean transmitted) {

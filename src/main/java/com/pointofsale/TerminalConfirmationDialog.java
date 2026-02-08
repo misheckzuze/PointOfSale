@@ -190,12 +190,12 @@ public class TerminalConfirmationDialog {
     ApiClient apiClient = new ApiClient();
     apiClient.confirmActivation(xSignature, terminalId, token, success -> {
         if (success) {
-            System.out.println("✅ Terminal activation confirmed!");
+            System.out.println("Terminal activation confirmed!");
 
             // Call getTerminalSiteProducts statically
             apiClient.getTerminalSiteProducts(tin, siteId, token, productsFetched -> {
                 if (productsFetched) {
-                    System.out.println("✅ Products fetched and saved.");
+                    System.out.println("Products fetched and saved.");
 
                     Platform.runLater(() -> {
                         dialogStage.close();
@@ -205,12 +205,12 @@ public class TerminalConfirmationDialog {
                         loginView.start(loginStage);
                     });
                 } else {
-                    System.err.println("⚠ Failed to fetch products.");
+                    System.err.println("Failed to fetch products.");
                 }
             });
 
         } else {
-            System.out.println("❌ Failed to confirm activation.");
+            System.out.println("Failed to confirm activation.");
             dialogStage.close();
         }
     });

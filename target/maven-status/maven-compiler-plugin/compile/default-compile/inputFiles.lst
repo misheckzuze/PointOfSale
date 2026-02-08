@@ -24,6 +24,7 @@ C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\helper\Helper.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\InvoiceSummary.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\EscPosReceiptPrinter.java
+C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\Vat5ValidationResponse.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\helper\ApiClient.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\InvoiceGenerationRequest.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\TaxBreakDown.java
@@ -41,6 +42,7 @@ C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\SettingsView.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\TaxRates.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\HeldSale.java
+C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\Vat5Data.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\ProductManagement.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\SystemInfo.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\CheckResult.java

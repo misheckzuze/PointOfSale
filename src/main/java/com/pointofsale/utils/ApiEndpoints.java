@@ -33,6 +33,9 @@ public class ApiEndpoints {
     
     public static String SERVER_PING = "/utilities/ping";
     
+    //Vat 5 endpoints
+    public static String VALIDATE_VAT5_CERTIFICATE = "/utilities/validate-vat5-certificate";
+    
     
     
     

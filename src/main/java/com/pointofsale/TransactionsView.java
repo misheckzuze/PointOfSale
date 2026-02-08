@@ -46,6 +46,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.List;
 import java.util.function.Predicate;
+import javafx.scene.text.TextAlignment;
 
 public class TransactionsView {
 
@@ -913,7 +914,7 @@ private VBox createReceiptPreview(InvoiceDetails invoice) {
     List<LineItemDto> lineItems = Helper.getLineItems(invoice.getInvoiceNumber());
     List<TaxBreakDown> taxBreakdowns = Helper.generateTaxBreakdown(lineItems);
     String buyersName = invoice.getBuyerTin() != null && !invoice.getBuyerTin().isEmpty() ? 
-                      invoice.getBuyerTin() : "Walk-in Customer";
+                      invoice.getBuyerTin() : "";
     String buyersTIN = invoice.getBuyerTin() != null ? invoice.getBuyerTin() : "";
     String validationUrl = invoice.getValidationUrl() != null ? invoice.getValidationUrl() : "";
     
@@ -988,6 +989,8 @@ private VBox createReceiptPreview(InvoiceDetails invoice) {
     }
     
     double invoiceTotal = subtotal + totalVAT;
+    double amountPaid = invoice.getAmountPaid();
+    String transactionType = invoice.getTransactionType();
     
     // Print totals with left-right alignment
     receiptBox.getChildren().add(createReceiptLine("Subtotal", formatCurrency(subtotal)));
@@ -1004,11 +1007,14 @@ private VBox createReceiptPreview(InvoiceDetails invoice) {
     // Total, emphasized
     receiptBox.getChildren().add(createBoldReceiptLine("TOTAL", formatCurrency(invoiceTotal)));
     
+    //Transaction type:
+    receiptBox.getChildren().add(createReceiptLine("Transaction Type", transactionType));
+    
     // Payment information (simplified - using invoice total as amount tendered)
-    receiptBox.getChildren().add(createReceiptLine("Amount Paid", formatCurrency(invoiceTotal)));
+    receiptBox.getChildren().add(createReceiptLine("Amount Paid", formatCurrency(amountPaid)));
     
     // Change only if > 0 (assuming no change for existing invoices)
-    double change = 0.0;
+    double change = amountPaid-invoiceTotal;
     if (change > 0) {
         receiptBox.getChildren().add(createReceiptLine("Change", formatCurrency(change)));
     }
@@ -1155,16 +1161,20 @@ private Label createBoldReceiptLabel(String text) {
 }
 
 private Label createReceiptLine(String left, String right) {
-    // Calculate spacing for 48 character width
     int spacing = Math.max(1, 48 - left.length() - right.length());
     StringBuilder line = new StringBuilder(left);
     for (int i = 0; i < spacing; i++) {
         line.append(" ");
     }
     line.append(right);
-    
+
     Label label = new Label(line.toString());
     label.setStyle("-fx-font-family: 'Courier New'; -fx-font-size: 12px;");
+    label.setWrapText(false);
+    label.setTextOverrun(OverrunStyle.CLIP); 
+    label.setMaxWidth(Double.MAX_VALUE);
+    label.setMinWidth(Region.USE_PREF_SIZE);
+
     return label;
 }
 
@@ -1187,11 +1197,14 @@ private void printReceipt(InvoiceDetails invoice) {
         
         // Create invoice header object
         InvoiceHeader invoiceHeader = new InvoiceHeader();
+        invoiceHeader.setPaymentMethod(invoice.getTransactionType());
         invoiceHeader.setInvoiceNumber(invoice.getInvoiceNumber());
         
         // For simplicity, assuming payment details - you may need to get these from your data
-        double amountTendered = invoice.getInvoiceTotal();
-        double change = 0.0;
+        double invoiceTotal = invoice.getInvoiceTotal();
+        double amountTendered = invoice.getAmountPaid();
+
+        double change = amountTendered - invoiceTotal;
         
         String buyersName = invoice.getBuyerTin() != null && !invoice.getBuyerTin().isEmpty() ? 
                           invoice.getBuyerTin() : "Walk-in Customer";
@@ -1218,9 +1231,17 @@ private void printReceipt(InvoiceDetails invoice) {
 
 private Label createLeftAlignedLabel(String text) {
     Label label = new Label(text);
-    label.setStyle("-fx-font-family: 'Courier New'; -fx-font-size: 12px; -fx-alignment: center-left;");
+    label.setFont(Font.font("Courier New", 12));
+
+    label.setAlignment(Pos.CENTER_LEFT); 
+    label.setTextAlignment(TextAlignment.LEFT); 
+    label.setMaxWidth(Double.MAX_VALUE); 
+    label.setTextOverrun(OverrunStyle.CLIP);
+    label.setWrapText(true);
+
     return label;
 }
+
     
     private String formatCurrency(double value) {
         NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(Locale.US);

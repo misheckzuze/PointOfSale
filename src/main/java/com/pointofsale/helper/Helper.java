@@ -48,6 +48,7 @@ import com.pointofsale.model.InvoiceHeader;
 import com.pointofsale.model.TaxBreakDown;
 import com.pointofsale.model.LineItemDto;
 import java.time.LocalDateTime;
+import javax.json.JsonValue;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -420,7 +421,7 @@ public static String getTerminalSiteId() {
     String query = """
         SELECT i.InvoiceNumber, i.InvoiceDateTime, i.BuyerTin, 
                COUNT(li.Id) AS ItemCount,
-               i.InvoiceTotal, i.TotalVAT, i.State,
+               i.InvoiceTotal, i.TotalVAT, i.PaymentId, i.AmountPaid, i.State,
                i.ValidationUrl
         FROM Invoices i
         LEFT JOIN LineItems li ON i.InvoiceNumber = li.InvoiceNumber
@@ -439,6 +440,8 @@ public static String getTerminalSiteId() {
             int itemCount = rs.getInt("ItemCount");
             double invoiceTotal = rs.getDouble("InvoiceTotal");
             double totalVAT = rs.getDouble("TotalVAT");
+            String transactionType = rs.getString("PaymentId");
+            double amountPaid = rs.getDouble("AmountPaid");
             boolean transmitted = rs.getInt("State") != 0;
             String validationUrl = rs.getString("ValidationUrl");
 
@@ -452,6 +455,8 @@ public static String getTerminalSiteId() {
                         itemCount,
                         invoiceTotal,
                         totalVAT,
+                        transactionType,
+                        amountPaid,
                         transmitted,
                         validationUrl
                 ));
@@ -609,22 +614,54 @@ public static String getTerminalSiteId() {
         pstmt.setString(1, product.getString("productCode", ""));
         pstmt.setString(2, product.getString("productName", ""));
         pstmt.setString(3, product.getString("description", ""));
-        pstmt.setDouble(4, product.getJsonNumber("quantity").doubleValue());
+        
+        // Handle quantity safely
+        Double quantity = null;
+        JsonValue quantityVal = product.get("quantity");
+        if (quantityVal != null && quantityVal.getValueType() == JsonValue.ValueType.NUMBER) {
+            quantity = product.getJsonNumber("quantity").doubleValue();
+        }
+        pstmt.setObject(4, quantity); // use setObject to allow null
+
         pstmt.setString(5, product.getString("unitOfMeasure", ""));
-        pstmt.setDouble(6, product.getJsonNumber("price").doubleValue());
+
+        // Handle price safely
+        Double price = null;
+        JsonValue priceVal = product.get("price");
+        if (priceVal != null && priceVal.getValueType() == JsonValue.ValueType.NUMBER) {
+            price = product.getJsonNumber("price").doubleValue();
+        }
+        pstmt.setObject(6, price);
+
         pstmt.setString(7, product.getString("siteId", ""));
-        pstmt.setString(8, product.getString("productExpiryDate", null));
-        pstmt.setDouble(9, product.getJsonNumber("minimumStockLevel").doubleValue());
+
+        // Handle productExpiryDate safely
+        String expiryDate = null;
+        JsonValue expiryVal = product.get("productExpiryDate");
+        if (expiryVal != null && expiryVal.getValueType() == JsonValue.ValueType.STRING) {
+            expiryDate = product.getString("productExpiryDate");
+        }
+        pstmt.setString(8, expiryDate);
+
+        // Handle minimumStockLevel safely
+        Double minStock = null;
+        JsonValue minStockVal = product.get("minimumStockLevel");
+        if (minStockVal != null && minStockVal.getValueType() == JsonValue.ValueType.NUMBER) {
+            minStock = product.getJsonNumber("minimumStockLevel").doubleValue();
+        }
+        pstmt.setObject(9, minStock);
+
         pstmt.setString(10, product.getString("taxRateId", ""));
         pstmt.setInt(11, product.getBoolean("isProduct") ? 1 : 0);
 
         pstmt.executeUpdate();
-        System.out.println("✅ Inserted/Updated product: " + product.getString("productCode"));
-        } catch (Exception e) {
-        System.err.println("❌ Failed to insert product: " + e.getMessage());
+        System.out.println("Inserted/Updated product: " + product.getString("productCode"));
+    } catch (Exception e) {
+        System.err.println("Failed to insert product: " + e.getMessage());
         e.printStackTrace();
-        }
     }
+}
+
     public static List<Product> fetchAllProductsFromDB() {
         List<Product> products = new ArrayList<>();
 
@@ -982,14 +1019,11 @@ public static boolean saveTransaction(
 
     String updateProductQuery = "UPDATE Products SET Quantity = ? WHERE ProductCode = ?";
 
-    String insertPaymentTypeQuery = "INSERT INTO PaymentType (PaymentId, Name, AmountPaid) VALUES (?, ?, ?)";
-
     try (Connection connection = Database.createConnection()) {
         connection.setAutoCommit(false);
 
         try (
             PreparedStatement invoiceStmt = connection.prepareStatement(insertInvoiceQuery);
-            PreparedStatement paymentStmt = connection.prepareStatement(insertPaymentTypeQuery);
             PreparedStatement lineItemStmt = connection.prepareStatement(insertLineItemQuery);
             PreparedStatement updateProductStmt = connection.prepareStatement(updateProductQuery);
             PreparedStatement taxBreakdownStmt = connection.prepareStatement(insertTaxBreakdownQuery)
@@ -1010,10 +1044,6 @@ public static boolean saveTransaction(
             invoiceStmt.executeUpdate();
 
             // Insert Payment Info
-            paymentStmt.setString(1, paymentId);
-            paymentStmt.setString(2, "CASH");
-            paymentStmt.setDouble(3, amountPaid);
-            paymentStmt.executeUpdate();
 
             // Insert Line Items
             for (LineItemDto item : lineItems) {
@@ -1323,6 +1353,7 @@ public static boolean transmitInvoice(String invoiceNumber) {
                 invoiceSummary.setTaxBreakDown(Helper.generateTaxBreakdown(lineItems));
                 invoiceSummary.setTotalVAT(rs.getDouble("TotalVAT"));
                 invoiceSummary.setInvoiceTotal(rs.getDouble("InvoiceTotal"));
+                invoiceSummary.setAmountTendered(rs.getDouble("AmountPaid"));
                 invoiceSummary.setOfflineSignature("");
 
                 InvoicePayload payload = new InvoicePayload();
@@ -1373,6 +1404,7 @@ public static void retryPendingTransactions(
     Map<String, Double> vatMap = new HashMap<>();
     Map<String, Double> totalMap = new HashMap<>();
     Map<String, String> paymentMap = new HashMap<>();
+    Map<String, Double> amountPaidMap = new HashMap<>();
 
     try (Connection connection = Database.createConnection();
          PreparedStatement stmt = connection.prepareStatement(query);
@@ -1383,6 +1415,7 @@ public static void retryPendingTransactions(
             pendingInvoices.add(invoiceNumber);
             vatMap.put(invoiceNumber, rs.getDouble("TotalVAT"));
             totalMap.put(invoiceNumber, rs.getDouble("InvoiceTotal"));
+            amountPaidMap.put(invoiceNumber, rs.getDouble("AmountPaid"));
             paymentMap.put(invoiceNumber, rs.getString("PaymentId")); // ✅ extract PaymentId
         }
 
@@ -1403,6 +1436,7 @@ public static void retryPendingTransactions(
                     invoiceSummary.setTaxBreakDown(Helper.generateTaxBreakdown(lineItems));
                     invoiceSummary.setTotalVAT(vatMap.getOrDefault(invoiceNumber, 0.0));
                     invoiceSummary.setInvoiceTotal(totalMap.getOrDefault(invoiceNumber, 0.0));
+                    invoiceSummary.setAmountTendered(amountPaidMap.getOrDefault(invoiceNumber, 0.0)); 
                     invoiceSummary.setOfflineSignature("");
 
                     InvoicePayload payload = new InvoicePayload();

@@ -25,6 +25,8 @@ import com.pointofsale.model.InvoiceSummary;
 import com.pointofsale.model.TerminalBlockingInfo;
 import com.pointofsale.model.TerminalBlockingResponse;
 import com.pointofsale.model.LineItemDto;
+import com.pointofsale.model.Vat5Data;
+import com.pointofsale.model.Vat5ValidationResponse;
 import com.pointofsale.model.PingResponse;
 import com.pointofsale.model.TerminalUnblockStatusResponse;
 import com.pointofsale.model.CheckResult;
@@ -135,7 +137,7 @@ public class ApiClient {
                 String remark = json.getString("remark", "");
 
                 if (statusCode == 1) {
-                    System.out.println("✅ Terminal activation confirmed: " + remark);
+                    System.out.println("Terminal activation confirmed: " + remark);
                     
                     boolean isActive = json.getBoolean("data");
                      // Insert the 'isActive' value into the database
@@ -145,13 +147,13 @@ public class ApiClient {
                     success = insertResult;
 
                 } else {
-                    System.err.println("⚠ Terminal activation failed: " + remark);
+                    System.err.println("Terminal activation failed: " + remark);
                 }
             } else {
-                System.err.println("❌ Failed to confirm activation. HTTP " + response.statusCode());
+                System.err.println("Failed to confirm activation. HTTP " + response.statusCode());
             }
         } catch (Exception e) {
-            System.err.println("❌ Error during terminal activation confirmation: " + e.getMessage());
+            System.err.println("Error during terminal activation confirmation: " + e.getMessage());
             e.printStackTrace();
         }
 
@@ -324,8 +326,6 @@ public class ApiClient {
         }
     }).start();
 }
-
-
     
     private String createTerminalIdPayload(String terminalId) {
     JsonObject payload = Json.createObjectBuilder()
@@ -600,6 +600,53 @@ public boolean fetchLatestConfig(String bearerToken) {
     } catch (SQLException e) {
         System.err.println("❌ Error fetching pending transactions: " + e.getMessage());
     }
+}
+  
+public void validateVat5Certificate(String projectNumber, String certificateNumber, 
+                                    double quantity, String bearerToken, 
+                                    Consumer<Vat5Data> onResult) {
+    System.out.println("Starting validateVat5Certificate...");
+    new Thread(() -> {
+        try {
+            // Create request payload
+            String json = String.format(
+                "{\"projectNumber\":\"%s\",\"certificateNumber\":\"%s\",\"quantity\":%.0f}",
+                projectNumber, certificateNumber, quantity
+            );
+            
+            String url = ApiEndpoints.BASE_URL + ApiEndpoints.VALIDATE_VAT5_CERTIFICATE;
+            System.out.println("Sending request to: " + url);
+            System.out.println("Request payload: " + json);
+            
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + bearerToken)
+                    .header("Accept", "text/plain")
+                    .timeout(Duration.ofSeconds(30))
+                    .POST(HttpRequest.BodyPublishers.ofString(json))
+                    .build();
+            
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            System.out.println("Received response. Status code: " + response.statusCode());
+            System.out.println("Response body: " + response.body());
+            
+            Vat5Data result = null;
+            if (response.statusCode() == 200) {
+                ObjectMapper mapper = new ObjectMapper();
+                Vat5ValidationResponse vat5Response = 
+                        mapper.readValue(response.body(), Vat5ValidationResponse.class);
+                result = vat5Response.data;
+            }
+            
+            Vat5Data finalResult = result;
+            Platform.runLater(() -> onResult.accept(finalResult));
+        } catch (Exception e) {
+            System.err.println("Exception during validateVat5Certificate: " + e.getMessage());
+            e.printStackTrace();
+            Platform.runLater(() -> onResult.accept(null));
+        }
+    }).start();
 }
   
   public void validateAuthorizationCode(String authCode, String bearerToken, Consumer<Boolean> callback) {

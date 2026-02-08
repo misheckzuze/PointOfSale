@@ -7,6 +7,7 @@ public class InvoiceSummary {
     private double totalVAT;
     private String offlineSignature;
     private double invoiceTotal;
+    private double amountTendered;
 
     // Getters and Setters
     public List<TaxBreakDown> getTaxBreakDown() {
@@ -20,6 +21,7 @@ public class InvoiceSummary {
     public double getTotalVAT() {
         return totalVAT;
     }
+    
 
     public void setTotalVAT(double totalVAT) {
         this.totalVAT = totalVAT;
@@ -27,6 +29,14 @@ public class InvoiceSummary {
 
     public String getOfflineSignature() {
         return offlineSignature;
+    }
+    
+    public double getAmountTendered(){
+        return amountTendered;
+    }
+    
+     public void setAmountTendered(double amountTendered) {
+        this.amountTendered = amountTendered;
     }
 
     public void setOfflineSignature(String offlineSignature) {
