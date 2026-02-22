@@ -79,10 +79,14 @@ public class ActivationDataInserter {
             }
             
             // === Activated Levies ===
-            JsonArray activatedLevies = data
-                 .getJsonObject("configuration")
-                 .getJsonObject("taxpayerConfiguration")
-                 .getJsonArray("activatedLevies");
+            JsonValue activatedLeviesValue = data
+              .getJsonObject("configuration")
+              .getJsonObject("taxpayerConfiguration")
+              .get("activatedLevies");
+
+            JsonArray activatedLevies = (activatedLeviesValue != null && activatedLeviesValue.getValueType() == JsonValue.ValueType.ARRAY)
+               ? activatedLeviesValue.asJsonArray()
+               : null;
 
             if (activatedLevies != null) {
                 String insertLevySQL =

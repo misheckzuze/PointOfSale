@@ -1334,13 +1334,13 @@ private Button createResponsiveSecondaryActionButton(String text, double fontSiz
  * Updates the total amounts in the checkout panel and refreshes the change calculation
 */
 private void updateTotals() {
-    double subtotal = 0.0;
+    double subtotal = 0.0;        // VAT-inclusive subtotal (before cart discount)
     double totalTax = 0.0;
     double totalLevies = 0.0;
     int totalQuantity = 0;
     double itemLevelDiscountTotal = 0.0;
 
-    // Step 1: Item-level discounts
+    // Step 1: Item-level discounts (kept as requested)
     for (Product item : cartItems) {
         double discount = item.getDiscount();
 
@@ -1348,11 +1348,11 @@ private void updateTotals() {
             applyDiscountToItem(item, discount, false);
         }
 
-        double itemPrice = item.getPrice();
+        double itemPrice = item.getPrice();       // VAT-inclusive price
         double itemQuantity = item.getQuantity();
         double itemSubtotal = itemPrice * itemQuantity;
 
-        // Only count as discount if discount was explicitly set
+        // Track item-level discount total
         double discountPerItem = 0.0;
         if (discount > 0) {
             double originalPrice = item.getOriginalPrice();
@@ -1364,37 +1364,56 @@ private void updateTotals() {
         totalQuantity += (int) itemQuantity;
     }
 
-    // Step 2: Cart-level discount
+    // Step 2: Flat cart discount (always flat as you said)
     double cartLevelDiscount = 0.0;
-    if (cartDiscountPercent > 0) {
-        cartLevelDiscount = subtotal * (cartDiscountPercent / 100.0);
-    } else if (cartDiscountAmount > 0) {
+    if (cartDiscountAmount > 0) {
         cartLevelDiscount = Math.min(cartDiscountAmount, subtotal);
     }
 
     double discountedSubtotal = subtotal - cartLevelDiscount;
 
-    // Step 3: VAT after discount
+    // Step 3: VAT after discount (VAT extracted from discounted amounts)
     boolean isVATRegistered = Helper.isVATRegistered();
     for (Product item : cartItems) {
+        double itemGross = item.getPrice() * item.getQuantity();
         double taxRate = Helper.getTaxRateById(item.getTaxRate());
+
         if (isVATRegistered && !isVat5Exempt) {
-            double proportion = (item.getPrice() * item.getQuantity()) / subtotal;
-            double itemDiscountedSubtotal = (item.getPrice() * item.getQuantity()) - (cartLevelDiscount * proportion);
-            double itemVAT = (itemDiscountedSubtotal * taxRate) / (100 + taxRate);
+            double proportion = subtotal == 0 ? 0 : itemGross / subtotal;
+            double itemDiscountShare = cartLevelDiscount * proportion;
+            double itemDiscountedGross = itemGross - itemDiscountShare;
+
+            double itemVAT = (itemDiscountedGross * taxRate) / (100 + taxRate);
             totalTax += itemVAT;
         }
     }
 
-    // Step 4: Levies
+    // Step 4: Levies (VAT-excluded, item-based)
     List<LevyDto> levies = Helper.getActiveLevies();
-    if (!cartItems.isEmpty() && totalQuantity > 0) {
+    if (!cartItems.isEmpty()) {
         for (LevyDto levy : levies) {
-            if ("PERCENTAGE".equalsIgnoreCase(levy.getChargeMode())) {
-                totalLevies += (discountedSubtotal * levy.getRate()) / 100.0;
-            } else if ("Item".equalsIgnoreCase(levy.getChargeMode())) {
-                totalLevies += levy.getRate() * totalQuantity;
+
+            double levyAmount = 0.0;
+
+            for (Product item : cartItems) {
+                double itemGross = item.getPrice() * item.getQuantity();
+                double taxRate = Helper.getTaxRateById(item.getTaxRate());
+
+                double itemVAT = 0.0;
+                if (isVATRegistered && !isVat5Exempt) {
+                    itemVAT = (itemGross * taxRate) / (100 + taxRate);
+                }
+
+                double preVatAmount = itemGross - itemVAT; // VAT-excluded base
+
+                if ("PERCENTAGE".equalsIgnoreCase(levy.getChargeMode())) {
+                    levyAmount += (preVatAmount * levy.getRate()) / 100.0;
+                } else if ("Item".equalsIgnoreCase(levy.getChargeMode())) {
+                    levyAmount += levy.getRate() * item.getQuantity();
+                }
             }
+
+            totalLevies += levyAmount;
         }
     }
 
@@ -1416,7 +1435,6 @@ private void updateTotals() {
 
     updateChangeCalculation();
 }
-
 /**
  * Updates the change calculation and payment button state
  */
@@ -1596,20 +1614,39 @@ private void updateChangeCalculation() {
     double invoiceTotal = lineItems.stream().mapToDouble(LineItemDto::getTotal).sum();
     
     //Including Levies
-    List<LevyDto> activeLevies = Helper.getActiveLevies();
-    List<LevyBreakDownDto> levyBreakDowns = new ArrayList<>();
-    double totalLevies = 0.0;
-    for (LevyDto levy : activeLevies) {
+    //Including Levies (VAT-excluded)
+List<LevyDto> activeLevies = Helper.getActiveLevies();
+List<LevyBreakDownDto> levyBreakDowns = new ArrayList<>();
+double totalLevies = 0.0;
+
+for (LevyDto levy : activeLevies) {
     LevyBreakDownDto levyDto = new LevyBreakDownDto();
     levyDto.setLevyTypeId(levy.getId());
     levyDto.setLevyRate(levy.getRate());
-    double levyAmount = "PERCENTAGE".equalsIgnoreCase(levy.getChargeMode()) ?
-                        (invoiceTotal * levy.getRate()) / 100.0 : levy.getRate();
+
+    double levyAmount = 0.0;
+
+    for (LineItemDto item : lineItems) {
+        double lineTotal = item.getTotal();        // price including VAT
+        double vatRate = item.getTotalVAT();        // e.g., 16%
+        
+        // Extract pre-VAT base
+        double preVatAmount = lineTotal - vatRate; // formula: preVAT = Total * 100 / (100 + Rate)
+        
+        // Apply levy on pre-VAT base
+        double itemLevy = "PERCENTAGE".equalsIgnoreCase(levy.getChargeMode()) ?
+                          (preVatAmount * levy.getRate()) / 100.0 :
+                          levy.getRate();
+        
+        levyAmount += itemLevy;
+    }
+
     levyDto.setLevyAmount(levyAmount);
     levyBreakDowns.add(levyDto);
     totalLevies += levyAmount;
-    }
-    invoiceSummary.setLevyBreakDown(levyBreakDowns);
+}
+
+invoiceSummary.setLevyBreakDown(levyBreakDowns);
     
     invoiceSummary.setTaxBreakDown(taxBreakdowns);
     invoiceSummary.setTotalVAT(totalVATAmount);

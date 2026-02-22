@@ -38,6 +38,7 @@ public class LoginView extends Application {
     private Scene scene;
     private TextField usernameField;
     private PasswordField passwordField;
+    private TextField passwordVisible;   // plain text field shown when eye is toggled ON
     private Button loginButton;
     private Label statusMessage;
     
@@ -216,29 +217,72 @@ public class LoginView extends Application {
 
         usernameBox.getChildren().addAll(usernameLabel, usernameStack);
         
-        // Password field with icon
+        // ── Password field with lock icon + eye toggle ──────────────────────────
         VBox passwordBox = new VBox(8);
         Label passwordLabel = new Label("Password");
         passwordLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #555555;");
 
-        // Create password icon (using Unicode symbol)
+        String fieldStyle = "-fx-font-size: 14px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+                            "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: #f8f8f8;";
+
+        // Lock icon on the left
         Label passwordIcon = new Label("🔒");
         passwordIcon.setStyle("-fx-font-size: 16px; -fx-text-fill: #757575;");
         passwordIcon.setPadding(new Insets(0, 0, 0, 8));
 
+        // Hidden (masked) password field
         passwordField = new PasswordField();
         passwordField.setPromptText("Enter your password");
         passwordField.setPrefHeight(40);
-        passwordField.setPadding(new Insets(0, 0, 0, 30)); // Add left padding for icon
-        passwordField.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
-                              "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: #f8f8f8;");
+        passwordField.setPadding(new Insets(0, 32, 0, 30)); // right padding reserves space for eye icon
+        passwordField.setStyle(fieldStyle);
 
-        // Stack the icon over the password field
+        // Visible (plain text) password field – hidden by default
+        passwordVisible = new TextField();
+        passwordVisible.setPromptText("Enter your password");
+        passwordVisible.setPrefHeight(40);
+        passwordVisible.setPadding(new Insets(0, 32, 0, 30));
+        passwordVisible.setStyle(fieldStyle);
+        passwordVisible.setVisible(false);
+        passwordVisible.setManaged(false);
+
+        // Eye toggle button
+        Button eyeToggle = new Button("👁");
+        eyeToggle.setStyle(
+            "-fx-background-color: transparent; -fx-border-color: transparent; " +
+            "-fx-font-size: 16px; -fx-cursor: hand; -fx-padding: 0 8 0 0;"
+        );
+        eyeToggle.setTooltip(new Tooltip("Show / Hide password"));
+
+        // Keep the two fields in sync and swap visibility on click
+        eyeToggle.setOnAction(e -> {
+            if (passwordField.isVisible()) {
+                // Switch to plain-text view
+                passwordVisible.setText(passwordField.getText());
+                passwordField.setVisible(false);
+                passwordField.setManaged(false);
+                passwordVisible.setVisible(true);
+                passwordVisible.setManaged(true);
+                eyeToggle.setText("🙈"); // closed-eye feedback
+            } else {
+                // Switch back to masked view
+                passwordField.setText(passwordVisible.getText());
+                passwordVisible.setVisible(false);
+                passwordVisible.setManaged(false);
+                passwordField.setVisible(true);
+                passwordField.setManaged(true);
+                eyeToggle.setText("👁");
+            }
+        });
+
+        // Overlay: left lock icon + right eye button on top of whichever field is active
         StackPane passwordStack = new StackPane();
-        passwordStack.getChildren().addAll(passwordField, passwordIcon);
-        StackPane.setAlignment(passwordIcon, Pos.CENTER_LEFT);
+        passwordStack.getChildren().addAll(passwordField, passwordVisible, passwordIcon, eyeToggle);
+        StackPane.setAlignment(passwordIcon,  Pos.CENTER_LEFT);
+        StackPane.setAlignment(eyeToggle,     Pos.CENTER_RIGHT);
 
         passwordBox.getChildren().addAll(passwordLabel, passwordStack);
+        // ────────────────────────────────────────────────────────────────────────
         
         // Remember me checkbox and forgot password link
         HBox optionsBox = new HBox();
@@ -292,7 +336,10 @@ public class LoginView extends Application {
         
         loginButton.setOnAction(e -> {
           String username = usernameField.getText().trim();
-          String password = passwordField.getText().trim();
+          // Read from whichever password field is currently active
+          String password = passwordField.isVisible()
+                  ? passwordField.getText().trim()
+                  : passwordVisible.getText().trim();
     
           // Check if username and password are not empty
           if (username.isEmpty() || password.isEmpty()) {
