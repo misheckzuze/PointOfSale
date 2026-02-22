@@ -123,6 +123,9 @@ public class Product implements Cloneable {
     public SimpleDoubleProperty quantityProperty() { return quantity; }
     public SimpleDoubleProperty discountProperty() { return discount; }
     public SimpleDoubleProperty totalVATProperty() { return totalVAT; }
+    public SimpleDoubleProperty totalProperty() {
+    return total;
+}
 
     // Clone method
     @Override

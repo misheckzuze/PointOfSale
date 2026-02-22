@@ -14,9 +14,11 @@ import javafx.util.Pair;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import com.pointofsale.model.InvoiceSummary;
+import com.pointofsale.model.LevyBreakDownDto;
 import com.pointofsale.model.TerminalContactInfo;
 import com.google.gson.Gson;
 import com.pointofsale.model.InvoicePayload;
+import com.pointofsale.model.LevyDto;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
@@ -728,7 +730,6 @@ public static Product fetchProductByBarcode(String barcode) {
     return null;
 }
 
-
 public static boolean updateProductDiscount(String productCode, double discount) {
     try (Connection conn = Database.createConnection()) {
         String updateQuery = "UPDATE Products SET Discount = ? WHERE ProductCode = ?";
@@ -999,6 +1000,7 @@ public static boolean saveTransaction(
         InvoiceHeader invoice,
         List<LineItemDto> lineItems,
         List<TaxBreakDown> taxBreakdowns,
+        List<LevyBreakDownDto> levies,
         double total,
         double totalVAT,
         String offlineSignature,
@@ -1016,6 +1018,8 @@ public static boolean saveTransaction(
     String insertLineItemQuery = "INSERT INTO LineItems (ProductCode, Description, Quantity, TaxRateID, Discount, UnitPrice, TotalPrice, DiscountAmount, VATRate, IsProduct, VATAmount, InvoiceNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
     String insertTaxBreakdownQuery = "INSERT INTO InvoiceTaxBreakDown (InvoiceNumber, RateID, TaxableAmount, TaxAmount) VALUES (?, ?, ?, ?)";
+    
+    String insertInvoiceLeviesQuery = "INSERT INTO InvoiceLevies (InvoiceNumber, LevyId, LevyAmount) VALUES (?, ?, ?)";
 
     String updateProductQuery = "UPDATE Products SET Quantity = ? WHERE ProductCode = ?";
 
@@ -1026,7 +1030,9 @@ public static boolean saveTransaction(
             PreparedStatement invoiceStmt = connection.prepareStatement(insertInvoiceQuery);
             PreparedStatement lineItemStmt = connection.prepareStatement(insertLineItemQuery);
             PreparedStatement updateProductStmt = connection.prepareStatement(updateProductQuery);
-            PreparedStatement taxBreakdownStmt = connection.prepareStatement(insertTaxBreakdownQuery)
+            PreparedStatement taxBreakdownStmt = connection.prepareStatement(insertTaxBreakdownQuery);
+            PreparedStatement invoiceLeviesStmt = connection.prepareStatement(insertInvoiceLeviesQuery)
+            
         ) {
             // Insert Invoice
             invoiceStmt.setString(1, invoice.getInvoiceNumber());
@@ -1083,17 +1089,27 @@ public static boolean saveTransaction(
                 taxBreakdownStmt.setDouble(4, tax.getTaxAmount());
                 taxBreakdownStmt.executeUpdate();
             }
+            
+             // Insert Levies
+            if (levies != null) {
+                for (LevyBreakDownDto levy : levies) {
+                    invoiceLeviesStmt.setString(1, invoice.getInvoiceNumber());
+                    invoiceLeviesStmt.setString(2, levy.getLevyTypeId());
+                    invoiceLeviesStmt.setDouble(3, levy.getLevyAmount());
+                    invoiceLeviesStmt.executeUpdate();
+                }
+            }
 
             connection.commit();
             return true;
 
         } catch (SQLException ex) {
             connection.rollback();
-            System.err.println("❌ Error during transaction save: " + ex.getMessage());
+            System.err.println("Error during transaction save: " + ex.getMessage());
             return false;
         }
     } catch (SQLException e) {
-        System.err.println("❌ DB Connection error: " + e.getMessage());
+        System.err.println("DB Connection error: " + e.getMessage());
         return false;
     }
 }
@@ -1438,6 +1454,8 @@ public static void retryPendingTransactions(
                     invoiceSummary.setInvoiceTotal(totalMap.getOrDefault(invoiceNumber, 0.0));
                     invoiceSummary.setAmountTendered(amountPaidMap.getOrDefault(invoiceNumber, 0.0)); 
                     invoiceSummary.setOfflineSignature("");
+                    List<LevyBreakDownDto> levies = Helper.getLevyBreakdown(invoiceNumber);
+                    invoiceSummary.setLevyBreakDown(levies);
 
                     InvoicePayload payload = new InvoicePayload();
                     payload.setInvoiceHeader(header);
@@ -2405,6 +2423,78 @@ public static SecuritySettings getSettings() {
 
     return validationUrl;
 }
+   
+   public static List<LevyDto> getActiveLevies() {
+    List<LevyDto> levies = new ArrayList<>();
+
+    try (Connection conn = Database.createConnection()) {
+
+        String query = "SELECT Id, Name, ChargeMode, Rate, IsActive FROM Levies WHERE IsActive = 1";
+
+        try (PreparedStatement stmt = conn.prepareStatement(query)) {
+            var rs = stmt.executeQuery();
+
+            while (rs.next()) {
+                LevyDto levy = new LevyDto();
+                levy.setId(rs.getString("Id"));
+                levy.setName(rs.getString("Name"));
+                levy.setChargeMode(rs.getString("ChargeMode"));
+                levy.setRate(rs.getDouble("Rate"));
+                levy.setActive(rs.getInt("IsActive") == 1);
+
+                levies.add(levy);
+            }
+        }
+
+    } catch (SQLException e) {
+        System.err.println("❌ Failed to fetch levies: " + e.getMessage());
+    }
+
+    return levies;
+}
+public static String getLevyNameById(String levyId) {
+    try (Connection conn = Database.createConnection()) {
+        String query = "SELECT Name FROM Levies WHERE Id = ?";
+        try (PreparedStatement stmt = conn.prepareStatement(query)) {
+            stmt.setString(1, levyId);
+            var rs = stmt.executeQuery();
+            if (rs.next()) {
+                return rs.getString("Name");
+            }
+        }
+    } catch (SQLException e) {
+        System.err.println("Failed to get levy name: " + e.getMessage());
+    }
+    return "Unknown Levy";
+}
+
+public static List<LevyBreakDownDto> getLevyBreakdown(String invoiceNumber) {
+    List<LevyBreakDownDto> levies = new ArrayList<>();
+    String query = "SELECT il.LevyId, l.Rate, il.LevyAmount " +
+                   "FROM InvoiceLevies il " +
+                   "LEFT JOIN Levies l ON il.LevyId = l.Id " +
+                   "WHERE il.InvoiceNumber = ?";
+
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(query)) {
+
+        stmt.setString(1, invoiceNumber);
+        var rs = stmt.executeQuery();
+
+        while (rs.next()) {
+            String levyId = rs.getString("LevyId");
+            double levyRate = rs.getDouble("Rate"); 
+            double levyAmount = rs.getDouble("LevyAmount"); 
+            levies.add(new LevyBreakDownDto(levyId, levyRate, levyAmount));
+        }
+
+    } catch (SQLException e) {
+        System.err.println("Failed to get levy breakdown: " + e.getMessage());
+    }
+
+    return levies;
+}
+
 
 
     private static String computeHMACWithSHA256(String data, String key) {

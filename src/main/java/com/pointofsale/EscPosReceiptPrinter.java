@@ -9,6 +9,7 @@ import com.pointofsale.model.LineItemDto;
 import com.pointofsale.model.TerminalContactInfo;
 import com.pointofsale.model.TaxBreakDown;
 import com.pointofsale.helper.Helper;
+import com.pointofsale.model.LevyBreakDownDto;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.LocalDateTime;
@@ -45,7 +46,8 @@ public class EscPosReceiptPrinter {
             String validationUrl,
             double amountTendered,
             double change,
-            List<TaxBreakDown> invoiceTaxBreakDown
+            List<TaxBreakDown> invoiceTaxBreakDown,
+            List<LevyBreakDownDto> invoiceLevies
     ) throws Exception {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         TerminalContactInfo contact = Helper.getTerminalContactInfo();
@@ -148,7 +150,13 @@ if (Helper.isVATRegistered()) {
     totalVAT = 0;
 }
 
-double invoiceTotal = subtotal + totalVAT;
+// Calculate total levies
+    double totalLevies = 0;
+        if (invoiceLevies != null && !invoiceLevies.isEmpty()) {
+            for (LevyBreakDownDto levy : invoiceLevies) {
+                totalLevies += levy.getLevyAmount();
+            }
+        }
 
 // Print totals with left-right alignment
 printFormattedLine(output, "Subtotal", formatCurrency(subtotal), 0);
@@ -161,6 +169,18 @@ if (Helper.isVATRegistered()) {
         printFormattedLine(output, label, formatCurrency(tax.getTaxAmount()), 0);
     }
 }
+ // Print levies
+   // Print levies
+if (invoiceLevies != null && !invoiceLevies.isEmpty()) {
+    for (LevyBreakDownDto levy : invoiceLevies) {
+        // Resolve name from ID
+        String levyName = Helper.getLevyNameById(levy.getLevyTypeId());
+        printFormattedLine(output, levyName, formatCurrency(levy.getLevyAmount()), 0);
+    }
+}
+
+// Calculate total including levies
+double invoiceTotal = subtotal + totalVAT + totalLevies;
 
 // Total, emphasized
 output.write(ESC_EMPHASIZE_ON);

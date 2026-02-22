@@ -55,6 +55,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import javafx.scene.text.FontWeight;
 import com.pointofsale.model.Session;
 import com.pointofsale.model.InvoiceSummary;
+import com.pointofsale.model.LevyBreakDownDto;
 import com.pointofsale.model.InvoiceDetails;
 import com.pointofsale.model.InvoiceGenerationRequest;
 import javafx.scene.text.Text;
@@ -67,6 +68,7 @@ import javafx.animation.PauseTransition;
 import javafx.animation.TranslateTransition;
 import javafx.application.Platform;
 import com.pointofsale.model.Product;
+import com.pointofsale.model.LevyDto;
 import com.pointofsale.model.Vat5CertificateDetails;
 import com.pointofsale.model.LineItemDto;
 import com.pointofsale.model.InvoiceHeader;
@@ -114,6 +116,7 @@ public class POSDashboard extends Application {
     private double cartDiscountAmount = 0.0;
     private double cartDiscountPercent = 0.0;
     private Label discountValueLabel;
+    private Label leviesValueLabel;
     private TextField customerNamesField;
     private TextField  tinField; 
     private ObservableList<Product> cartItems;
@@ -620,14 +623,16 @@ private void showAlert(String title, String message) {
                 return;
             }
 
-            // 🔍 Validate stock
-            Product stockProduct = Helper.fetchProductByBarcode(selectedProduct.getBarcode());
-            double stockQty = stockProduct != null ? stockProduct.getQuantity() : 0;
+          // 🔍 Validate stock ONLY for products (not services)
+if (selectedProduct.isProduct()) {
+    Product stockProduct = Helper.fetchProductByBarcode(selectedProduct.getBarcode());
+    double stockQty = stockProduct != null ? stockProduct.getQuantity() : 0;
 
-            if (newQuantity > stockQty) {
-                showAlert("Stock Error", "Only " + stockQty + " units available in stock.");
-                return;
-            }
+    if (newQuantity > stockQty) {
+        showAlert("Stock Error", "Only " + stockQty + " in stock.");
+        return;
+    }
+}
 
             if (newQuantity == 0) {
                 removeItemFromCart(selectedProduct);
@@ -648,52 +653,53 @@ private void showAlert(String title, String message) {
     ProductLookupDialog lookupDialog = new ProductLookupDialog(stage);
     Product selectedProduct = lookupDialog.showAndSelect();
 
-    if (selectedProduct != null) {
-        String barcode = selectedProduct.getBarcode();
+    if (selectedProduct == null) return;
 
-        // Fetch current stock from DB
-        Product stockProduct = Helper.fetchProductByBarcode(barcode);
-        if (stockProduct == null) {
-            showAlert("Error", "Product not found in database.");
-            return;
-        }
+    String barcode = selectedProduct.getBarcode();
 
-        double stockQty = stockProduct.getQuantity();
-        double cartQty = 0;
-
-        for (Product item : cartItems) {
-            if (item.getBarcode().equals(barcode)) {
-                cartQty = item.getQuantity();
-                break;
-            }
-        }
-
-        if (cartQty + 1 > stockQty) {
-            showAlert("Stock Limit", "Only " + stockQty + " units are available in stock.");
-            return;
-        }
-
-        boolean found = false;
-        for (Product item : cartItems) {
-            if (item.getBarcode().equals(barcode)) {
-                item.setQuantity(item.getQuantity() + 1);
-                item.updateTotal();
-                found = true;
-                break;
-            }
-        }
-
-        if (!found) {
-            selectedProduct.setQuantity(1);
-            cartItems.add(selectedProduct);
-        }
-
-        cartTable.refresh();
-        updateTotals();
-        barcodeField.clear();
-        barcodeField.requestFocus();
+    // 🔒 Normal product flow (with stock validation)
+    Product stockProduct = Helper.fetchProductByBarcode(barcode);
+    if (stockProduct == null) {
+        showAlert("Error", "Product not found in database.");
+        return;
     }
+
+    double stockQty = stockProduct.getQuantity();
+    if (stockQty <= 0) {
+        showAlert("Out of Stock", "Item is out of stock.");
+        return;
+    }
+
+    Product existingItem = null;
+    double cartQty = 0;
+
+    for (Product item : cartItems) {
+        if (barcode.equals(item.getBarcode())) {
+            existingItem = item;
+            cartQty = item.getQuantity();
+            break;
+        }
+    }
+
+    if (cartQty + 1 > stockQty) {
+        showAlert("Stock Limit", "Only " + stockQty + " in stock.");
+        return;
+    }
+
+    if (existingItem != null) {
+        existingItem.setQuantity(existingItem.getQuantity() + 1);
+        existingItem.updateTotal();
+    } else {
+        selectedProduct.setQuantity(1);
+        cartItems.add(selectedProduct);
+    }
+
+    cartTable.refresh();
+    updateTotals();
+    barcodeField.clear();
+    barcodeField.requestFocus();
 });
+
        
         quickActions.getChildren().addAll(scanButton, lookupButton, discountButton, quantityButton);
         
@@ -747,39 +753,69 @@ private void showAlert(String title, String message) {
        unitCol.setPrefWidth(250);
 
         
-        TableColumn<Product, Double> priceCol = new TableColumn<>("Price");
-        priceCol.setCellValueFactory(new PropertyValueFactory<>("price"));
-        priceCol.setPrefWidth(120);
-        priceCol.setCellFactory(col -> new TableCell<Product, Double>() {
-            @Override
-            protected void updateItem(Double price, boolean empty) {
-                super.updateItem(price, empty);
-                if (empty) {
-                    setText(null);
-                } else {
-                    setText(formatCurrency(price));
+TableColumn<Product, Double> priceCol = new TableColumn<>("Price");
+priceCol.setCellValueFactory(cellData -> 
+    cellData.getValue().priceProperty().asObject()
+);
+priceCol.setPrefWidth(120);
+
+priceCol.setCellFactory(col -> new TableCell<Product, Double>() {
+  @Override
+protected void updateItem(Double price, boolean empty) {
+    super.updateItem(price, empty);
+    if (empty || price == null) {
+        setText(null);
+        setOnMouseClicked(null);
+        setStyle("");
+        return;
+    }
+    
+    Product product = getTableRow().getItem(); // safer way to get product
+    if (product == null) return;
+    
+    setText(formatCurrency(product.getPrice())); // read directly from product, not the 'price' parameter
+    
+    if (!product.isProduct()) {
+        setStyle("-fx-text-fill: #1565c0; -fx-font-weight: bold;");
+        setOnMouseClicked(e -> {
+            if (e.getClickCount() == 2) {
+                Double newPrice = promptForServicePrice(product);
+                if (newPrice != null) {
+                    product.setPrice(newPrice);
+                    cartTable.refresh();
+                    updateTotals();
                 }
             }
         });
+    } else {
+        setStyle("");
+        setOnMouseClicked(null);
+    }
+}
+});
+
         
         TableColumn<Product, Double> qtyCol = new TableColumn<>("Qty");
         qtyCol.setCellValueFactory(new PropertyValueFactory<>("quantity"));
         qtyCol.setPrefWidth(70);
         
-        TableColumn<Product, Double> totalCol = new TableColumn<>("Total");
-        totalCol.setCellValueFactory(new PropertyValueFactory<>("total"));
-        totalCol.setPrefWidth(140);
-        totalCol.setCellFactory(col -> new TableCell<Product, Double>() {
-            @Override
-            protected void updateItem(Double total, boolean empty) {
-                super.updateItem(total, empty);
-                if (empty) {
-                    setText(null);
-                } else {
-                    setText(formatCurrency(total));
-                }
-            }
-        });
+       TableColumn<Product, Double> totalCol = new TableColumn<>("Total");
+totalCol.setCellValueFactory(cellData ->
+    cellData.getValue().totalProperty().asObject()
+);
+totalCol.setPrefWidth(140);
+
+totalCol.setCellFactory(col -> new TableCell<Product, Double>() {
+    @Override
+    protected void updateItem(Double total, boolean empty) {
+        super.updateItem(total, empty);
+        if (empty || total == null) {
+            setText(null);
+        } else {
+            setText(formatCurrency(total));
+        }
+    }
+});
         
         TableColumn<Product, Void> actionCol = new TableColumn<>("Action");
         actionCol.setPrefWidth(100);
@@ -915,6 +951,15 @@ private VBox createCheckoutPanel() {
     taxValueLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #424242; -fx-font-weight: bold;", labelFontSize));
     summaryGrid.add(taxLabel, 0, row);
     summaryGrid.add(taxValueLabel, 1, row++);
+    Label levyLabel = new Label("Levies:");
+    levyLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #757575;", labelFontSize));
+
+    leviesValueLabel = new Label(formatCurrency(0.0));
+    leviesValueLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #424242; -fx-font-weight: bold;", labelFontSize));
+
+    summaryGrid.add(levyLabel, 0, row);
+    summaryGrid.add(leviesValueLabel, 1, row++);
+
 
     Separator totalSeparator = new Separator();
     GridPane.setColumnSpan(totalSeparator, 2);
@@ -1029,6 +1074,31 @@ private VBox createCheckoutPanel() {
     checkoutPanel.getChildren().add(finalLayout);
 
     return checkoutPanel;
+}
+
+private Double promptForServicePrice(Product service) {
+    TextInputDialog dialog = new TextInputDialog();
+    dialog.setTitle("Enter Price");
+    dialog.setHeaderText("Service: " + service.getName());
+    dialog.setContentText("Enter price:");
+
+    TextField priceField = dialog.getEditor();
+    priceField.textProperty().addListener((obs, oldV, newV) -> {
+        if (!newV.matches("\\d*(\\.\\d{0,2})?")) {
+            priceField.setText(oldV);
+        }
+    });
+
+    return dialog.showAndWait()
+            .map(val -> {
+                try {
+                    double p = Double.parseDouble(val);
+                    return p > 0 ? p : null;
+                } catch (Exception e) {
+                    return null;
+                }
+            })
+            .orElse(null);
 }
 
 private void showVat5ValidationDialog() {
@@ -1260,31 +1330,38 @@ private Button createResponsiveSecondaryActionButton(String text, double fontSiz
         }
     }
     
-   /**
+/**
  * Updates the total amounts in the checkout panel and refreshes the change calculation
- */
+*/
 private void updateTotals() {
     double subtotal = 0.0;
     double totalTax = 0.0;
+    double totalLevies = 0.0;
     int totalQuantity = 0;
     double itemLevelDiscountTotal = 0.0;
 
     // Step 1: Item-level discounts
     for (Product item : cartItems) {
         double discount = item.getDiscount();
-        applyDiscountToItem(item, discount, false);    
+
+        if (discount > 0) {
+            applyDiscountToItem(item, discount, false);
+        }
 
         double itemPrice = item.getPrice();
         double itemQuantity = item.getQuantity();
         double itemSubtotal = itemPrice * itemQuantity;
 
-        // Track item-level discount from original price
-        double originalPrice = item.getOriginalPrice();
-        double discountPerItem = (originalPrice - itemPrice) * itemQuantity;
+        // Only count as discount if discount was explicitly set
+        double discountPerItem = 0.0;
+        if (discount > 0) {
+            double originalPrice = item.getOriginalPrice();
+            discountPerItem = (originalPrice - itemPrice) * itemQuantity;
+        }
         itemLevelDiscountTotal += discountPerItem;
 
         subtotal += itemSubtotal;
-        totalQuantity += itemQuantity;
+        totalQuantity += (int) itemQuantity;
     }
 
     // Step 2: Cart-level discount
@@ -1302,7 +1379,6 @@ private void updateTotals() {
     for (Product item : cartItems) {
         double taxRate = Helper.getTaxRateById(item.getTaxRate());
         if (isVATRegistered && !isVat5Exempt) {
-            // Pro-rate discount across items for accurate VAT
             double proportion = (item.getPrice() * item.getQuantity()) / subtotal;
             double itemDiscountedSubtotal = (item.getPrice() * item.getQuantity()) - (cartLevelDiscount * proportion);
             double itemVAT = (itemDiscountedSubtotal * taxRate) / (100 + taxRate);
@@ -1310,14 +1386,27 @@ private void updateTotals() {
         }
     }
 
-    // Step 4: Totals
+    // Step 4: Levies
+    List<LevyDto> levies = Helper.getActiveLevies();
+    if (!cartItems.isEmpty() && totalQuantity > 0) {
+        for (LevyDto levy : levies) {
+            if ("PERCENTAGE".equalsIgnoreCase(levy.getChargeMode())) {
+                totalLevies += (discountedSubtotal * levy.getRate()) / 100.0;
+            } else if ("Item".equalsIgnoreCase(levy.getChargeMode())) {
+                totalLevies += levy.getRate() * totalQuantity;
+            }
+        }
+    }
+
+    // Step 5: Totals
     double totalDiscount = itemLevelDiscountTotal + cartLevelDiscount;
-    double total = discountedSubtotal;
+    double total = discountedSubtotal + totalLevies;
 
     // Update UI
     subtotalValueLabel.setText(formatCurrency(discountedSubtotal - totalTax));
     taxValueLabel.setText(formatCurrency(totalTax));
     discountValueLabel.setText(formatCurrency(totalDiscount));
+    leviesValueLabel.setText(formatCurrency(totalLevies));
     totalAmountLabel.setText(formatCurrency(total));
 
     totalAmount = total;
@@ -1506,9 +1595,27 @@ private void updateChangeCalculation() {
     double totalVATAmount = lineItems.stream().mapToDouble(LineItemDto::getTotalVAT).sum();
     double invoiceTotal = lineItems.stream().mapToDouble(LineItemDto::getTotal).sum();
     
+    //Including Levies
+    List<LevyDto> activeLevies = Helper.getActiveLevies();
+    List<LevyBreakDownDto> levyBreakDowns = new ArrayList<>();
+    double totalLevies = 0.0;
+    for (LevyDto levy : activeLevies) {
+    LevyBreakDownDto levyDto = new LevyBreakDownDto();
+    levyDto.setLevyTypeId(levy.getId());
+    levyDto.setLevyRate(levy.getRate());
+    double levyAmount = "PERCENTAGE".equalsIgnoreCase(levy.getChargeMode()) ?
+                        (invoiceTotal * levy.getRate()) / 100.0 : levy.getRate();
+    levyDto.setLevyAmount(levyAmount);
+    levyBreakDowns.add(levyDto);
+    totalLevies += levyAmount;
+    }
+    invoiceSummary.setLevyBreakDown(levyBreakDowns);
+    
     invoiceSummary.setTaxBreakDown(taxBreakdowns);
     invoiceSummary.setTotalVAT(totalVATAmount);
     invoiceSummary.setInvoiceTotal(invoiceTotal);
+    // Update total to include levies
+    invoiceSummary.setInvoiceTotal(invoiceTotal + totalLevies);
     invoiceSummary.setOfflineSignature("");
     invoiceSummary.setAmountTendered(amountTendered); 
 
@@ -1529,6 +1636,7 @@ private void updateChangeCalculation() {
         invoiceHeader,
         lineItems,
         taxBreakdowns,
+        levyBreakDowns,
         totalAmount,
         totalVAT,
         offlineSignature,
@@ -1539,12 +1647,12 @@ private void updateChangeCalculation() {
     );
 
     if (saveSuccess) {
-        System.out.println("✅ Transaction saved locally.");
+        System.out.println("Transaction saved locally.");
         if (isVat5Exempt) {
-            System.out.println("✅ VAT5 Certificate Applied - VAT Amount: " + formatCurrency(totalVAT));
+            System.out.println("VAT5 Certificate Applied - VAT Amount: " + formatCurrency(totalVAT));
         }
     } else {
-        System.err.println("⚠️ Failed to save transaction locally.");
+        System.err.println("Failed to save transaction locally.");
     }
     
     // Step 5: Convert to JSON
@@ -1567,15 +1675,16 @@ private void updateChangeCalculation() {
                         invoiceHeader,
                         buyerName,
                         buyersTIN,
-                        lineItems, 
+                        lineItems,
                         returnedValidationUrl, 
                         amountTendered, 
                         changeValue,
-                        taxBreakdowns
+                        taxBreakdowns,
+                        levyBreakDowns
                     );
-                    System.out.println("✅ Premium receipt printed successfully.");
+                    System.out.println("Premium receipt printed successfully.");
                 } catch (Exception e) {
-                    System.err.println("⚠️ Failed to print receipt: " + e.getMessage());
+                    System.err.println("Failed to print receipt: " + e.getMessage());
                     e.printStackTrace();
                 }
                 
@@ -1594,7 +1703,7 @@ private void updateChangeCalculation() {
             } else {
                 Alert failureAlert = new Alert(Alert.AlertType.ERROR);
                 failureAlert.setTitle("Transaction Status");
-                failureAlert.setHeaderText("🚨 Processing Failed!");
+                failureAlert.setHeaderText("🚨 Sync Error!");
                 failureAlert.setContentText("Transaction failed. Saved locally for later sync.");
                 failureAlert.showAndWait();
                 
@@ -1625,16 +1734,17 @@ private void updateChangeCalculation() {
                         invoiceHeader,
                         buyerName,
                         buyersTIN,
-                        lineItems, 
-                        validationUrl, 
+                        lineItems,
+                        validationUrl,
                         amountTendered, 
                         changeValue,
-                        taxBreakdowns
+                        taxBreakdowns,
+                        levyBreakDowns
                     );
-                    System.out.println("✅ Offline receipt printed.");
+                    System.out.println("Offline receipt printed.");
                 } catch (Exception e) {
                     e.printStackTrace();
-                    System.err.println("⚠️ Failed to print offline receipt.");
+                    System.err.println("Failed to print offline receipt.");
                 }
             }
         });

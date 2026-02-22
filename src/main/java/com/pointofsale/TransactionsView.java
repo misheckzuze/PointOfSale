@@ -39,6 +39,7 @@ import javafx.scene.text.Text;
 import javafx.util.Callback;
 import java.text.NumberFormat;
 import com.google.zxing.common.BitMatrix;
+import com.pointofsale.model.LevyBreakDownDto;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -913,6 +914,7 @@ private VBox createReceiptPreview(InvoiceDetails invoice) {
     // Get line items and tax breakdowns
     List<LineItemDto> lineItems = Helper.getLineItems(invoice.getInvoiceNumber());
     List<TaxBreakDown> taxBreakdowns = Helper.generateTaxBreakdown(lineItems);
+    List<LevyBreakDownDto> levies = Helper.getLevyBreakdown(invoice.getInvoiceNumber());
     String buyersName = invoice.getBuyerTin() != null && !invoice.getBuyerTin().isEmpty() ? 
                       invoice.getBuyerTin() : "";
     String buyersTIN = invoice.getBuyerTin() != null ? invoice.getBuyerTin() : "";
@@ -988,7 +990,15 @@ private VBox createReceiptPreview(InvoiceDetails invoice) {
         totalVAT = 0;
     }
     
-    double invoiceTotal = subtotal + totalVAT;
+    double totalLevies = 0.0;
+      if (levies != null && !levies.isEmpty()) {
+      totalLevies = levies.stream()
+                        .mapToDouble(LevyBreakDownDto::getLevyAmount)
+                        .sum();
+}
+
+double invoiceTotal = subtotal + totalVAT + totalLevies;
+
     double amountPaid = invoice.getAmountPaid();
     String transactionType = invoice.getTransactionType();
     
@@ -1001,6 +1011,18 @@ private VBox createReceiptPreview(InvoiceDetails invoice) {
             String taxRateStr = String.valueOf(Helper.getTaxRateById(tax.getRateId()));
             String label = String.format("VAT %s - %s%%", tax.getRateId(), taxRateStr);
             receiptBox.getChildren().add(createReceiptLine(label, formatCurrency(tax.getTaxAmount())));
+        }
+    }
+    
+    /* ===========================
+   LEVIES
+   =========================== */
+   if (levies != null && !levies.isEmpty()) {
+      for (LevyBreakDownDto levy : levies) {
+          String levyName = Helper.getLevyNameById(levy.getLevyTypeId());
+          receiptBox.getChildren().add(
+            createReceiptLine(levyName, formatCurrency(levy.getLevyAmount()))
+          );
         }
     }
     
@@ -1193,6 +1215,8 @@ private void printReceipt(InvoiceDetails invoice) {
         // Get all necessary data for printing
         List<LineItemDto> lineItems = Helper.getLineItems(invoice.getInvoiceNumber());
         List<TaxBreakDown> taxBreakdowns = Helper.generateTaxBreakdown(lineItems);
+        List<LevyBreakDownDto> levyBreakdowns = Helper.getLevyBreakdown(invoice.getInvoiceNumber()); // <-- added
+
         String validationUrl = invoice.getValidationUrl() != null ? invoice.getValidationUrl() : "";
         
         // Create invoice header object
@@ -1219,7 +1243,8 @@ private void printReceipt(InvoiceDetails invoice) {
             validationUrl,
             amountTendered,
             change,
-            taxBreakdowns
+            taxBreakdowns,
+            levyBreakdowns
         );
         
         showAlert("Print Success", "Receipt printed successfully for " + invoice.getInvoiceNumber());

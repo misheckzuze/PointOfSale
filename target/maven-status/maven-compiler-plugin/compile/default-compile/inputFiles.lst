@@ -12,6 +12,7 @@ C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\PrintPreviewDialog.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\ApiError.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\CategoryRevenue.java
+C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\LevyBreakDownDto.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\TaxSummary.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\TerminalConfirmationDialog.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\TransactionsView.java
@@ -36,6 +37,7 @@ C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\utils\
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\ReportsView.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\ProductLookupDialog.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\AuditTrailView.java
+C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\LevyDto.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\Session.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\User.java
 C:\Users\mzuze\Desktop\Projects\PointOfSale\src\main\java\com\pointofsale\model\TerminalContactInfo.java

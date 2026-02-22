@@ -4,6 +4,7 @@ import java.util.List;
 
 public class InvoiceSummary {
     private List<TaxBreakDown> taxBreakDown;
+    private List<LevyBreakDownDto> levyBreakDown;
     private double totalVAT;
     private String offlineSignature;
     private double invoiceTotal;
@@ -20,6 +21,14 @@ public class InvoiceSummary {
 
     public double getTotalVAT() {
         return totalVAT;
+    }
+    
+    public List<LevyBreakDownDto> getLevyBreakDown() {
+        return levyBreakDown;
+    }
+
+    public void setLevyBreakDown(List<LevyBreakDownDto> levyBreakDown) {
+        this.levyBreakDown = levyBreakDown;
     }
     
 
