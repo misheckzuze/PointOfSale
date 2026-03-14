@@ -1186,17 +1186,22 @@ private void showVat5ValidationDialog() {
 
 private void handleVat5ValidationResult(Vat5Data vat5Data, Dialog<ButtonType> dialog, Label statusLabel) {
     if (vat5Data != null && vat5Data.isValid) {
-        // Certificate is valid - apply VAT exemptions
+
+        // Force quantity from cart (NOT from API)
+        int cartQuantity = (int) cartItems.stream()
+            .mapToDouble(Product::getQuantity)
+            .sum();
+
+        vat5Data.setQuantity(cartQuantity);  // 👈 THIS IS THE KEY LINE
+
         isVat5Exempt = true;
         currentVat5Data = vat5Data;
-        
+
         statusLabel.setText("✓ Valid Certificate - VAT Exempted");
         statusLabel.setStyle("-fx-text-fill: #2e7d32; -fx-font-weight: bold;");
-        
-        // Update totals to remove VAT
+
         updateTotals();
-        
-        // Show success message
+
         Platform.runLater(() -> {
             Alert successAlert = new Alert(Alert.AlertType.INFORMATION);
             successAlert.setTitle("VAT5 Validation Success");
@@ -1204,19 +1209,20 @@ private void handleVat5ValidationResult(Vat5Data vat5Data, Dialog<ButtonType> di
             successAlert.setContentText(
                 "Project: " + vat5Data.projectNumber + "\n" +
                 "Certificate: " + vat5Data.vat5CertificateNumber + "\n" +
+                "Quantity: " + vat5Data.quantity + "\n" +
                 "VAT has been exempted for this transaction."
             );
             successAlert.showAndWait();
             dialog.close();
         });
+
     } else {
-        // Certificate is invalid
         isVat5Exempt = false;
         currentVat5Data = null;
-        
+
         statusLabel.setText("✗ Invalid Certificate");
         statusLabel.setStyle("-fx-text-fill: #c62828; -fx-font-weight: bold;");
-        
+
         Platform.runLater(() -> {
             Alert errorAlert = new Alert(Alert.AlertType.ERROR);
             errorAlert.setTitle("VAT5 Validation Failed");
@@ -1326,6 +1332,7 @@ private Button createResponsiveSecondaryActionButton(String text, double fontSiz
         
         if (alert.showAndWait().get() == ButtonType.OK) {
             cartItems.clear();
+            isVat5Exempt = false; 
             updateTotals();
         }
     }
@@ -1334,37 +1341,47 @@ private Button createResponsiveSecondaryActionButton(String text, double fontSiz
  * Updates the total amounts in the checkout panel and refreshes the change calculation
 */
 private void updateTotals() {
-    double subtotal = 0.0;        // VAT-inclusive subtotal (before cart discount)
+    double subtotal = 0.0;        // Net subtotal when VAT5, gross otherwise
     double totalTax = 0.0;
     double totalLevies = 0.0;
     int totalQuantity = 0;
     double itemLevelDiscountTotal = 0.0;
 
-    // Step 1: Item-level discounts (kept as requested)
+    boolean isVATRegistered = Helper.isVATRegistered();
+
+    // Step 1: Item-level totals
     for (Product item : cartItems) {
         double discount = item.getDiscount();
 
-        if (discount > 0) {
+        if (discount > 0 && !isVat5Exempt) {
             applyDiscountToItem(item, discount, false);
         }
 
-        double itemPrice = item.getPrice();       // VAT-inclusive price
+        double itemPriceGross = item.getPrice(); // VAT-inclusive
         double itemQuantity = item.getQuantity();
-        double itemSubtotal = itemPrice * itemQuantity;
+        double taxRate = Helper.getTaxRateById(item.getTaxRate());
 
-        // Track item-level discount total
-        double discountPerItem = 0.0;
-        if (discount > 0) {
-            double originalPrice = item.getOriginalPrice();
-            discountPerItem = (originalPrice - itemPrice) * itemQuantity;
+        // Remove VAT from price if VAT5 exempt
+        double itemPriceNet = itemPriceGross;
+        if (isVat5Exempt && isVATRegistered) {
+            itemPriceNet = (itemPriceGross * 100) / (100 + taxRate);
         }
-        itemLevelDiscountTotal += discountPerItem;
 
+        double itemSubtotal = itemPriceNet * itemQuantity;
+
+        // Track item-level discount (UI only, not applied again)
+        double discountPerItem = 0.0;
+        if (discount > 0 && !isVat5Exempt) {
+            double originalPrice = item.getOriginalPrice();
+            discountPerItem = (originalPrice - item.getPrice()) * itemQuantity;
+        }
+
+        itemLevelDiscountTotal += discountPerItem;
         subtotal += itemSubtotal;
         totalQuantity += (int) itemQuantity;
     }
 
-    // Step 2: Flat cart discount (always flat as you said)
+    // Step 2: Flat cart discount
     double cartLevelDiscount = 0.0;
     if (cartDiscountAmount > 0) {
         cartLevelDiscount = Math.min(cartDiscountAmount, subtotal);
@@ -1372,14 +1389,13 @@ private void updateTotals() {
 
     double discountedSubtotal = subtotal - cartLevelDiscount;
 
-    // Step 3: VAT after discount (VAT extracted from discounted amounts)
-    boolean isVATRegistered = Helper.isVATRegistered();
-    for (Product item : cartItems) {
-        double itemGross = item.getPrice() * item.getQuantity();
-        double taxRate = Helper.getTaxRateById(item.getTaxRate());
+    // Step 3: VAT extraction (only if NOT VAT5)
+    if (!isVat5Exempt && isVATRegistered) {
+        for (Product item : cartItems) {
+            double itemGross = item.getPrice() * item.getQuantity();
+            double taxRate = Helper.getTaxRateById(item.getTaxRate());
 
-        if (isVATRegistered && !isVat5Exempt) {
-            double proportion = subtotal == 0 ? 0 : itemGross / subtotal;
+            double proportion = subtotal == 0 ? 0 : itemGross / (subtotal == 0 ? 1 : subtotal);
             double itemDiscountShare = cartLevelDiscount * proportion;
             double itemDiscountedGross = itemGross - itemDiscountShare;
 
@@ -1388,42 +1404,45 @@ private void updateTotals() {
         }
     }
 
-    // Step 4: Levies (VAT-excluded, item-based)
+    // Step 4: Levies (VAT-excluded base)
     List<LevyDto> levies = Helper.getActiveLevies();
-    if (!cartItems.isEmpty()) {
-        for (LevyDto levy : levies) {
+    for (LevyDto levy : levies) {
+        double levyAmount = 0.0;
 
-            double levyAmount = 0.0;
+        for (Product item : cartItems) {
+            double itemGross = item.getPrice() * item.getQuantity();
+            double taxRate = Helper.getTaxRateById(item.getTaxRate());
 
-            for (Product item : cartItems) {
-                double itemGross = item.getPrice() * item.getQuantity();
-                double taxRate = Helper.getTaxRateById(item.getTaxRate());
-
-                double itemVAT = 0.0;
-                if (isVATRegistered && !isVat5Exempt) {
-                    itemVAT = (itemGross * taxRate) / (100 + taxRate);
-                }
-
-                double preVatAmount = itemGross - itemVAT; // VAT-excluded base
-
-                if ("PERCENTAGE".equalsIgnoreCase(levy.getChargeMode())) {
-                    levyAmount += (preVatAmount * levy.getRate()) / 100.0;
-                } else if ("Item".equalsIgnoreCase(levy.getChargeMode())) {
-                    levyAmount += levy.getRate() * item.getQuantity();
-                }
+            double itemVAT = 0.0;
+            if (!isVat5Exempt && isVATRegistered) {
+                itemVAT = (itemGross * taxRate) / (100 + taxRate);
             }
 
-            totalLevies += levyAmount;
+            double preVatAmount = itemGross - itemVAT;
+
+            if ("PERCENTAGE".equalsIgnoreCase(levy.getChargeMode())) {
+                levyAmount += (preVatAmount * levy.getRate()) / 100.0;
+            } else if ("Item".equalsIgnoreCase(levy.getChargeMode())) {
+                levyAmount += levy.getRate() * item.getQuantity();
+            }
         }
+
+        totalLevies += levyAmount;
     }
 
     // Step 5: Totals
     double totalDiscount = itemLevelDiscountTotal + cartLevelDiscount;
     double total = discountedSubtotal + totalLevies;
 
-    // Update UI
-    subtotalValueLabel.setText(formatCurrency(discountedSubtotal - totalTax));
-    taxValueLabel.setText(formatCurrency(totalTax));
+    // Step 6: UI
+    if (isVat5Exempt) {
+        subtotalValueLabel.setText(formatCurrency(discountedSubtotal));
+        taxValueLabel.setText(formatCurrency(0.0));
+    } else {
+        subtotalValueLabel.setText(formatCurrency(discountedSubtotal - totalTax));
+        taxValueLabel.setText(formatCurrency(totalTax));
+    }
+
     discountValueLabel.setText(formatCurrency(totalDiscount));
     leviesValueLabel.setText(formatCurrency(totalLevies));
     totalAmountLabel.setText(formatCurrency(total));
@@ -1600,6 +1619,7 @@ private void updateChangeCalculation() {
     vat5Details.quantity = currentVat5Data.quantity;
     
     invoiceHeader.setVat5CertificateDetails(vat5Details);
+    invoiceHeader.setReliefSupply(true);
 }
 
     // 2. Convert products to line items WITH VAT5 EXEMPTION APPLIED
@@ -1700,6 +1720,8 @@ invoiceSummary.setLevyBreakDown(levyBreakDowns);
 
     // Step 6: Submit the request
     ApiClient apiClient = new ApiClient();
+    System.out.println("Payload: " + jsonPayload);
+
     
     apiClient.submitTransactions(jsonPayload, bearerToken, (success, returnedValidationUrl) -> {
         Platform.runLater(() -> {
@@ -1773,7 +1795,7 @@ invoiceSummary.setLevyBreakDown(levyBreakDowns);
                         buyersTIN,
                         lineItems,
                         validationUrl,
-                        amountTendered, 
+                        amountTendered,
                         changeValue,
                         taxBreakdowns,
                         levyBreakDowns
@@ -4341,23 +4363,44 @@ private void backspaceActiveField() {
 
 private List<LineItemDto> createLineItems() {
     List<LineItemDto> lineItems = new ArrayList<>();
-    
+
     for (Product product : cartItems) {
-        LineItemDto lineItemDto = Helper.convertProductToLineItemDto(product);
-        
-        // If VAT5 exempt, zero out the VAT amounts
-        if (isVat5Exempt) {
-            lineItemDto.setTotalVAT(0.0);
-            lineItemDto.setTaxRateId(lineItemDto.getTaxRateId());
-            // Recalculate total without VAT
-            double itemTotal = lineItemDto.getUnitPrice() * lineItemDto.getQuantity();
-            double discountAmount = itemTotal * (lineItemDto.getDiscount() / 100.0);
-            lineItemDto.setTotal(itemTotal - discountAmount);
+        // Convert product to LineItemDto, passing VAT5 exemption flag
+        LineItemDto lineItemDto = Helper.convertProductToLineItemDto(product, isVat5Exempt);
+
+        // Apply any discount
+        double discountPercent = product.getDiscountPercent();
+        double discountAmount = product.getDiscountAmount();
+
+        double unitPrice = lineItemDto.getUnitPrice(); // VAT-inclusive price
+        double quantity = lineItemDto.getQuantity();
+        double total;
+
+        if (discountPercent > 0) {
+            total = (unitPrice * quantity) * (1 - discountPercent / 100.0);
+        } else if (discountAmount > 0) {
+            total = (unitPrice * quantity) - discountAmount;
+        } else {
+            total = unitPrice * quantity;
         }
-        
+
+        // If VAT5 exempt, subtract VAT from total
+        if (isVat5Exempt) {
+            double taxRate = Helper.getTaxRateById(lineItemDto.getTaxRateId());
+            double vatPortionPerUnit = (unitPrice * taxRate) / (100 + taxRate);
+            double netUnitPrice = unitPrice - vatPortionPerUnit;
+
+            lineItemDto.setUnitPrice(netUnitPrice);
+            double totalVAT = (total * taxRate) / (100 + taxRate); // VAT portion of VAT-inclusive total
+            total -= totalVAT;
+            lineItemDto.setTotalVAT(0.0);
+        }
+
+        lineItemDto.setTotal(total);
+
         lineItems.add(lineItemDto);
     }
-    
+
     return lineItems;
 }
 

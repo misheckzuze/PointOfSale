@@ -8,4 +8,10 @@ public class Vat5Data {
     public String dateOfIssue;
     public String dateOfExpiry;
     public boolean isValid;
+
+    public void setQuantity(int quantity) {
+        this.quantity = quantity;
+    }
 }
+
+

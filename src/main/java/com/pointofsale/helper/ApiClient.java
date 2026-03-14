@@ -573,7 +573,7 @@ public boolean fetchLatestConfig(String bearerToken) {
            // ✅ Use values directly from Invoices table
            invoiceSummary.setTotalVAT(rs.getDouble("TotalVAT"));
            invoiceSummary.setInvoiceTotal(rs.getDouble("InvoiceTotal"));
-           invoiceSummary.setOfflineSignature("");
+           invoiceSummary.setOfflineSignature(rs.getString("OfflineTransactionSignature"));
 
            InvoicePayload payload = new InvoicePayload();
            payload.setInvoiceHeader(header);

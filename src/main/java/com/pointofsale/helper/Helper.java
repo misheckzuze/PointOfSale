@@ -945,23 +945,31 @@ public static boolean isVATRegistered() {
        }
     }
    
- public static LineItemDto convertProductToLineItemDto(Product product) {
-    double unitPrice = product.getPrice();
+ public static LineItemDto convertProductToLineItemDto(Product product, boolean isVat5Exempt) {
+    double unitPrice = product.getPrice();           // VAT-inclusive
+    double originalPrice = product.getOriginalPrice();
     double quantity = product.getQuantity();
     double discount = product.getDiscount();
     double total = unitPrice * quantity;
 
     String taxRateId = product.getTaxRate();
     double taxRate = getTaxRateById(taxRateId);
-    
+
     boolean isVATRegistered = isVATRegistered();
-      
+
+    // Calculate VAT portion
     double totalVAT = isVATRegistered ? (total * taxRate) / (100 + taxRate) : 0;
+
+    // Apply VAT5 exemption: subtract VAT from total
+    if (isVat5Exempt) {
+        total -= totalVAT;
+        totalVAT = 0.0;
+    }
 
     return new LineItemDto(
         product.getBarcode(),
         product.getDescription(),
-        unitPrice,
+        originalPrice,
         quantity,
         discount,
         total,
