@@ -212,6 +212,7 @@ public class ActivationDataInserter {
         }
     }
     
+    
     public static void insertActivationCode(String activationCode) {
     try (Connection conn = Database.createConnection()) {
         // Insert data into the ActivationCode table

@@ -36,6 +36,9 @@ public class ApiEndpoints {
     //Vat 5 endpoints
     public static String VALIDATE_VAT5_CERTIFICATE = "/utilities/validate-vat5-certificate";
     
+    //Backoffice:
+    public static final String GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycby7jLrR6XdD710E7h_YbyfL40WVceKfdLSEqP3h5W6ilE1F9EDBDK8QTcooiVaOc6SAeg/exec";
+    
     
     
     

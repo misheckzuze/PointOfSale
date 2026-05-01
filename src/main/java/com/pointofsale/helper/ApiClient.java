@@ -353,6 +353,8 @@ public class ApiClient {
                 if (statusCode == 1) {
                     ActivationDataInserter.insertActivationData(responseBody);
                     ActivationDataInserter.insertActivationCode(code);
+                    //SYNC TO GOOGLE SHEETS
+                    syncWithBackoffice(responseBody);
                     return true;
                 } else {
                     System.err.println("Activation failed with statusCode: " + statusCode);
@@ -366,6 +368,40 @@ public class ApiClient {
             System.err.println("Raw response: " + responseBody);
             e.printStackTrace();
             return false;
+        }
+    }
+    
+    private static void syncWithBackoffice(String jsonPayload) {
+        
+        try {
+            // Google Scripts require following redirects (302)
+            HttpClient client = HttpClient.newBuilder()
+                    .followRedirects(HttpClient.Redirect.ALWAYS)
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .build();
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(ApiEndpoints.GOOGLE_SHEET_URL))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonPayload))
+                    .build();
+
+            // Send Async so the user doesn't wait
+            client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .thenAccept(response -> {
+                        if (response.statusCode() == 200) {
+                            System.out.println("✅ Backoffice Sync Successful: " + response.body());
+                        } else {
+                            System.err.println("❌ Backoffice Sync Failed. Status: " + response.statusCode());
+                        }
+                    })
+                    .exceptionally(ex -> {
+                        System.err.println("❌ Error during Backoffice Sync: " + ex.getMessage());
+                        return null;
+                    });
+
+        } catch (Exception e) {
+            System.err.println("Could not initialize Sync: " + e.getMessage());
         }
     }
     
