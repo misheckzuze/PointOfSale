@@ -89,6 +89,7 @@ import javafx.scene.Node;
 import java.util.ArrayList;
 import com.google.zxing.MultiFormatReader;
 import java.util.Locale;
+import javafx.scene.input.KeyEvent;
 
 public class POSDashboard extends Application {
    
@@ -132,6 +133,17 @@ public class POSDashboard extends Application {
     private Vat5Data currentVat5Data = null;
     private TextField vat5ProjectField;
     private TextField vat5CertificateField;
+    private String lastAutoFilledCashAmount = "";
+    private Label balanceDueValueLabel;
+    private StackPane rootStack;
+    private VBox loadingOverlay;
+    private Timeline dotsAnimation;
+    private HBox topBar;
+    private VBox sidebar;
+    private Button toggleBarsButton;
+    private boolean barsVisible = true;
+    private boolean isProcessingBarcode = false;
+    
 
     @Override
     public void start(Stage primaryStage) {
@@ -156,18 +168,32 @@ public class POSDashboard extends Application {
     root = new BorderPane();
     root.setStyle("-fx-background-color: #f5f5f7;");
     
-    // Set up the different regions of the dashboard
-    root.setTop(createTopBar());
-    root.setLeft(createSidebar());
+   // Set up the different regions of the dashboard
+    topBar = createTopBar();
+    sidebar = createSidebar();
+    root.setTop(topBar);
+    root.setLeft(sidebar);
+    
+    // Create the loading overlay and the persistent toggle button, stack on top of root
+    loadingOverlay = createLoadingOverlay();
+    toggleBarsButton = createToggleBarsButton();
+    rootStack = new StackPane();
+    rootStack.getChildren().addAll(root, loadingOverlay, toggleBarsButton);
+    StackPane.setAlignment(toggleBarsButton, Pos.TOP_LEFT);
+    StackPane.setMargin(toggleBarsButton, new Insets(12, 0, 0, 12));
     
     // Calculate responsive window size (use 90% of screen, with minimums)
     double windowWidth = Math.max(screenWidth * 0.9, 1024);  // Min 1024px
     double windowHeight = Math.max(screenHeight * 0.9, 768); // Min 768px
     
     // Create scene with calculated dimensions
-    Scene scene = new Scene(root, windowWidth, windowHeight);
+    Scene scene = new Scene(rootStack, windowWidth, windowHeight);
     stage.setScene(scene);
     stage.setTitle("MQ POS System");
+    // NEW — global function-key shortcuts, active across the whole app
+    scene.addEventFilter(KeyEvent.KEY_PRESSED, this::handleFunctionKeyShortcuts);
+    
+    
     
     // Always maximize for now during development
     stage.setMaximized(true);
@@ -176,10 +202,225 @@ public class POSDashboard extends Application {
     // Load the default content (Sales Dashboard)
     loadSalesDashboard();
 }
+/**
+ * Creates a small floating button that stays visible at all times (even when
+ * the top bar and sidebar are hidden) to toggle their visibility.
+ */
+private Button createToggleBarsButton() {
+    Button button = new Button();
+    button.setPrefSize(40, 40);
+    button.setStyle("-fx-background-color: #1a237e; -fx-cursor: hand; " +
+                   "-fx-background-radius: 20px; " +
+                   "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.3), 6, 0, 0, 2);");
+
+    // Draw a simple hamburger icon with three rectangles — no font/emoji dependency
+    VBox iconBox = new VBox(4);
+    iconBox.setAlignment(Pos.CENTER);
+    iconBox.setMouseTransparent(true);
+    for (int i = 0; i < 3; i++) {
+        Rectangle bar = new Rectangle(18, 2.5);
+        bar.setFill(Color.WHITE);
+        bar.setArcWidth(2);
+        bar.setArcHeight(2);
+        iconBox.getChildren().add(bar);
+    }
+
+    StackPane content = new StackPane(iconBox);
+    content.setMouseTransparent(true);
+    button.setGraphic(content);
+
+    button.setOnAction(e -> toggleBars());
+    return button;
+}
+
+/**
+ * Shows or hides the top bar and sidebar to give more room to the main content.
+ */
+private void toggleBars() {
+    barsVisible = !barsVisible;
+
+    if (barsVisible) {
+        root.setTop(topBar);
+        root.setLeft(sidebar);
+    } else {
+        root.setTop(null);
+        root.setLeft(null);
+    }
+
+    // Keep the toggle button visually on top and reachable
+    toggleBarsButton.toFront();
+}
+ private void openProductLookupDialog() {
+    ProductLookupDialog lookupDialog = new ProductLookupDialog(stage);
+    Product selectedProduct = lookupDialog.showAndSelect();
+
+    if (selectedProduct == null) return;
+
+    String barcode = selectedProduct.getBarcode();
+
+    Product stockProduct = Helper.fetchProductByBarcode(barcode);
+    if (stockProduct == null) {
+        showAlert("Error", "Product not found in database.");
+        return;
+    }
+
+    double stockQty = stockProduct.getQuantity();
+    if (stockQty <= 0) {
+        showAlert("Out of Stock", "Item is out of stock.");
+        return;
+    }
+
+    Product existingItem = null;
+    double cartQty = 0;
+
+    for (Product item : cartItems) {
+        if (barcode.equals(item.getBarcode())) {
+            existingItem = item;
+            cartQty = item.getQuantity();
+            break;
+        }
+    }
+
+    if (cartQty + 1 > stockQty) {
+        showAlert("Stock Limit", "Only " + stockQty + " in stock.");
+        return;
+    }
+
+    if (existingItem != null) {
+        existingItem.setQuantity(existingItem.getQuantity() + 1);
+        existingItem.updateTotal();
+    } else {
+        selectedProduct.setQuantity(1);
+        cartItems.add(selectedProduct);
+    }
+
+    cartTable.refresh();
+    updateTotals();
+    barcodeField.clear();
+    barcodeField.requestFocus();
+}
+   
+ /**
+ * Handles POS-style function key shortcuts (F2, F4, F6, F7, F8, F9, F11, +)
+ * Only acts on shortcuts relevant to the currently loaded view.
+ */
+private void handleFunctionKeyShortcuts(KeyEvent event) {
+    switch (event.getCode()) {
+        case F2:   // ITEM LOOKUP
+            if (cartTable != null) openProductLookupDialog();
+            event.consume();
+            break;
+        case F4:   // VOID SALE
+            if (cartTable != null) clearCart();
+            event.consume();
+            break;
+        case F6:   // DISCOUNT
+            if (cartTable != null) applyDiscount();
+            event.consume();
+            break;
+        case F7:   // CHANGE QUANTITY
+            if (cartTable != null) openChangeQuantityDialog(); // <--- Updated to use your new method!
+            event.consume();
+            break;
+        case F8:   // SAVE SALE (Hold Sale)
+            if (cartTable != null) holdSale();
+            event.consume();
+            break;
+        case F11:  // REPRINT
+            if (cartTable != null) showPrintPreview();
+            event.consume();
+            break;
+        case ADD:   // Numpad '+'
+        case PLUS:  // Main keyboard '+'
+            if (processPaymentButton != null && !processPaymentButton.isDisabled()) {
+                processPayment();
+            }
+            event.consume();
+            break;
+        default:
+            break;
+    }
+}
+
+   /**
+ * Creates a full-screen semi-transparent overlay with a circular bouncing-dot spinner,
+ * shown while a payment is processing to prevent double-clicks.
+ */
+private VBox createLoadingOverlay() {
+    VBox overlay = new VBox(20);
+    overlay.setAlignment(Pos.CENTER);
+    overlay.setStyle("-fx-background-color: rgba(0,0,0,0.45);");
+    overlay.setVisible(false);
+    overlay.setManaged(false);
+    overlay.setPickOnBounds(true); // blocks clicks to everything underneath
+
+    HBox dotsBox = new HBox(14);
+    dotsBox.setAlignment(Pos.CENTER);
+
+    Circle dot1 = new Circle(11, Color.web("#3949ab"));
+    Circle dot2 = new Circle(11, Color.web("#3949ab"));
+    Circle dot3 = new Circle(11, Color.web("#3949ab"));
+
+    dotsBox.getChildren().addAll(dot1, dot2, dot3);
+
+    Label processingLabel = new Label("Processing Payment...");
+    processingLabel.setStyle("-fx-text-fill: white; -fx-font-size: 16px; -fx-font-weight: bold;");
+
+    overlay.getChildren().addAll(dotsBox, processingLabel);
+
+    // Bouncing/pulsing dot animation, one dot highlighted at a time
+    dotsAnimation = new Timeline(
+        new KeyFrame(Duration.ZERO,
+            new KeyValue(dot1.opacityProperty(), 1.0), new KeyValue(dot1.scaleXProperty(), 1.3), new KeyValue(dot1.scaleYProperty(), 1.3),
+            new KeyValue(dot2.opacityProperty(), 0.3), new KeyValue(dot2.scaleXProperty(), 0.8), new KeyValue(dot2.scaleYProperty(), 0.8),
+            new KeyValue(dot3.opacityProperty(), 0.3), new KeyValue(dot3.scaleXProperty(), 0.8), new KeyValue(dot3.scaleYProperty(), 0.8)
+        ),
+        new KeyFrame(Duration.millis(300),
+            new KeyValue(dot1.opacityProperty(), 0.3), new KeyValue(dot1.scaleXProperty(), 0.8), new KeyValue(dot1.scaleYProperty(), 0.8),
+            new KeyValue(dot2.opacityProperty(), 1.0), new KeyValue(dot2.scaleXProperty(), 1.3), new KeyValue(dot2.scaleYProperty(), 1.3),
+            new KeyValue(dot3.opacityProperty(), 0.3), new KeyValue(dot3.scaleXProperty(), 0.8), new KeyValue(dot3.scaleYProperty(), 0.8)
+        ),
+        new KeyFrame(Duration.millis(600),
+            new KeyValue(dot1.opacityProperty(), 0.3), new KeyValue(dot1.scaleXProperty(), 0.8), new KeyValue(dot1.scaleYProperty(), 0.8),
+            new KeyValue(dot2.opacityProperty(), 0.3), new KeyValue(dot2.scaleXProperty(), 0.8), new KeyValue(dot2.scaleYProperty(), 0.8),
+            new KeyValue(dot3.opacityProperty(), 1.0), new KeyValue(dot3.scaleXProperty(), 1.3), new KeyValue(dot3.scaleYProperty(), 1.3)
+        ),
+        new KeyFrame(Duration.millis(900),
+            new KeyValue(dot1.opacityProperty(), 1.0), new KeyValue(dot1.scaleXProperty(), 1.3), new KeyValue(dot1.scaleYProperty(), 1.3),
+            new KeyValue(dot2.opacityProperty(), 0.3), new KeyValue(dot2.scaleXProperty(), 0.8), new KeyValue(dot2.scaleYProperty(), 0.8),
+            new KeyValue(dot3.opacityProperty(), 0.3), new KeyValue(dot3.scaleXProperty(), 0.8), new KeyValue(dot3.scaleYProperty(), 0.8)
+        )
+    );
+    dotsAnimation.setCycleCount(Timeline.INDEFINITE);
+
+    return overlay;
+}
+
+/**
+ * Shows the loading overlay and disables the checkout button to prevent double-clicks
+ */
+private void showLoadingOverlay() {
+    loadingOverlay.setVisible(true);
+    loadingOverlay.setManaged(true);
+    loadingOverlay.toFront();
+    dotsAnimation.play();
+    processPaymentButton.setDisable(true);
+}
+
+/**
+ * Hides the loading overlay and restores the checkout button's correct enabled state
+ */
+private void hideLoadingOverlay() {
+    dotsAnimation.stop();
+    loadingOverlay.setVisible(false);
+    loadingOverlay.setManaged(false);
+    updateChangeCalculation(); // re-evaluates whether checkout should be enabled/disabled
+}
      // Methods to load different content areas
     private void loadSalesDashboard() {
         // Clear current right panel (checkout) if any
         root.setRight(createCheckoutPanel());
+        root.setBottom(createBottomActionBar());
         
         // Load sales dashboard content
         Node salesContent = createMainContent();
@@ -190,6 +431,7 @@ public class POSDashboard extends Application {
 private void loadProductsManagement() {
     // Clear checkout panel when switching to non-sales views
     root.setRight(null);
+    root.setBottom(null);
     
     // Create product management content
     ProductManagement productManagement = new ProductManagement();
@@ -216,6 +458,7 @@ private void loadCustomersManagement() {
 private void loadAuditTrail() {
     // Clear checkout panel when switching to non-sales views
     root.setRight(null);
+    root.setBottom(null);
     
     // Create audit trail content
     AuditTrailView auditTrail = new AuditTrailView();
@@ -229,6 +472,7 @@ private void loadAuditTrail() {
 private void loadSettings() {
     // Clear checkout panel when switching to non-sales views
     root.setRight(null);
+    root.setBottom(null);
     
     // Create settimgs content
     SettingsView settings = new SettingsView();
@@ -243,6 +487,7 @@ private void loadSettings() {
 private void loadReports() {
     // Clear checkout panel when switching to non-sales views
     root.setRight(null);
+    root.setBottom(null);
     
     // Create point of sale content
     ReportsView reports = new  ReportsView();
@@ -256,6 +501,7 @@ private void loadReports() {
 private void loadTransactions() {
     // Clear checkout panel when switching to non-sales views
     root.setRight(null);
+    root.setBottom(null);
     
     // Create product management content
     TransactionsView transactions = new TransactionsView();
@@ -286,6 +532,8 @@ private void loadTransactions() {
         // Logo/System name
         Label systemLabel = new Label(tradingName);
         systemLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #1a237e;");
+        HBox.setMargin(systemLabel, new Insets(0, 0, 0, 45));   // NEW — clears the floating toggle button
+
         
         // Separator
         Separator separator1 = new Separator();
@@ -417,20 +665,23 @@ private VBox createSidebar() {
     });
     sidebar.getChildren().add(reportsMenuItem);
     
-    HBox auditTrailMenuItem = createSidebarMenuItem("🔍 Audit Trail", false);
-    auditTrailMenuItem.setOnMouseClicked(e -> {
-        setActiveMenuItem(auditTrailMenuItem, "Audit Trail");
-        AuditLogger.log("View Audit Trail", "User accessed the Audit Trail page.");
-        loadAuditTrail();
-    });
-    sidebar.getChildren().add(auditTrailMenuItem);
+    // Only ADMIN can see Audit Trail and Settings
+    if ("ADMIN".equalsIgnoreCase(Session.role)) {
+        HBox auditTrailMenuItem = createSidebarMenuItem("🔍 Audit Trail", false);
+        auditTrailMenuItem.setOnMouseClicked(e -> {
+            setActiveMenuItem(auditTrailMenuItem, "Audit Trail");
+            AuditLogger.log("View Audit Trail", "User accessed the Audit Trail page.");
+            loadAuditTrail();
+        });
+        sidebar.getChildren().add(auditTrailMenuItem);
 
-    HBox settingsMenuItem = createSidebarMenuItem("⚙️ Settings", false);
-    settingsMenuItem.setOnMouseClicked(e -> {
-        setActiveMenuItem(settingsMenuItem, "️Settings");
-        loadSettings();
-    });
-    sidebar.getChildren().add(settingsMenuItem);
+        HBox settingsMenuItem = createSidebarMenuItem("⚙️ Settings", false);
+        settingsMenuItem.setOnMouseClicked(e -> {
+            setActiveMenuItem(settingsMenuItem, "️Settings");
+            loadSettings();
+        });
+        sidebar.getChildren().add(settingsMenuItem);
+    }
 
     // Add spacer to push help to bottom
     Region spacer = new Region();
@@ -473,22 +724,23 @@ private HBox createSidebarMenuItem(String text, boolean isSelected) {
     menuItem.setPadding(new Insets(15, 20, 15, 20));
     menuItem.setCursor(javafx.scene.Cursor.HAND);
     
-    // Selection indicator (added at the beginning of the menu item)
+    // Selection indicator 
     Rectangle indicator = new Rectangle(5, 25);
     indicator.setFill(Color.WHITE);
     indicator.setArcWidth(2);
     indicator.setArcHeight(2);
     indicator.setVisible(isSelected);
     
-    // Menu text (now includes the emoji icon)
+    // Menu text - INCREASED TO 16px & ADDED CLEAN FONT FAMILY
     Label menuText = new Label(text);
-    menuText.setStyle("-fx-font-size: 14px; -fx-text-fill: white; -fx-font-weight: " + (isSelected ? "bold" : "normal") + ";");
+    menuText.setStyle("-fx-font-family: 'Segoe UI', Helvetica, Arial, sans-serif; " +
+                      "-fx-font-size: 16px; " + 
+                      "-fx-text-fill: white; " + 
+                      "-fx-font-weight: " + (isSelected ? "bold" : "normal") + ";");
     
-    // Adjust margins - removed icon margin, reduced text margin
-    HBox.setMargin(menuText, new Insets(0, 0, 0, 10)); // Reduced from 15 to 10
+    HBox.setMargin(menuText, new Insets(0, 0, 0, 10)); 
     HBox.setMargin(indicator, new Insets(0, 10, 0, 0));
     
-    // Add only indicator and text (removed the rectangle icon)
     menuItem.getChildren().addAll(indicator, menuText);
     
     // Background styling
@@ -509,9 +761,9 @@ private void setActiveMenuItem(HBox newActiveItem, String labelText) {
         activeMenuItem.setStyle("-fx-background-color: transparent;");
 
         Label oldLabel = (Label) activeMenuItem.getChildren().filtered(node -> node instanceof Label).get(0);
-        oldLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: white; -fx-font-weight: normal;");
+        // MATCHED THE NEW 16px SIZE HERE
+        oldLabel.setStyle("-fx-font-family: 'Segoe UI', Helvetica, Arial, sans-serif; -fx-font-size: 16px; -fx-text-fill: white; -fx-font-weight: normal;");
 
-        // Hide previous indicator
         Rectangle oldIndicator = (Rectangle) activeMenuItem.getChildren().filtered(node -> node instanceof Rectangle).get(0);
         oldIndicator.setVisible(false);
     }
@@ -519,7 +771,8 @@ private void setActiveMenuItem(HBox newActiveItem, String labelText) {
     newActiveItem.setStyle("-fx-background-color: rgba(255, 255, 255, 0.2);");
 
     Label newLabel = (Label) newActiveItem.getChildren().filtered(node -> node instanceof Label).get(0);
-    newLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: white; -fx-font-weight: bold;");
+    // MATCHED THE NEW 16px SIZE HERE
+    newLabel.setStyle("-fx-font-family: 'Segoe UI', Helvetica, Arial, sans-serif; -fx-font-size: 16px; -fx-text-fill: white; -fx-font-weight: bold;");
 
     Rectangle newIndicator = (Rectangle) newActiveItem.getChildren().filtered(node -> node instanceof Rectangle).get(0);
     newIndicator.setVisible(true);
@@ -533,64 +786,9 @@ private void showAlert(String title, String message) {
     alert.setHeaderText(null);
     alert.setContentText(message);
     alert.showAndWait();
-}    
-    /**
-     * Creates the main content area with product search and cart
-     */
-    private VBox createMainContent() {
-        VBox mainContent = new VBox();
-        mainContent.setPadding(new Insets(20));
-        mainContent.setSpacing(20);
-        
-        // Product search section
-        VBox searchSection = new VBox(10);
-        
-        // Title for the section
-        Label searchTitle = new Label("Product Search");
-        searchTitle.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #424242;");
-        
-        // Barcode/product search with button
-        HBox searchBox = new HBox(10);
-        searchBox.setAlignment(Pos.CENTER_LEFT);
-        
-        barcodeField = new TextField();
-        barcodeField.setPromptText("Scan barcode or search product");
-        barcodeField.setPrefHeight(40);
-        barcodeField.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
-                          "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;");
-        HBox.setHgrow(barcodeField, Priority.ALWAYS);
-        
-        // Add 'Enter' key handler
-        barcodeField.setOnKeyPressed(e -> {
-            if (e.getCode() == KeyCode.ENTER) {
-                addProductToCart();
-            }
-        });
-        
-        Button searchButton = new Button("Add Product");
-        searchButton.setPrefHeight(40);
-        searchButton.setStyle("-fx-background-color: #3949ab; -fx-text-fill: white; " +
-                           "-fx-font-size: 14px; -fx-font-weight: bold; -fx-cursor: hand; " +
-                           "-fx-background-radius: 5px;");
-        searchButton.setOnAction(e -> addProductToCart());
-        
-        searchBox.getChildren().addAll(barcodeField, searchButton);
-        
-        // Quick action buttons
-        HBox quickActions = new HBox(10);
-        
-        Button scanButton = createActionButton("Scan", "#00796b");
-        Button lookupButton = createActionButton("Product Lookup", "#0277bd");
-        Button discountButton = createActionButton("Apply Discount", "#c62828");
-        Button quantityButton = createActionButton("Change Quantity", "#ff8f00");
-        
-        discountButton.setOnAction(e -> applyDiscount());
-        scanButton.setOnAction(e -> {
-        showBarcodeScanner();
-        });
-        
-        // Add this event handler to the quantityButton after it's created
-     quantityButton.setOnAction(e -> {
+}  
+
+private void openChangeQuantityDialog() {
     Product selectedProduct = cartTable.getSelectionModel().getSelectedItem();
 
     if (selectedProduct == null) {
@@ -602,7 +800,7 @@ private void showAlert(String title, String message) {
         return;
     }
 
-    TextInputDialog dialog = new TextInputDialog(String.valueOf(selectedProduct.getQuantity()));
+    TextInputDialog dialog = new TextInputDialog(String.valueOf((int)selectedProduct.getQuantity()));
     dialog.setTitle("Change Quantity");
     dialog.setHeaderText("Product: " + selectedProduct.getName());
     dialog.setContentText("Enter new quantity:");
@@ -623,16 +821,16 @@ private void showAlert(String title, String message) {
                 return;
             }
 
-          // 🔍 Validate stock ONLY for products (not services)
-if (selectedProduct.isProduct()) {
-    Product stockProduct = Helper.fetchProductByBarcode(selectedProduct.getBarcode());
-    double stockQty = stockProduct != null ? stockProduct.getQuantity() : 0;
+            // 🔍 Validate stock ONLY for products (not services)
+            if (selectedProduct.isProduct()) {
+                Product stockProduct = Helper.fetchProductByBarcode(selectedProduct.getBarcode());
+                double stockQty = stockProduct != null ? stockProduct.getQuantity() : 0;
 
-    if (newQuantity > stockQty) {
-        showAlert("Stock Error", "Only " + stockQty + " in stock.");
-        return;
-    }
-}
+                if (newQuantity > stockQty) {
+                    showAlert("Stock Error", "Only " + stockQty + " in stock.");
+                    return;
+                }
+            }
 
             if (newQuantity == 0) {
                 removeItemFromCart(selectedProduct);
@@ -647,60 +845,90 @@ if (selectedProduct.isProduct()) {
             showAlert("Invalid Input", "Please enter a valid number.");
         }
     });
-});       
+}
+    /**
+     * Creates the main content area with product search and cart
+     */
+    private VBox createMainContent() {
+        VBox mainContent = new VBox();
+        mainContent.setPadding(new Insets(20, 20, 0, 20));   // 0 padding at the bottom — flush to bottom bar
+        mainContent.setSpacing(20);
+        
+         // ===== BALANCE DUE BAR =====
+    HBox balanceDueBar = new HBox();
+    balanceDueBar.setAlignment(Pos.CENTER_LEFT);
+    balanceDueBar.setPadding(new Insets(15, 25, 15, 25));
+    balanceDueBar.setStyle("-fx-background-color: white; -fx-background-radius: 8px; " +
+            "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.08), 6, 0, 0, 2);");
+
+    Label balanceDueLabel = new Label("BALANCE DUE");
+    balanceDueLabel.setStyle("-fx-font-size: 34px; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
+
+    Region balanceSpacer = new Region();
+    HBox.setHgrow(balanceSpacer, Priority.ALWAYS);
+
+    // Dark box that holds the amount — grows to fit content, never truncates
+    StackPane balanceValueBox = new StackPane();
+    balanceValueBox.setStyle("-fx-background-color: #1a1a1a; -fx-background-radius: 6px;");
+    balanceValueBox.setPadding(new Insets(10, 30, 10, 30));
+    balanceValueBox.setMinWidth(Region.USE_PREF_SIZE);   // never shrink below content width
+    balanceValueBox.setMaxWidth(Region.USE_PREF_SIZE);   // never truncate with "..."
+
+    balanceDueValueLabel = new Label(formatCurrency(0.0));
+    balanceDueValueLabel.setStyle("-fx-font-size: 36px; -fx-font-weight: bold; -fx-text-fill: #00e676; " +
+            "-fx-font-family: 'Consolas', 'Courier New', monospace;");
+    balanceDueValueLabel.setMinWidth(Region.USE_PREF_SIZE);
+    balanceDueValueLabel.setWrapText(false);
+
+    balanceValueBox.getChildren().add(balanceDueValueLabel);
+
+    balanceDueBar.getChildren().addAll(balanceDueLabel, balanceSpacer, balanceValueBox);
+
+        
+        // Product search section
+        VBox searchSection = new VBox(10);
+        
+        // Title for the section
+        Label searchTitle = new Label("Product Search");
+        searchTitle.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #424242;");
+        
+        // Barcode/product search with button
+        HBox searchBox = new HBox(10);
+        searchBox.setAlignment(Pos.CENTER_LEFT);
+        
+        barcodeField = new TextField();
+        barcodeField.setPromptText("Scan barcode or search product");
+        barcodeField.setPrefHeight(40);
+        barcodeField.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+                          "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;");
+        HBox.setHgrow(barcodeField, Priority.ALWAYS);
+        
+        Button searchButton = new Button("Add Product");
+        searchButton.setPrefHeight(40);
+        searchButton.setStyle("-fx-background-color: #3949ab; -fx-text-fill: white; " +
+                   "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: hand; " +   // was 14px
+                   "-fx-background-radius: 5px;");
+        searchButton.setOnAction(e -> addProductToCart());
+        
+        searchBox.getChildren().addAll(barcodeField, searchButton);
+        
+        // Quick action buttons
+        HBox quickActions = new HBox(10);
+        
+        Button scanButton = createActionButton("Scan", "#00796b");
+        Button lookupButton = createActionButton("Product Lookup (F2)", "#0277bd");
+        Button discountButton = createActionButton("Apply Discount (F6)", "#c62828");
+        Button quantityButton = createActionButton("Change Quantity (F7)", "#ff8f00");        
+        discountButton.setOnAction(e -> applyDiscount());
+        scanButton.setOnAction(e -> {
+        showBarcodeScanner();
+        });
+        
+  quantityButton.setOnAction(e -> openChangeQuantityDialog());
+ 
  // Set action to open the Product Lookup dialog
- lookupButton.setOnAction(e -> {
-    ProductLookupDialog lookupDialog = new ProductLookupDialog(stage);
-    Product selectedProduct = lookupDialog.showAndSelect();
-
-    if (selectedProduct == null) return;
-
-    String barcode = selectedProduct.getBarcode();
-
-    // 🔒 Normal product flow (with stock validation)
-    Product stockProduct = Helper.fetchProductByBarcode(barcode);
-    if (stockProduct == null) {
-        showAlert("Error", "Product not found in database.");
-        return;
-    }
-
-    double stockQty = stockProduct.getQuantity();
-    if (stockQty <= 0) {
-        showAlert("Out of Stock", "Item is out of stock.");
-        return;
-    }
-
-    Product existingItem = null;
-    double cartQty = 0;
-
-    for (Product item : cartItems) {
-        if (barcode.equals(item.getBarcode())) {
-            existingItem = item;
-            cartQty = item.getQuantity();
-            break;
-        }
-    }
-
-    if (cartQty + 1 > stockQty) {
-        showAlert("Stock Limit", "Only " + stockQty + " in stock.");
-        return;
-    }
-
-    if (existingItem != null) {
-        existingItem.setQuantity(existingItem.getQuantity() + 1);
-        existingItem.updateTotal();
-    } else {
-        selectedProduct.setQuantity(1);
-        cartItems.add(selectedProduct);
-    }
-
-    cartTable.refresh();
-    updateTotals();
-    barcodeField.clear();
-    barcodeField.requestFocus();
-});
-
-       
+ lookupButton.setOnAction(e -> openProductLookupDialog());
+  
         quickActions.getChildren().addAll(scanButton, lookupButton, discountButton, quantityButton);
         
         searchSection.getChildren().addAll(searchTitle, searchBox, quickActions);
@@ -721,10 +949,10 @@ if (selectedProduct.isProduct()) {
         
         Region headerSpacer = new Region();
         HBox.setHgrow(headerSpacer, Priority.ALWAYS);
-        
-        Button clearCartButton = new Button("Clear Cart");
+        Button clearCartButton = new Button("Clear Cart (F4)");
         clearCartButton.setStyle("-fx-background-color: transparent; -fx-border-color: #c62828; " +
-                               "-fx-text-fill: #c62828; -fx-cursor: hand; -fx-background-radius: 5px; -fx-border-radius: 5px;");
+                         "-fx-text-fill: #c62828; -fx-cursor: hand; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+                         "-fx-font-size: 16px; -fx-font-weight: bold;");
         clearCartButton.setOnAction(e -> clearCart());
         
         cartHeader.getChildren().addAll(cartTitle, itemCountLabel, headerSpacer, clearCartButton);
@@ -732,8 +960,9 @@ if (selectedProduct.isProduct()) {
         // Cart table
         cartTable = new TableView<>();
         cartTable.setItems(cartItems);
-        cartTable.setStyle("-fx-background-color: white; -fx-border-color: #e0e0e0; -fx-border-width: 1px;");
+        cartTable.setStyle("-fx-background-color: white; -fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-font-size: 15px;");
         VBox.setVgrow(cartTable, Priority.ALWAYS);
+        cartTable.setFixedCellSize(42);
         
         // Define table columns
         TableColumn<Product, Integer> idCol = new TableColumn<>("Barcode");
@@ -748,11 +977,93 @@ if (selectedProduct.isProduct()) {
        rateCol.setCellValueFactory(new PropertyValueFactory<>("taxRate"));
        rateCol.setPrefWidth(60);
 
-       TableColumn<Product, String> unitCol = new TableColumn<>("Unit of Measure");
-       unitCol.setCellValueFactory(new PropertyValueFactory<>("unitOfMeasure"));
-       unitCol.setPrefWidth(250);
+     TableColumn<Product, Void> discountCol = new TableColumn<>("Discount");
+discountCol.setPrefWidth(120);
+discountCol.setCellFactory(col -> new TableCell<Product, Void>() {
+    private final TextField discountField = new TextField();
+    private boolean isApplying = false;
 
-        
+    {
+        discountField.setStyle("-fx-font-size: 13px; -fx-padding: 2px 4px; -fx-alignment: center;");
+        discountField.setAlignment(Pos.CENTER);
+        discountField.textProperty().addListener((obs, oldVal, newVal) -> {
+            if (!newVal.matches("\\d*\\.?\\d*")) {
+                discountField.setText(oldVal);
+            }
+        });
+
+        discountField.setOnAction(e -> {
+            applyInlineDiscount();
+            e.consume();
+        });
+
+        discountField.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
+            if (!isFocused && !isApplying) {
+                applyInlineDiscount();
+            }
+        });
+    }
+
+    private void applyInlineDiscount() {
+        if (isApplying) return;
+        isApplying = true;
+
+        Product product = getTableRow() != null ? getTableRow().getItem() : null;
+        if (product == null) {
+            isApplying = false;
+            return;
+        }
+
+        String text = discountField.getText().trim();
+        double discountValue;
+        try {
+            discountValue = text.isEmpty() ? 0.0 : Double.parseDouble(text);
+        } catch (NumberFormatException ex) {
+            discountValue = 0.0;
+        }
+
+        double originalPrice = product.getOriginalPrice() > 0 ? product.getOriginalPrice() : product.getPrice();
+        if (discountValue > originalPrice) discountValue = originalPrice;
+
+        // Write to the "discount" property — this is the single source of truth
+        // that updateTotals() reads to (re)apply pricing and recompute the
+        // checkout panel's Discount label every time totals refresh.
+        product.setDiscount(discountValue);
+
+        if (discountValue <= 0) {
+            // Explicitly restore original price — updateTotals() won't touch
+            // price when discount is 0, so this must be done here.
+            if (originalPrice > 0) {
+                product.setPrice(originalPrice);
+            }
+            product.setDiscountAmount(0);
+            product.setDiscountPercent(0);
+        }
+
+        cartTable.refresh();
+        updateTotals();   // recalculates price via applyDiscountToItem AND refreshes checkout labels
+        isApplying = false;
+    }
+
+    @Override
+    protected void updateItem(Void item, boolean empty) {
+        super.updateItem(item, empty);
+        Product product = getTableRow() != null ? getTableRow().getItem() : null;
+
+        if (empty || product == null) {
+            setGraphic(null);
+            return;
+        }
+
+        if (!discountField.isFocused()) {
+            discountField.setText(product.getDiscount() > 0
+                    ? String.valueOf(product.getDiscount())
+                    : "");
+        }
+        setGraphic(discountField);
+    }
+});
+
 TableColumn<Product, Double> priceCol = new TableColumn<>("Price");
 priceCol.setCellValueFactory(cellData -> 
     cellData.getValue().priceProperty().asObject()
@@ -820,7 +1131,7 @@ totalCol.setCellFactory(col -> new TableCell<Product, Double>() {
         TableColumn<Product, Void> actionCol = new TableColumn<>("Action");
         actionCol.setPrefWidth(100);
         actionCol.setCellFactory(col -> new TableCell<Product, Void>() {
-            private final Button deleteButton = new Button("Remove");
+            private final Button deleteButton = new Button("Remove(F10)");
             
             {
                 deleteButton.setStyle("-fx-background-color: #c62828; -fx-text-fill: white; -fx-cursor: hand; -fx-background-radius: 3px;");
@@ -829,6 +1140,8 @@ totalCol.setCellFactory(col -> new TableCell<Product, Double>() {
                     removeItemFromCart(item);
                 });
             }
+            
+            
             
             @Override
             protected void updateItem(Void item, boolean empty) {
@@ -840,13 +1153,34 @@ totalCol.setCellFactory(col -> new TableCell<Product, Double>() {
                 }
             }
         });
+        // Listen for the F10 key when the cart table is focused
+    cartTable.setOnKeyPressed(event -> {
+    if (event.getCode() == KeyCode.F10) {
+        // Get the currently selected row item
+        Product selectedItem = cartTable.getSelectionModel().getSelectedItem();
         
-        cartTable.getColumns().addAll(idCol, nameCol,rateCol, unitCol, priceCol, qtyCol, totalCol, actionCol);
+        if (selectedItem != null) {
+            removeItemFromCart(selectedItem);
+        } else {
+            // Optional: Alert the user if they pressed F10 without selecting a row
+            Alert alert = new Alert(Alert.AlertType.WARNING);
+            alert.setTitle("No Item Selected");
+            alert.setHeaderText(null);
+            alert.setContentText("Please select an item in the cart first to remove it using F10.");
+            alert.showAndWait();
+        }
+        
+        // Consume the event so it doesn't trigger other shortcut handlers
+        event.consume();
+    }
+});
+        
+        cartTable.getColumns().addAll(idCol, nameCol,rateCol, priceCol, discountCol, qtyCol, totalCol, actionCol);
         
         cartSection.getChildren().addAll(cartHeader, cartTable);
         
         // Add all sections to main content
-        mainContent.getChildren().addAll(searchSection, cartSection);
+        mainContent.getChildren().addAll(balanceDueBar, searchSection, cartSection);
         VBox.setVgrow(cartSection, Priority.ALWAYS);
         
         return mainContent;
@@ -857,7 +1191,6 @@ private VBox createCheckoutPanel() {
     Rectangle2D screenBounds = Screen.getPrimary().getVisualBounds();
     double screenWidth = screenBounds.getWidth();
 
-    // Calculate responsive panel width
     double panelWidth;
     if (screenWidth <= 1024) {
         panelWidth = Math.max(screenWidth * 0.25, 250);
@@ -867,13 +1200,14 @@ private VBox createCheckoutPanel() {
         panelWidth = Math.max(screenWidth * 0.20, 320);
     }
 
-    VBox checkoutPanel = new VBox(15);
+    VBox checkoutPanel = new VBox();
     checkoutPanel.setPrefWidth(panelWidth);
     checkoutPanel.setMinWidth(panelWidth);
     checkoutPanel.setMaxWidth(panelWidth);
+    checkoutPanel.setStyle("-fx-background-color: #f5f5f7;");
 
     double padding = Math.max(panelWidth * 0.06, 15);
-    checkoutPanel.setPadding(new Insets(padding, padding, padding, 0));
+    checkoutPanel.setPadding(new Insets(padding, padding, 0, 0));   // 0 bottom padding
 
     // ===== CARD =====
     VBox card = new VBox(15);
@@ -881,17 +1215,15 @@ private VBox createCheckoutPanel() {
     card.setStyle("-fx-background-color: white; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
             "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 10, 0, 0, 4);");
 
-    double titleFontSize = Math.max(panelWidth * 0.06, 16);
-    double labelFontSize = Math.max(panelWidth * 0.047, 13);
-    double inputHeight = Math.max(panelWidth * 0.12, 35);
+    double titleFontSize = Math.max(panelWidth * 0.07, 19);
+    double labelFontSize = Math.max(panelWidth * 0.058, 16);
+    double inputHeight = Math.max(panelWidth * 0.13, 40);  
 
-    // Payment summary title
     Label summaryTitle = new Label("Payment Summary");
     summaryTitle.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #424242;", titleFontSize));
 
     Separator separator = new Separator();
 
-    // Customer Info Section
     VBox customerInfoBox = new VBox(8);
     Label customerInfoLabel = new Label("Customer Information");
     customerInfoLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #424242;", labelFontSize));
@@ -903,7 +1235,7 @@ private VBox createCheckoutPanel() {
             "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;", labelFontSize));
 
     tinField = new TextField();
-    tinField.setPromptText("Enter Tax Identification Number");
+    tinField.setPromptText("Enter TIN");
     tinField.setPrefHeight(inputHeight);
     tinField.setStyle(String.format("-fx-font-size: %.0fpx; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
             "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;", labelFontSize));
@@ -937,7 +1269,7 @@ private VBox createCheckoutPanel() {
     subtotalValueLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #424242; -fx-font-weight: bold;", labelFontSize));
     summaryGrid.add(subtotalLabel, 0, row);
     summaryGrid.add(subtotalValueLabel, 1, row++);
-    
+
     Label discountLabel = new Label("Discount:");
     discountLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #757575;", labelFontSize));
     discountValueLabel = new Label(formatCurrency(0.0));
@@ -951,15 +1283,13 @@ private VBox createCheckoutPanel() {
     taxValueLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #424242; -fx-font-weight: bold;", labelFontSize));
     summaryGrid.add(taxLabel, 0, row);
     summaryGrid.add(taxValueLabel, 1, row++);
+
     Label levyLabel = new Label("Levies:");
     levyLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #757575;", labelFontSize));
-
     leviesValueLabel = new Label(formatCurrency(0.0));
     leviesValueLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #424242; -fx-font-weight: bold;", labelFontSize));
-
     summaryGrid.add(levyLabel, 0, row);
     summaryGrid.add(leviesValueLabel, 1, row++);
-
 
     Separator totalSeparator = new Separator();
     GridPane.setColumnSpan(totalSeparator, 2);
@@ -995,20 +1325,50 @@ private VBox createCheckoutPanel() {
     VBox cashAmountBox = createCashAmountSection();
 
     card.getChildren().addAll(summaryTitle, separator, customerInfoBox, summaryGrid, paymentMethodBox, cashAmountBox);
+    card.setMaxHeight(Double.MAX_VALUE);      // NEW — allow the card to stretch vertically
+    VBox.setVgrow(card, Priority.ALWAYS); 
+    // ===== SCROLLABLE CONTENT =====
+    ScrollPane scrollPane = new ScrollPane(card);
+    scrollPane.setFitToWidth(true);
+    scrollPane.setFitToHeight(true);          // NEW — lets content stretch to fill viewport height
+    scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+    scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+    scrollPane.setStyle("-fx-background-color: #f5f5f7; -fx-background: #f5f5f7;");
+    VBox.setVgrow(scrollPane, Priority.ALWAYS);
 
-    // ===== SECONDARY ACTION BUTTONS =====
-    VBox customerActionsPanel = new VBox(10);
-    customerActionsPanel.setPadding(new Insets(padding, 0, 0, 0));
+    checkoutPanel.getChildren().add(scrollPane);
 
-    Label customerActionsTitle = new Label("Customer Actions");
-    customerActionsTitle.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #424242;", titleFontSize));
-    
-    Button validateVat5Button = createResponsiveSecondaryActionButton("Validate VAT5", labelFontSize, inputHeight * 0.8);
-    Button addCustomerButton = createResponsiveSecondaryActionButton("Add Customer", labelFontSize, inputHeight * 0.8);
-    Button addNoteButton = createResponsiveSecondaryActionButton("Add Note", labelFontSize, inputHeight * 0.8);
-    Button holdSaleButton = createResponsiveSecondaryActionButton("Hold Sale", labelFontSize, inputHeight * 0.8);
-    Button viewHeldSalesButton = createResponsiveSecondaryActionButton("View Held Sales", labelFontSize, inputHeight * 0.8);
-    Button printReceiptButton = createResponsiveSecondaryActionButton("Print Preview", labelFontSize, inputHeight * 0.8);
+    return checkoutPanel;
+}
+
+/**
+ * Creates the full-width horizontal action bar pinned to the bottom of the whole screen,
+ * spanning left to right beneath both the cart and checkout panel.
+ */
+private HBox createBottomActionBar() {
+    double barHeight = 65;
+    double actionFontSize = 15;
+
+    // Matches "Product Lookup" button color for consistency
+    String lookupBlueColor      = "#0277bd";
+    String lookupBlueHoverColor = "#015384";
+    String redColor             = "#c62828";
+    String redHoverColor        = "#8e0000";
+
+    HBox actionBar = new HBox();
+    actionBar.setSpacing(0);
+    actionBar.setAlignment(Pos.CENTER);
+    actionBar.setPrefHeight(barHeight);
+    actionBar.setMinHeight(barHeight);
+    actionBar.setMaxWidth(Double.MAX_VALUE);
+    actionBar.setStyle("-fx-background-color: white;");
+
+    Button addCustomerButton   = createBottomBarButton("ADD CUSTOMER", actionFontSize, lookupBlueColor, lookupBlueHoverColor);
+    Button addNoteButton       = createBottomBarButton("ADD NOTE", actionFontSize, lookupBlueColor, lookupBlueHoverColor);
+    Button holdSaleButton      = createBottomBarButton("HOLD SALE (F8)", actionFontSize, lookupBlueColor, lookupBlueHoverColor);
+    Button viewHeldSalesButton = createBottomBarButton("HELD SALES", actionFontSize, lookupBlueColor, lookupBlueHoverColor);
+    Button validateVat5Button  = createBottomBarButton("VALIDATE VAT5", actionFontSize, lookupBlueColor, lookupBlueHoverColor);
+    Button printReceiptButton  = createBottomBarButton("PRINT PREVIEW (F11)", actionFontSize, lookupBlueColor, lookupBlueHoverColor);
 
     holdSaleButton.setOnAction(e -> holdSale());
     validateVat5Button.setOnAction(e -> showVat5ValidationDialog());
@@ -1017,63 +1377,61 @@ private VBox createCheckoutPanel() {
     printReceiptButton.setOnAction(e -> showPrintPreview());
     addNoteButton.setOnAction(e -> addNote());
 
-    // --- Grid layout for small screens (2 buttons per row) ---
-    if (screenWidth <= 1024) {
-        GridPane actionGrid = new GridPane();
-        actionGrid.setHgap(10);
-        actionGrid.setVgap(10);
-
-        actionGrid.add(addCustomerButton, 0, 0);
-        actionGrid.add(addNoteButton, 1, 0);
-        actionGrid.add(holdSaleButton, 0, 1);
-        actionGrid.add(viewHeldSalesButton, 1, 1);
-         actionGrid.add(validateVat5Button, 0, 2);
-        actionGrid.add(printReceiptButton, 0, 2, 2, 1); //full width
-
-        customerActionsPanel.getChildren().addAll(customerActionsTitle, actionGrid);
-    } else {
-        customerActionsPanel.getChildren().addAll(customerActionsTitle, addCustomerButton, addNoteButton, holdSaleButton, viewHeldSalesButton, validateVat5Button, printReceiptButton);
-    }
-
-    // ===== SCROLLABLE CONTENT =====
-    VBox scrollContent = new VBox(20, card, customerActionsPanel);
-    ScrollPane scrollPane = new ScrollPane(scrollContent);
-    scrollPane.setFitToWidth(true);
-    scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
-    scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-    scrollPane.setStyle("-fx-background-color: transparent;");
-
-    // ===== PROCESS PAYMENT BUTTON =====
-    double buttonHeight = Math.max(panelWidth * 0.17, 45);
-    processPaymentButton = new Button("PROCESS PAYMENT");
-    processPaymentButton.setPrefHeight(buttonHeight);
-    processPaymentButton.setPrefWidth(Double.MAX_VALUE);
+    processPaymentButton = createBottomBarButton("CHECKOUT (+)", actionFontSize, redColor, redHoverColor);
     processPaymentButton.setDisable(true);
-    processPaymentButton.setStyle(String.format(
-    "-fx-background-color: #1a237e; -fx-text-fill: white; -fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-background-radius: 5px;",
-    titleFontSize));
-
-    processPaymentButton.setCursor(Cursor.HAND);
-
-    processPaymentButton.setOnMouseEntered(e -> processPaymentButton.setStyle(String.format(
-    "-fx-background-color: #3949ab; -fx-text-fill: white; -fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-background-radius: 5px;",
-    titleFontSize)));
-
-    processPaymentButton.setOnMouseExited(e -> processPaymentButton.setStyle(String.format(
-    "-fx-background-color: #1a237e; -fx-text-fill: white; -fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-background-radius: 5px;",
-    titleFontSize)));
-
     processPaymentButton.setOnAction(e -> processPayment());
 
+    List<Button> allButtons = Arrays.asList(
+        addCustomerButton, addNoteButton, holdSaleButton,
+        viewHeldSalesButton, validateVat5Button, printReceiptButton,
+        processPaymentButton
+    );
 
-    // ===== FINAL LAYOUT =====
-    VBox finalLayout = new VBox();
-    VBox.setVgrow(scrollPane, Priority.ALWAYS);
-    finalLayout.getChildren().addAll(scrollPane, processPaymentButton);
+    for (Button b : allButtons) {
+        HBox.setHgrow(b, Priority.ALWAYS);
+        b.setMaxWidth(Double.MAX_VALUE);
+        b.setMaxHeight(Double.MAX_VALUE);
+    }
 
-    checkoutPanel.getChildren().add(finalLayout);
+    actionBar.getChildren().addAll(allButtons);
 
-    return checkoutPanel;
+    return actionBar;
+}
+/**
+ * Helper method to create a bottom action-bar button
+ */
+private Button createBottomBarButton(String text, double fontSize, String baseColor, String hoverColor) {
+    Button button = new Button(text);
+    button.setMaxHeight(Double.MAX_VALUE);
+    button.setMaxWidth(Double.MAX_VALUE);
+
+    String normalStyle = String.format(
+        "-fx-background-color: %s; -fx-text-fill: white; -fx-font-size: %.0fpx; " +
+        "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 0; -fx-border-width: 0;",
+        baseColor, fontSize);
+
+    String hoverStyle = String.format(
+        "-fx-background-color: %s; -fx-text-fill: white; -fx-font-size: %.0fpx; " +
+        "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 0; -fx-border-width: 0;",
+        hoverColor, fontSize);
+
+    button.setStyle(normalStyle);
+
+    // Only apply hover styling while the button is actually enabled —
+    // prevents a disabled/greyed button from being snapped back to its
+    // original creation-time color by a stray mouse enter/exit event.
+    button.setOnMouseEntered(e -> {
+        if (!button.isDisabled()) {
+            button.setStyle(hoverStyle);
+        }
+    });
+    button.setOnMouseExited(e -> {
+        if (!button.isDisabled()) {
+            button.setStyle(normalStyle);
+        }
+    });
+
+    return button;
 }
 
 private Double promptForServicePrice(Product service) {
@@ -1239,77 +1597,91 @@ private void handleVat5ValidationResult(Vat5Data vat5Data, Dialog<ButtonType> di
 private Button createResponsiveSecondaryActionButton(String text, double fontSize, double height) {
     Button button = new Button(text);
     button.setPrefHeight(height);
-    button.setMaxWidth(Double.MAX_VALUE);
-    button.setStyle(String.format("-fx-background-color: white; -fx-text-fill: #3949ab; " +
+    button.setPrefWidth(150);           // fixed width so the row lines up neatly
+    button.setStyle(String.format("-fx-background-color: #26c6da; -fx-text-fill: white; " +
                    "-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-cursor: hand; " +
-                   "-fx-background-radius: 5px; -fx-border-color: #3949ab; -fx-border-radius: 5px;", fontSize));
-    
+                   "-fx-background-radius: 6px;", fontSize));
     return button;
 }
     /**
      * Creates a styled action button for quick actions
      */
     private Button createActionButton(String text, String color) {
-        Button button = new Button(text);
-        button.setPrefHeight(35);
-        button.setMaxWidth(Double.MAX_VALUE);
-        button.setStyle("-fx-background-color: " + color + "; -fx-text-fill: white; " +
-                      "-fx-font-size: 12px; -fx-font-weight: bold; -fx-cursor: hand; " +
-                      "-fx-background-radius: 5px;");
-        HBox.setHgrow(button, Priority.ALWAYS);
-        
-        return button;
-    }
+    Button button = new Button(text);
+    button.setPrefHeight(45);                          // slightly taller to fit bigger text
+    button.setMaxWidth(Double.MAX_VALUE);
+    button.setStyle("-fx-background-color: " + color + "; -fx-text-fill: white; " +
+                  "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: hand; " +   // was 12px
+                  "-fx-background-radius: 5px;");
+    HBox.setHgrow(button, Priority.ALWAYS);
+    
+    return button;
+}
     
     /**
      * Adds a product to the cart based on barcode input
     */
-   private void addProductToCart() {
-    String barcode = barcodeField.getText().trim();
-
-    if (barcode.isEmpty()) {
-        showAlert("Error", "Please enter a product barcode or search term.");
+   // 2. Update your method to guard against double-firing
+private void addProductToCart() {
+    // If we are already running this method, ignore the duplicate phantom event
+    if (isProcessingBarcode) {
         return;
     }
 
-    // Fetch product from DB
-    Product newItem = Helper.fetchProductByBarcode(barcode);
+    try {
+        isProcessingBarcode = true; // Lock the method
+        
+        String barcode = barcodeField.getText().trim();
 
-    if (newItem == null) {
-        showAlert("Error", "Product not found for barcode: " + barcode);
-        return;
-    }
-
-    // Check if item already exists in cart
-    boolean found = false;
-    for (Product item : cartItems) {
-        if (item.getBarcode().equals(newItem.getBarcode())) {
-            // Check available stock
-            if (item.getQuantity() + 1 > newItem.getQuantity()) {
-                showAlert("Out of Stock", "Cannot add more. Only " + newItem.getQuantity() + " available in stock.");
-                return;
-            }
-
-            item.setQuantity(item.getQuantity() + 1);
-            item.updateTotal();
-            found = true;
-            break;
-        }
-    }
-    if (!found) {
-        if (newItem.getQuantity() < 1) {
-            showAlert("Out of Stock", "This product is currently out of stock.");
+        if (barcode.isEmpty()) {
+            showAlert("Error", "Please enter a product barcode or search term.");
             return;
         }
-        newItem.setQuantity(1);
-        newItem.updateTotal();
-        cartItems.add(newItem);
-    }
 
-    cartTable.refresh();
-    updateTotals();
-    barcodeField.clear();
-    barcodeField.requestFocus();
+        // Fetch product from DB
+        Product newItem = Helper.fetchProductByBarcode(barcode);
+
+        if (newItem == null) {
+            showAlert("Error", "Product not found for barcode: " + barcode);
+            return;
+        }
+
+        // Check if item already exists in cart
+        boolean found = false;
+        for (Product item : cartItems) {
+            if (item.getBarcode().equals(newItem.getBarcode())) {
+                // Check available stock
+                if (item.getQuantity() + 1 > newItem.getQuantity()) {
+                    showAlert("Out of Stock", "Cannot add more. Only " + newItem.getQuantity() + " available in stock.");
+                    return;
+                }
+
+                item.setQuantity(item.getQuantity() + 1);
+                item.updateTotal();
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            if (newItem.getQuantity() < 1) {
+                showAlert("Out of Stock", "This product is currently out of stock.");
+                return;
+            }
+            newItem.setQuantity(1);
+            newItem.updateTotal();
+            cartItems.add(newItem);
+        }
+
+        cartTable.refresh();
+        updateTotals();
+        barcodeField.clear();
+        
+        // Use Platform.runLater here to ensure focus requests don't conflict with key releases
+        Platform.runLater(() -> barcodeField.requestFocus());
+
+    } finally {
+        isProcessingBarcode = false; // Release the lock when done
+    }
 }
 
     /**
@@ -1333,6 +1705,8 @@ private Button createResponsiveSecondaryActionButton(String text, double fontSiz
         if (alert.showAndWait().get() == ButtonType.OK) {
             cartItems.clear();
             isVat5Exempt = false; 
+            cashAmountField.clear();
+            lastAutoFilledCashAmount = "";
             updateTotals();
         }
     }
@@ -1341,13 +1715,21 @@ private Button createResponsiveSecondaryActionButton(String text, double fontSiz
  * Updates the total amounts in the checkout panel and refreshes the change calculation
 */
 private void updateTotals() {
-    double subtotal = 0.0;        // Net subtotal when VAT5, gross otherwise
+    double subtotal = 0.0;
     double totalTax = 0.0;
     double totalLevies = 0.0;
+    double netOnlyTotal = 0.0;
     int totalQuantity = 0;
     double itemLevelDiscountTotal = 0.0;
 
     boolean isVATRegistered = Helper.isVATRegistered();
+
+    // Fetch levies and sum ALL percentage levy rates first
+    List<LevyDto> levies = Helper.getActiveLevies();
+    double totalLevyRate = levies.stream()
+            .filter(l -> "PERCENTAGE".equalsIgnoreCase(l.getChargeMode()))
+            .mapToDouble(LevyDto::getRate)
+            .sum();
 
     // Step 1: Item-level totals
     for (Product item : cartItems) {
@@ -1357,7 +1739,7 @@ private void updateTotals() {
             applyDiscountToItem(item, discount, false);
         }
 
-        double itemPriceGross = item.getPrice(); // VAT-inclusive
+        double itemPriceGross = item.getPrice(); // Net + VAT + Levies inclusive
         double itemQuantity = item.getQuantity();
         double taxRate = Helper.getTaxRateById(item.getTaxRate());
 
@@ -1368,6 +1750,10 @@ private void updateTotals() {
         }
 
         double itemSubtotal = itemPriceNet * itemQuantity;
+
+        // Back-calculate net only (strip VAT + all levies) per item for display
+        double itemNetOnly = (itemPriceGross * itemQuantity) / (1 + taxRate / 100.0 + totalLevyRate / 100.0);
+        netOnlyTotal += itemNetOnly;
 
         // Track item-level discount (UI only, not applied again)
         double discountPerItem = 0.0;
@@ -1392,36 +1778,34 @@ private void updateTotals() {
     // Step 3: VAT extraction (only if NOT VAT5)
     if (!isVat5Exempt && isVATRegistered) {
         for (Product item : cartItems) {
-            double itemGross = item.getPrice() * item.getQuantity();
+            double itemGross = item.getPrice() * item.getQuantity(); // Net + VAT + Levies
             double taxRate = Helper.getTaxRateById(item.getTaxRate());
 
-            double proportion = subtotal == 0 ? 0 : itemGross / (subtotal == 0 ? 1 : subtotal);
+            double proportion = subtotal == 0 ? 0 : itemGross / subtotal;
             double itemDiscountShare = cartLevelDiscount * proportion;
             double itemDiscountedGross = itemGross - itemDiscountShare;
 
-            double itemVAT = (itemDiscountedGross * taxRate) / (100 + taxRate);
+            // Back-calculate net using VAT + ALL levy rates combined
+            double itemNet = itemDiscountedGross / (1 + taxRate / 100.0 + totalLevyRate / 100.0);
+
+            double itemVAT = itemNet * (taxRate / 100.0);
             totalTax += itemVAT;
         }
     }
 
-    // Step 4: Levies (VAT-excluded base)
-    List<LevyDto> levies = Helper.getActiveLevies();
+    // Step 4: Levies (on clean net base, stripped of VAT and all levies)
     for (LevyDto levy : levies) {
         double levyAmount = 0.0;
 
         for (Product item : cartItems) {
-            double itemGross = item.getPrice() * item.getQuantity();
+            double itemGross = item.getPrice() * item.getQuantity(); // Net + VAT + Levies
             double taxRate = Helper.getTaxRateById(item.getTaxRate());
 
-            double itemVAT = 0.0;
-            if (!isVat5Exempt && isVATRegistered) {
-                itemVAT = (itemGross * taxRate) / (100 + taxRate);
-            }
-
-            double preVatAmount = itemGross - itemVAT;
+            // Back-calculate net using VAT rate + ALL levy rates combined
+            double itemNet = itemGross / (1 + taxRate / 100.0 + totalLevyRate / 100.0);
 
             if ("PERCENTAGE".equalsIgnoreCase(levy.getChargeMode())) {
-                levyAmount += (preVatAmount * levy.getRate()) / 100.0;
+                levyAmount += (itemNet * levy.getRate()) / 100.0;
             } else if ("Item".equalsIgnoreCase(levy.getChargeMode())) {
                 levyAmount += levy.getRate() * item.getQuantity();
             }
@@ -1432,27 +1816,45 @@ private void updateTotals() {
 
     // Step 5: Totals
     double totalDiscount = itemLevelDiscountTotal + cartLevelDiscount;
-    double total = discountedSubtotal + totalLevies;
+    double total = discountedSubtotal; // Already includes Net + VAT + Levies, no need to add again
 
     // Step 6: UI
     if (isVat5Exempt) {
         subtotalValueLabel.setText(formatCurrency(discountedSubtotal));
         taxValueLabel.setText(formatCurrency(0.0));
     } else {
-        subtotalValueLabel.setText(formatCurrency(discountedSubtotal - totalTax));
+        subtotalValueLabel.setText(formatCurrency(netOnlyTotal));
         taxValueLabel.setText(formatCurrency(totalTax));
     }
 
     discountValueLabel.setText(formatCurrency(totalDiscount));
     leviesValueLabel.setText(formatCurrency(totalLevies));
     totalAmountLabel.setText(formatCurrency(total));
+    balanceDueValueLabel.setText(formatCurrency(total));
 
     totalAmount = total;
 
     ((Label) ((HBox) ((VBox) cartTable.getParent()).getChildren().get(0)).getChildren().get(1))
         .setText("(" + totalQuantity + " item" + (totalQuantity == 1 ? "" : "s") + ")");
 
+    // Auto-populate cash amount with total, but only if the cashier hasn't typed a custom value
+    if (cashAmountField != null) {
+        String currentText = cashAmountField.getText();
+        if (currentText.isEmpty() || currentText.equals(lastAutoFilledCashAmount)) {
+            String formattedTotal = total > 0 ? formatPlainAmount(total) : "";
+            cashAmountField.setText(formattedTotal);
+            lastAutoFilledCashAmount = formattedTotal;
+        }
+    }
+
     updateChangeCalculation();
+}
+
+/**
+ * Formats a double as a plain decimal string (no currency symbol) for populating input fields
+ */
+private String formatPlainAmount(double amount) {
+    return String.format(Locale.US, "%.2f", amount);
 }
 /**
  * Updates the change calculation and payment button state
@@ -1479,25 +1881,68 @@ private void updateChangeCalculation() {
     // Enable/disable process payment button based on whether customer has provided enough cash
     boolean isSufficientPayment = cashAmount >= totalAmount && totalAmount > 0;
     processPaymentButton.setDisable(!isSufficientPayment);
-    doneButton.setDisable(!isSufficientPayment);
+
+    if (doneButton != null) {           // only guarded check remains — no duplicate unguarded call above it
+        doneButton.setDisable(!isSufficientPayment);
+    }
     
     // Optionally change the button style when disabled
+   // Optionally change the button style when disabled
     if (isSufficientPayment) {
-        processPaymentButton.setStyle("-fx-background-color: #1a237e; -fx-text-fill: white; " +
-                                  "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: hand; " +
-                                  "-fx-background-radius: 5px;");
+        processPaymentButton.setStyle(
+            "-fx-background-color: #c62828; -fx-text-fill: white; -fx-font-size: 15px; " +
+            "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 0; " +
+            "-fx-border-width: 0; -fx-opacity: 1.0;");
     } else {
-        processPaymentButton.setStyle("-fx-background-color: #9e9e9e; -fx-text-fill: white; " +
-                                  "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: default; " +
-                                  "-fx-background-radius: 5px;");
+        processPaymentButton.setStyle(
+            "-fx-background-color: #c62828; -fx-text-fill: white; -fx-font-size: 15px; " +
+            "-fx-font-weight: bold; -fx-cursor: default; -fx-background-radius: 0; " +
+            "-fx-border-width: 0; -fx-opacity: 0.5;");
     }
-}    
+}
  private void processPayment() {
+    if (cartItems.isEmpty()) {
+        showAlert("Error", "Cart is empty. Please add items before processing payment.");
+        return;
+    }
+
+    String selectedPaymentMethod = paymentMethodComboBox.getValue();
+
+    Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
+    confirmAlert.setTitle("Confirm Payment");
+    confirmAlert.setHeaderText("Proceed with Payment?");
+
+    String confirmMessage = "Do you want to continue with "
+        + selectedPaymentMethod + " payment for " + formatCurrency(totalAmount) + "?";
+
+    if (isVat5Exempt && currentVat5Data != null) {
+        confirmMessage += "\n\n✓ VAT5 Certificate Applied"
+            + "\nProject: " + currentVat5Data.projectNumber
+            + "\nCertificate: " + currentVat5Data.vat5CertificateNumber
+            + "\n\nVAT has been exempted for this transaction.";
+    }
+
+    confirmAlert.setContentText(confirmMessage);
+
+    ButtonType okButton = new ButtonType("Proceed", ButtonBar.ButtonData.OK_DONE);
+    ButtonType cancelButton = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+    confirmAlert.getButtonTypes().setAll(okButton, cancelButton);
+
+    Optional<ButtonType> result = confirmAlert.showAndWait();
+    if (result.isEmpty() || result.get() == cancelButton) {
+        System.out.println("❌ Payment cancelled by user.");
+        return;
+    }
+
+    // Cashier confirmed — now show the spinner and begin actual processing
+    showLoadingOverlay();
+
     boolean isBusiness = tinField.getText() != null && !tinField.getText().trim().isEmpty();
     String authCode = buyerAuthField.getText();
 
     if (isBusiness) {
         if (authCode == null || authCode.trim().isEmpty()) {
+            hideLoadingOverlay();
             Alert alert = new Alert(Alert.AlertType.WARNING);
             alert.setTitle("Authorization Required");
             alert.setHeaderText(null);
@@ -1506,33 +1951,32 @@ private void updateChangeCalculation() {
             buyerAuthField.requestFocus();
             return;
         }
-        
-        String bearerToken = Helper.getToken();     
 
-        // Validate authorization code before proceeding
+        String bearerToken = Helper.getToken();
+
         ApiClient apiClient = new ApiClient();
         apiClient.validateAuthorizationCode(authCode, bearerToken, isValid -> {
-            if (!isValid) {
-                Alert alert = new Alert(Alert.AlertType.ERROR);
-                alert.setTitle("Invalid Authorization Code");
-                alert.setHeaderText(null);
-                alert.setContentText("The authorization code provided is invalid. Please check and try again.");
-                alert.showAndWait();
-                buyerAuthField.requestFocus();
-                return;
-            }
+            Platform.runLater(() -> {
+                if (!isValid) {
+                    hideLoadingOverlay();
+                    Alert alert = new Alert(Alert.AlertType.ERROR);
+                    alert.setTitle("Invalid Authorization Code");
+                    alert.setHeaderText(null);
+                    alert.setContentText("The authorization code provided is invalid. Please check and try again.");
+                    alert.showAndWait();
+                    buyerAuthField.requestFocus();
+                    return;
+                }
 
-            // Continue if valid
-            continueAfterValidation();
+                continueAfterValidation();
+            });
         });
 
-        return; // prevent fallthrough while async runs
+        return;
     }
 
-    // If not business, continue immediately
     continueAfterValidation();
 }
-
  private void continueAfterValidation() {
     double offlineThreshold = Helper.getOfflineTransactionLimit();
     LocalDateTime firstUnSyncTime = Helper.getLastSuccessfulSyncTimeFromInvoices();
@@ -1542,6 +1986,7 @@ private void updateChangeCalculation() {
 
     if (currentOfflineAmount >= offlineThreshold) {
         Platform.runLater(() -> {
+            hideLoadingOverlay();
             Alert alert = new Alert(Alert.AlertType.WARNING);
             alert.setTitle("Offline Limit Reached");
             alert.setHeaderText(null);
@@ -1554,6 +1999,9 @@ private void updateChangeCalculation() {
     Helper.checkAndHandleTerminalBlocking(isAllowed -> {
         if (isAllowed) {
             Platform.runLater(this::proceedWithPayment);
+        }
+        else {
+            Platform.runLater(this::hideLoadingOverlay);
         }
     });
 }
@@ -1573,39 +2021,14 @@ private void updateChangeCalculation() {
     String buyerName = !buyersName.isEmpty() ? buyersName : "";
     
     if (cartItems.isEmpty()) {
+        hideLoadingOverlay();
         showAlert("Error", "Cart is empty. Please add items before processing payment.");
         return;
     }        
     
-    Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
-    confirmAlert.setTitle("Confirm Payment");
-    confirmAlert.setHeaderText("Proceed with Payment?");
-    
-    // Add VAT5 exemption notice to confirmation
-    String confirmMessage = "Do you want to continue with " 
-        + selectedPaymentMethod + " payment for " + formatCurrency(totalAmount) + "?";
-    
-    if (isVat5Exempt && currentVat5Data != null) {
-        confirmMessage += "\n\n✓ VAT5 Certificate Applied"
-            + "\nProject: " + currentVat5Data.projectNumber
-            + "\nCertificate: " + currentVat5Data.vat5CertificateNumber
-            + "\n\nVAT has been exempted for this transaction.";
-    }
-    
-    confirmAlert.setContentText(confirmMessage);
-
-    ButtonType okButton = new ButtonType("Proceed", ButtonBar.ButtonData.OK_DONE);
-    ButtonType cancelButton = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
-
-    confirmAlert.getButtonTypes().setAll(okButton, cancelButton);
-
-    Optional<ButtonType> result = confirmAlert.showAndWait();
-    if (result.isEmpty() || result.get() == cancelButton) {
-        System.out.println("❌ Payment cancelled by user.");
-        return;
-    }
-
+    // Confirmation already happened in processPayment() — spinner is already showing, proceed directly
     String invoiceNumber = generateNewReceiptNumber();
+    
     String buyerAuthorizationCode = buyerAuthField.getText().trim();
     
     // 1. Build invoice header
@@ -1639,6 +2062,12 @@ List<LevyDto> activeLevies = Helper.getActiveLevies();
 List<LevyBreakDownDto> levyBreakDowns = new ArrayList<>();
 double totalLevies = 0.0;
 
+// Sum ALL percentage levy rates first so net back-calculation is accurate
+double totalLevyRate = activeLevies.stream()
+        .filter(l -> "PERCENTAGE".equalsIgnoreCase(l.getChargeMode()))
+        .mapToDouble(LevyDto::getRate)
+        .sum();
+
 for (LevyDto levy : activeLevies) {
     LevyBreakDownDto levyDto = new LevyBreakDownDto();
     levyDto.setLevyTypeId(levy.getId());
@@ -1647,22 +2076,24 @@ for (LevyDto levy : activeLevies) {
     double levyAmount = 0.0;
 
     for (LineItemDto item : lineItems) {
-        double lineTotal = item.getTotal();        // price including VAT
-        double vatRate = item.getTotalVAT();        // e.g., 16%
-        
-        // Extract pre-VAT base
-        double preVatAmount = lineTotal - vatRate; // formula: preVAT = Total * 100 / (100 + Rate)
-        
-        // Apply levy on pre-VAT base
-        double itemLevy = "PERCENTAGE".equalsIgnoreCase(levy.getChargeMode()) ?
-                          (preVatAmount * levy.getRate()) / 100.0 :
-                          levy.getRate();
-        
+        double lineTotal = item.getTotal();      // Net + VAT + all Levies
+        double totalVAT  = item.getTotalVAT();   // Actual VAT amount
+
+        // Net + Levies = Total - VAT
+        double netPlusLevies = lineTotal - totalVAT;
+
+        // Net = (Net + Levies) / (1 + totalLevyRate / 100)
+        double netTotal = netPlusLevies / (1 + totalLevyRate / 100.0);
+
+        // Apply this specific levy's rate on the clean net
+        double itemLevy = "PERCENTAGE".equalsIgnoreCase(levy.getChargeMode())
+                ? (netTotal * levy.getRate()) / 100.0
+                : levy.getRate() * item.getQuantity();  // flat rate per unit
+
         levyAmount += itemLevy;
     }
 
-    levyDto.setLevyAmount(levyAmount);
-    levyBreakDowns.add(levyDto);
+    levyDto.setLevyAmount(Math.round(levyAmount * 100.0) / 100.0);    levyBreakDowns.add(levyDto);
     totalLevies += levyAmount;
 }
 
@@ -1671,8 +2102,6 @@ invoiceSummary.setLevyBreakDown(levyBreakDowns);
     invoiceSummary.setTaxBreakDown(taxBreakdowns);
     invoiceSummary.setTotalVAT(totalVATAmount);
     invoiceSummary.setInvoiceTotal(invoiceTotal);
-    // Update total to include levies
-    invoiceSummary.setInvoiceTotal(invoiceTotal + totalLevies);
     invoiceSummary.setOfflineSignature("");
     invoiceSummary.setAmountTendered(amountTendered); 
 
@@ -1725,6 +2154,7 @@ invoiceSummary.setLevyBreakDown(levyBreakDowns);
     
     apiClient.submitTransactions(jsonPayload, bearerToken, (success, returnedValidationUrl) -> {
         Platform.runLater(() -> {
+            hideLoadingOverlay();   // NEW — processing is done, hide spinner before showing result
             if (success) {
                 Helper.updateValidationUrl(invoiceHeader.getInvoiceNumber(), returnedValidationUrl);
                 Helper.markAsTransmitted(invoiceHeader.getInvoiceNumber());
@@ -1762,8 +2192,8 @@ invoiceSummary.setLevyBreakDown(levyBreakDowns);
             } else {
                 Alert failureAlert = new Alert(Alert.AlertType.ERROR);
                 failureAlert.setTitle("Transaction Status");
-                failureAlert.setHeaderText("🚨 Sync Error!");
-                failureAlert.setContentText("Transaction failed. Saved locally for later sync.");
+                failureAlert.setHeaderText("🚨 Processing Offline!");
+                failureAlert.setContentText("Saved locally. Will sync automatically when online.");
                 failureAlert.showAndWait();
                 
                 long transactionCount = 0;
@@ -1817,6 +2247,8 @@ invoiceSummary.setLevyBreakDown(levyBreakDowns);
     currentVat5Data = null;  // Clear VAT5 data
     buyerAuthField.clear();
     customerNamesField.clear();
+    cashAmountField.clear();
+    lastAutoFilledCashAmount = "";
     receiptNumberLabel.setText(generateNewReceiptNumber());
     updateTotals();
 }
@@ -1974,20 +2406,28 @@ private void applyDiscountToItem(Product product, double discountValue, boolean 
         originalPrice = product.getPrice();
         product.setOriginalPrice(originalPrice);
     }
-    
+
+    double flatDiscountAmount;
+
     if (isPercentage) {
-        double discountAmount = originalPrice * (discountValue / 100.0);
-        product.setPrice(originalPrice - discountAmount);
+        // Convert percentage to an equivalent flat amount — "discount" is
+        // always stored/displayed as a flat rate, regardless of how it was entered.
+        flatDiscountAmount = originalPrice * (discountValue / 100.0);
+        product.setPrice(originalPrice - flatDiscountAmount);
         product.setDiscountPercent(discountValue);
         product.setDiscountAmount(0);
     } else {
         // Ensure discount doesn't exceed item price
-        double safeDicountAmount = Math.min(discountValue, originalPrice);
-        product.setPrice(originalPrice - safeDicountAmount);
-        product.setDiscountAmount(safeDicountAmount);
+        flatDiscountAmount = Math.min(discountValue, originalPrice);
+        product.setPrice(originalPrice - flatDiscountAmount);
+        product.setDiscountAmount(flatDiscountAmount);
         product.setDiscountPercent(0);
     }
-    
+
+    // Single source of truth read by updateTotals() and the inline Discount column —
+    // always the flat amount, never the raw percentage.
+    product.setDiscount(flatDiscountAmount);
+
     product.updateTotal();
     cartTable.refresh();
 }
@@ -4051,54 +4491,74 @@ public String getTransactionNote() {
 }
 
 private VBox createCashAmountSection() {
+    // Match the checkout panel's font scale
+    Rectangle2D screenBounds = Screen.getPrimary().getVisualBounds();
+    double screenWidth = screenBounds.getWidth();
+    double panelWidth;
+    if (screenWidth <= 1024) {
+        panelWidth = Math.max(screenWidth * 0.25, 250);
+    } else if (screenWidth <= 1440) {
+        panelWidth = Math.max(screenWidth * 0.22, 300);
+    } else {
+        panelWidth = Math.max(screenWidth * 0.20, 320);
+    }
+
+    double titleFontSize = Math.max(panelWidth * 0.07, 19);
+    double labelFontSize = Math.max(panelWidth * 0.058, 16);
+    double inputHeight = Math.max(panelWidth * 0.13, 40);
+
     VBox cashAmountBox = new VBox(8);
     Label cashAmountLabel = new Label("Cash Amount");
-    cashAmountLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #424242;");
-    
+    cashAmountLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #424242;", labelFontSize));
+
     // Create HBox to hold the text field and number pad button - FIXED ALIGNMENT
-    HBox cashInputBox = new HBox(8); // Increased spacing for better look
-    cashInputBox.setAlignment(Pos.CENTER_LEFT); // Ensure proper alignment
-    
+    HBox cashInputBox = new HBox(8);
+    cashInputBox.setAlignment(Pos.CENTER_LEFT);
+
     // Cash amount field
     cashAmountField = new TextField();
     cashAmountField.setPromptText("Enter amount");
-    cashAmountField.setPrefHeight(40);
-    cashAmountField.setStyle("-fx-font-size: 14px; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
-                          "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;");
-    
-    // Number pad button - FIXED SIZE AND STYLE
+    cashAmountField.setPrefHeight(inputHeight);
+    cashAmountField.setStyle(String.format(
+        "-fx-font-size: %.0fpx; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
+        "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;", labelFontSize));
+
+    // Number pad button - scales with the same input height
     Button numberPadButton = new Button("🔢");
-    numberPadButton.setPrefHeight(40);
-    numberPadButton.setPrefWidth(45); // Slightly smaller for better proportion
-    numberPadButton.setMinWidth(45);
-    numberPadButton.setMaxWidth(45);
-    numberPadButton.setStyle("-fx-background-color: #2196f3; -fx-text-fill: white; " +
-                            "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: hand; " +
-                            "-fx-background-radius: 5px; -fx-border-radius: 5px;");
-    
+    numberPadButton.setPrefHeight(inputHeight);
+    numberPadButton.setPrefWidth(inputHeight + 5);
+    numberPadButton.setMinWidth(inputHeight + 5);
+    numberPadButton.setMaxWidth(inputHeight + 5);
+    numberPadButton.setStyle(String.format(
+        "-fx-background-color: #2196f3; -fx-text-fill: white; " +
+        "-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-cursor: hand; " +
+        "-fx-background-radius: 5px; -fx-border-radius: 5px;", labelFontSize + 1));
+
     // Hover effects
-    numberPadButton.setOnMouseEntered(e -> 
-        numberPadButton.setStyle("-fx-background-color: #1976d2; -fx-text-fill: white; " +
-                               "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: hand; " +
-                               "-fx-background-radius: 5px; -fx-border-radius: 5px;")
+    numberPadButton.setOnMouseEntered(e ->
+        numberPadButton.setStyle(String.format(
+            "-fx-background-color: #1976d2; -fx-text-fill: white; " +
+            "-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-cursor: hand; " +
+            "-fx-background-radius: 5px; -fx-border-radius: 5px;", labelFontSize + 1))
     );
-    
-    numberPadButton.setOnMouseExited(e -> 
-        numberPadButton.setStyle("-fx-background-color: #2196f3; -fx-text-fill: white; " +
-                               "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: hand; " +
-                               "-fx-background-radius: 5px; -fx-border-radius: 5px;")
+
+    numberPadButton.setOnMouseExited(e ->
+        numberPadButton.setStyle(String.format(
+            "-fx-background-color: #2196f3; -fx-text-fill: white; " +
+            "-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-cursor: hand; " +
+            "-fx-background-radius: 5px; -fx-border-radius: 5px;", labelFontSize + 1))
     );
-    
+
     numberPadButton.setOnAction(e -> {
         activeField = cashAmountField;
         showNumberPadDialog();
     });
-    
+
     // Add field and button to HBox - FIELD TAKES REMAINING SPACE
     cashInputBox.getChildren().addAll(cashAmountField, numberPadButton);
-    HBox.setHgrow(cashAmountField, Priority.ALWAYS); // Field takes available space
-    HBox.setHgrow(numberPadButton, Priority.NEVER);  // Button stays fixed size
-    
+    HBox.setHgrow(cashAmountField, Priority.ALWAYS);
+    HBox.setHgrow(numberPadButton, Priority.NEVER);
+
     // Validation listener
     cashAmountField.textProperty().addListener((observable, oldValue, newValue) -> {
         if (!newValue.matches("\\d*\\.?\\d*")) {
@@ -4107,25 +4567,24 @@ private VBox createCashAmountSection() {
             updateChangeCalculation();
         }
     });
-    
-    // Change display
+
+    // Change display — bigger, eye-catching
     Label changeLabel = new Label("Change:");
-    changeLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #424242;");
-    
+    changeLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #424242;", labelFontSize));
+
     changeValueLabel = new Label(formatCurrency(0.0));
-    changeValueLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #009688;");
-    
+    changeValueLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #009688;", titleFontSize));
+
     HBox changeBox = new HBox(10);
     changeBox.setAlignment(Pos.CENTER_LEFT);
     Region spacer = new Region();
     HBox.setHgrow(spacer, Priority.ALWAYS);
     changeBox.getChildren().addAll(spacer, changeLabel, changeValueLabel);
-    
+
     // Add all components
     cashAmountBox.getChildren().addAll(cashAmountLabel, cashInputBox, changeBox);
     return cashAmountBox;
 }
-
 /**
  * STEP 3: Shows the number pad dialog - FIXED CENTERING
  */
@@ -4144,6 +4603,19 @@ private void showNumberPadDialog() {
         
         // Show dialog first to get its dimensions
         numberPadDialog.show();
+        
+        // =======================================================
+    // ESCAPE KEY HANDLER (Closes the number pad instantly)
+    // =======================================================
+    if (numberPadDialog.getScene() != null) {
+        numberPadDialog.getScene().setOnKeyPressed(event -> {
+            if (event.getCode() == javafx.scene.input.KeyCode.ESCAPE) {
+                numberPadDialog.close();
+                event.consume();
+            }
+        });
+    }
+    // =======================================================
         
         // Center on primary stage
         double centerX = primaryStage.getX() + (primaryStage.getWidth() / 2) - (numberPadDialog.getWidth() / 2);
@@ -4397,8 +4869,10 @@ private List<LineItemDto> createLineItems() {
         }
 
         lineItemDto.setTotal(total);
+        lineItemDto.setIsProduct(product.isProduct());
 
         lineItems.add(lineItemDto);
+        
     }
 
     return lineItems;

@@ -18,6 +18,8 @@ import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.*;
 import javafx.util.Callback;
+import com.pointofsale.model.Session;
+
 
 import java.text.NumberFormat;
 import java.util.List;
@@ -401,36 +403,42 @@ public class ProductManagement {
         return tableSection;
     }
 
-    private Callback<TableColumn<Product, Void>, TableCell<Product, Void>> createActionButtonCellFactory() {
-        return new Callback<>() {
-            @Override
-            public TableCell<Product, Void> call(final TableColumn<Product, Void> param) {
-                return new TableCell<>() {
-                    private final Button discountBtn = new Button("Discount");
-                    private final HBox pane = new HBox(5);
+   private Callback<TableColumn<Product, Void>, TableCell<Product, Void>> createActionButtonCellFactory() {
+    return new Callback<>() {
+        @Override
+        public TableCell<Product, Void> call(final TableColumn<Product, Void> param) {
+            return new TableCell<>() {
+                private final Button discountBtn = new Button("Discount");
+                private final HBox pane = new HBox(5);
+                {
+                    boolean isAdmin = "ADMIN".equalsIgnoreCase(Session.role);
 
-                    {
+                    if (isAdmin) {
                         discountBtn.setStyle("-fx-background-color: #ff8f00; -fx-text-fill: white; " +
                                 "-fx-cursor: hand; -fx-background-radius: 3px; -fx-font-size: 12px;");
-
                         discountBtn.setOnAction(event -> {
                             Product product = getTableView().getItems().get(getIndex());
                             showDiscountDialog(product);
                         });
-
-                        pane.getChildren().addAll(discountBtn);
-                        pane.setAlignment(Pos.CENTER);
+                    } else {
+                        discountBtn.setStyle("-fx-background-color: #cccccc; -fx-text-fill: #888888; " +
+                                "-fx-background-radius: 3px; -fx-font-size: 12px;");
+                        discountBtn.setDisable(true);
                     }
 
-                    @Override
-                    protected void updateItem(Void item, boolean empty) {
-                        super.updateItem(item, empty);
-                        setGraphic(empty ? null : pane);
-                    }
-                };
-            }
-        };
-    }
+                    pane.getChildren().addAll(discountBtn);
+                    pane.setAlignment(Pos.CENTER);
+                }
+
+                @Override
+                protected void updateItem(Void item, boolean empty) {
+                    super.updateItem(item, empty);
+                    setGraphic(empty ? null : pane);
+                }
+            };
+        }
+    };
+}
 
     private void filterProducts() {
         String searchText = searchField.getText().toLowerCase();

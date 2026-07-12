@@ -8,6 +8,7 @@ public class ApiEndpoints {
     // Onboarding
     public static final String ACTIVATE_TERMINAL = "/onboarding/activate-terminal";
     public static final String CONFIRM_TERMINAL_ACTIVATION = "/onboarding/terminal-activated-confirmation";
+    public static final String VENDOR_ACCESS_KEY = "B4UH-PJUL-TY7C-I2ZA";
     
     //Terminal Site Products
     public static final String GET_TERMINAL_SITE_PRODUCTS = "/utilities/get-terminal-site-products";
@@ -27,7 +28,7 @@ public class ApiEndpoints {
     
     //OfflineSignature url
     
-    public static String OFFLINE_VALIDATION_BASE_URL = "https://dev-eis-portal.mra.mw/ReceiptValidation/Validate";
+    public static String OFFLINE_VALIDATION_BASE_URL = "https://eis-portal.mra.mw/ReceiptValidation/Validate";
     
     //ping endpoint
     

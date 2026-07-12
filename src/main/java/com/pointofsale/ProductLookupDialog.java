@@ -24,6 +24,7 @@ import java.text.NumberFormat;
 import java.util.Locale;
 import javafx.stage.StageStyle;
 import javafx.util.Duration;
+import javafx.application.Platform;
 
 
 public class ProductLookupDialog {
@@ -99,6 +100,16 @@ public class ProductLookupDialog {
         
         // Create the scene
         Scene scene = new Scene(rootLayout);
+        // =======================================================
+        // ESCAPE KEY HANDLER (Listens globally across the dialog)
+        // =======================================================
+        scene.setOnKeyPressed(event -> {
+            if (event.getCode() == javafx.scene.input.KeyCode.ESCAPE) {
+                stage.close();
+                event.consume(); // Prevents the event from bubbling up further
+            }
+        });
+        // =======================================================
         stage.setScene(scene);
     }
     
@@ -215,14 +226,16 @@ public class ProductLookupDialog {
         
         searchFieldBox.getChildren().addAll(searchIcon, searchField);
         
-        // Category dropdown
+        // Filter Type dropdown (Includes "All" as default)
         categoryComboBox = new ComboBox<>();
-        categoryComboBox.getItems().addAll("All Categories", "Furniture", "Lighting", "Decor", "Flooring");
-        categoryComboBox.setValue("All Categories");
+        categoryComboBox.getItems().addAll("All", "Product Name", "Barcode", "Price");
+        categoryComboBox.setValue("All"); // <-- Default set to All
         categoryComboBox.setPrefHeight(35);
         categoryComboBox.setPrefWidth(150);
         categoryComboBox.setStyle("-fx-font-size: 14px; -fx-background-color: #f8f8f8; " +
                                 "-fx-border-color: #e0e0e0; -fx-border-radius: 5; -fx-background-radius: 5;");
+        
+        categoryComboBox.setOnAction(e -> performSearch());
         
         // Search button
         Button searchButton = new Button("Search");
@@ -296,6 +309,24 @@ private VBox createTableArea() {
             updateDetailPanel();
         }
     });
+    
+ // ==========================================
+// ENTER KEY HANDLER:
+// ==========================================
+productTable.setOnKeyPressed(event -> {
+    if (event.getCode() == javafx.scene.input.KeyCode.ENTER) {
+        Product currentSelection = productTable.getSelectionModel().getSelectedItem();
+        if (currentSelection != null) {
+            selectedProduct = currentSelection;
+            stage.close();
+        } else {
+            Alert alert = new Alert(Alert.AlertType.WARNING, "Please select a product before adding to cart.");
+            alert.showAndWait();
+        }
+        event.consume();
+    }
+});
+// ==========================================
     
     // Barcode column
     TableColumn<Product, String> barcodeCol = new TableColumn<>("Barcode");
@@ -548,37 +579,75 @@ private VBox createTableArea() {
         return detailPanel;
     }
     
-    /**
-     * Performs a search based on the search field and category filter
-     */
-    private void performSearch() {
-        String searchText = searchField.getText().toLowerCase();
-        String category = categoryComboBox.getValue();
-        
-        // Filter the products based on search criteria
-        ObservableList<Product> filteredData = FXCollections.observableArrayList();
-        for (Product product : productData) {
-            boolean categoryMatch = category.equals("All Categories") || product.getDescription().equals(category);
-            boolean searchMatch = searchText.isEmpty() || 
-                                product.getName().toLowerCase().contains(searchText) || 
-                                String.valueOf(product.getBarcode()).contains(searchText);
-            
-            if (categoryMatch && searchMatch) {
-                filteredData.add(product);
-            }
+ /**
+ * Performs a search based on the search field and selected criteria (All, Name, Barcode, or Price)
+ */
+private void performSearch() {
+    String searchText = searchField.getText().trim().toLowerCase();
+    String searchCriteria = categoryComboBox.getValue();
+    
+    ObservableList<Product> filteredData = FXCollections.observableArrayList();
+    
+    for (Product product : productData) {
+        // If search text is completely empty, pass all items automatically
+        if (searchText.isEmpty()) {
+            filteredData.add(product);
+            continue;
         }
         
-        // Update the table with filtered data
-        productTable.setItems(filteredData);
+        boolean isMatch = false;
         
-        // Select first item if available
-        if (!filteredData.isEmpty()) {
-            productTable.getSelectionModel().select(0);
-        } else {
-            // Hide details panel if no results
-            hideDetailPanel();
+        // Grab values cleanly to prevent unexpected NullPointerExceptions
+        String name = product.getName() != null ? product.getName().toLowerCase() : "";
+        String barcode = product.getBarcode() != null ? product.getBarcode().toLowerCase() : "";
+        String price = String.valueOf(product.getPrice());
+        
+        switch (searchCriteria) {
+            case "All":
+                // Searches across all three attributes at the same time
+                if (name.contains(searchText) || barcode.contains(searchText) || price.contains(searchText)) {
+                    isMatch = true;
+                }
+                break;
+                
+            case "Product Name":
+                if (name.contains(searchText)) {
+                    isMatch = true;
+                }
+                break;
+                
+            case "Barcode":
+                if (barcode.contains(searchText)) {
+                    isMatch = true;
+                }
+                break;
+                
+            case "Price":
+                if (price.contains(searchText)) {
+                    isMatch = true;
+                }
+                break;
+                
+            default:
+                break;
+        }
+        
+        if (isMatch) {
+            filteredData.add(product);
         }
     }
+    
+    // Update the table with filtered data
+    productTable.setItems(filteredData);
+    
+    // Select first item if available
+    if (!filteredData.isEmpty()) {
+        productTable.getSelectionModel().select(0);
+    } else {
+        // Hide details panel if no results
+        hideDetailPanel();
+    }
+}
     
     /**
      * Shows the detail panel with animation
@@ -668,6 +737,8 @@ private VBox createTableArea() {
      * Shows the product lookup dialog
      */
     public void show() {
+        // Run later ensures the window has completed initialization before forcing focus
+        Platform.runLater(() -> searchField.requestFocus());
         stage.showAndWait();
     }
     
@@ -679,6 +750,9 @@ private VBox createTableArea() {
     public Product showAndSelect() {
         // Make sure the detail panel is hidden initially
         hideDetailPanel();
+        
+        // Focus the search field when the UI comes alive
+        Platform.runLater(() -> searchField.requestFocus());
         
         // Show the dialog
         stage.showAndWait();

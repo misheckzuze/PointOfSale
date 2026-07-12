@@ -34,6 +34,8 @@ import com.pointofsale.model.InvoiceHeader;
 import com.pointofsale.model.InvoicePayload;
 import com.pointofsale.model.TaxBreakDown;
 import com.pointofsale.data.Database;
+import com.pointofsale.model.LevyBreakDownDto;
+
 
 
 public class ApiClient {
@@ -86,6 +88,7 @@ public class ApiClient {
                         .uri(URI.create(url))
                         .header("Content-Type", "application/json")
                         .header("Accept", "text/plain")
+                        .header("x-access-key", ApiEndpoints.VENDOR_ACCESS_KEY)
                         .timeout(java.time.Duration.ofSeconds(30))
                         .POST(HttpRequest.BodyPublishers.ofString(json))
                         .build();
@@ -590,49 +593,47 @@ public boolean fetchLatestConfig(String bearerToken) {
 
   public void retryPendingTransactions() {
     String query = "SELECT * FROM Invoices WHERE State = 0";
-
     try (Connection connection = Database.createConnection();
          PreparedStatement stmt = connection.prepareStatement(query);
          var rs = stmt.executeQuery()) {
-
         while (rs.next()) {
-           String invoiceNumber = rs.getString("InvoiceNumber");
-           String paymentId = rs.getString("PaymentId");
+            String invoiceNumber = rs.getString("InvoiceNumber");
+            String paymentId = rs.getString("PaymentId");
 
-           InvoiceHeader header = Helper.getInvoiceHeader(invoiceNumber, "", "", paymentId);
-           List<LineItemDto> lineItems = Helper.getLineItems(invoiceNumber);
-    
-           InvoiceSummary invoiceSummary = new InvoiceSummary();
-           List<TaxBreakDown> taxBreakdowns = Helper.generateTaxBreakdown(lineItems);
-           invoiceSummary.setTaxBreakDown(taxBreakdowns);
+            InvoiceHeader header = Helper.getInvoiceHeader(invoiceNumber, "", "", paymentId);
+            List<LineItemDto> lineItems = Helper.getLineItems(invoiceNumber);
+            // Fetch levy breakdowns and round amounts to 2dp
+            List<LevyBreakDownDto> levyBreakDowns = Helper.getLevyBreakdowns(invoiceNumber);
+            levyBreakDowns.forEach(l ->
+                l.setLevyAmount(Math.round(l.getLevyAmount() * 100.0) / 100.0)
+            );
+            InvoiceSummary invoiceSummary = new InvoiceSummary();
+            List<TaxBreakDown> taxBreakdowns = Helper.generateTaxBreakdown(lineItems);
+            invoiceSummary.setTaxBreakDown(taxBreakdowns);
+            invoiceSummary.setLevyBreakDown(levyBreakDowns); // ← set on summary
+            invoiceSummary.setTotalVAT(rs.getDouble("TotalVAT"));
+            invoiceSummary.setInvoiceTotal(rs.getDouble("InvoiceTotal"));
+            invoiceSummary.setOfflineSignature(rs.getString("OfflineTransactionSignature"));
 
-           // ✅ Use values directly from Invoices table
-           invoiceSummary.setTotalVAT(rs.getDouble("TotalVAT"));
-           invoiceSummary.setInvoiceTotal(rs.getDouble("InvoiceTotal"));
-           invoiceSummary.setOfflineSignature(rs.getString("OfflineTransactionSignature"));
+            InvoicePayload payload = new InvoicePayload();
+            payload.setInvoiceHeader(header);
+            payload.setInvoiceLineItems(lineItems);
+            payload.setInvoiceSummary(invoiceSummary);
 
-           InvoicePayload payload = new InvoicePayload();
-           payload.setInvoiceHeader(header);
-           payload.setInvoiceLineItems(lineItems);
-           payload.setInvoiceSummary(invoiceSummary);
-    
-           Gson gson = new Gson();
-           String jsonPayload = gson.toJson(payload);
-           String token = Helper.getToken();
-
-           ApiClient apiClient = new ApiClient();
-           apiClient.submitTransactions(jsonPayload, token, (success, returnedValidationUrl) -> {
-           if (success) {
-            Helper.updateValidationUrl(invoiceNumber, returnedValidationUrl);
-            Helper.markAsTransmitted(invoiceNumber);
-            System.out.println("✅ Auto-resend success for: " + invoiceNumber);
-           } else {
-              System.err.println("❌ Auto-resend failed for: " + invoiceNumber);
-           }
-        });
-    }
-
-
+            Gson gson = new Gson();
+            String jsonPayload = gson.toJson(payload);
+            String token = Helper.getToken();
+            ApiClient apiClient = new ApiClient();
+            apiClient.submitTransactions(jsonPayload, token, (success, returnedValidationUrl) -> {
+                if (success) {
+                    Helper.updateValidationUrl(invoiceNumber, returnedValidationUrl);
+                    Helper.markAsTransmitted(invoiceNumber);
+                    System.out.println("✅ Auto-resend success for: " + invoiceNumber);
+                } else {
+                    System.err.println("❌ Auto-resend failed for: " + invoiceNumber);
+                }
+            });
+        }
     } catch (SQLException e) {
         System.err.println("❌ Error fetching pending transactions: " + e.getMessage());
     }

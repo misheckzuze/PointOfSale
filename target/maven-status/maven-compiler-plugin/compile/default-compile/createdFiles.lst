@@ -79,6 +79,7 @@ com\pointofsale\model\ProductSale.class
 com\pointofsale\AuditTrailView$3.class
 com\pointofsale\model\TerminalBlockingInfo.class
 com\pointofsale\model\CategoryRevenue.class
+com\pointofsale\POSDashboard$5.class
 com\pointofsale\ReportsView.class
 com\pointofsale\CustomersView$3.class
 com\pointofsale\model\InvoiceGenerationRequest.class
@@ -94,3 +95,4 @@ com\pointofsale\AuditLogger.class
 com\pointofsale\model\TerminalBlockingResponse.class
 com\pointofsale\TransactionsView$3.class
 com\pointofsale\CustomersView$2$1.class
+com\pointofsale\POSDashboard$6.class

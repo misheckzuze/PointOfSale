@@ -61,6 +61,7 @@ import java.util.List;
 import java.util.ArrayList;
 import com.pointofsale.data.Database;
 import java.time.format.DateTimeParseException;
+import java.util.stream.Collectors;
 
 
 
@@ -663,6 +664,21 @@ public static String getTerminalSiteId() {
         e.printStackTrace();
     }
 }
+ public static boolean getIsProduct(String productCode) {
+    String sql = "SELECT IsProduct FROM Products WHERE ProductCode = ?";
+    try (Connection conn = Database.createConnection();
+         PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        pstmt.setString(1, productCode);
+        var rs = pstmt.executeQuery();
+        if (rs.next()) {
+            return rs.getInt("IsProduct") == 1;
+        }
+    } catch (Exception e) {
+        System.err.println("Failed to get IsProduct for: " + productCode);
+        e.printStackTrace();
+    }
+    return true; // default to true if not found
+}
 
     public static List<Product> fetchAllProductsFromDB() {
         List<Product> products = new ArrayList<>();
@@ -1003,7 +1019,43 @@ public static List<TaxBreakDown> generateTaxBreakdown(List<LineItemDto> lineItem
 
         return new ArrayList<>(taxBreakdownMap.values());
     }
+public static List<LevyBreakDownDto> getLevyBreakdowns(String invoiceNumber) {
+    List<LevyBreakDownDto> levyBreakDowns = new ArrayList<>();
+    
+    // 1. Fetch active levies and map them by their ID for lightning-fast rate lookups
+    List<LevyDto> activeLevies = getActiveLevies();
+    Map<String, Double> levyRateMap = activeLevies.stream()
+        .collect(Collectors.toMap(LevyDto::getId, LevyDto::getRate, (existing, replacement) -> existing));
 
+    String query = "SELECT LevyId, LevyAmount FROM InvoiceLevies WHERE InvoiceNumber = ?";
+
+    try (Connection conn = Database.createConnection();
+         PreparedStatement stmt = conn.prepareStatement(query)) {
+        stmt.setString(1, invoiceNumber);
+        var rs = stmt.executeQuery();
+
+        while (rs.next()) {
+            String levyId = rs.getString("LevyId");
+            double amount = rs.getDouble("LevyAmount");
+            
+            // 2. Look up the rate from our map; default to 0.0 if not found
+            double rate = levyRateMap.getOrDefault(levyId, 0.0);
+
+            LevyBreakDownDto levy = new LevyBreakDownDto();
+            levy.setLevyTypeId(levyId);
+            levy.setLevyRate(rate);     // 🌟 Set the rate here!
+            levy.setLevyAmount(amount);
+            
+            levyBreakDowns.add(levy);
+        }
+
+    } catch (Exception e) {
+        System.err.println("Failed to get levy breakdowns for: " + invoiceNumber);
+        e.printStackTrace();
+    }
+
+    return levyBreakDowns;
+}
 public static boolean saveTransaction(
         InvoiceHeader invoice,
         List<LineItemDto> lineItems,
