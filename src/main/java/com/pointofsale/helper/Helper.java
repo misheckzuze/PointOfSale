@@ -996,29 +996,52 @@ public static boolean isVATRegistered() {
 
 
 public static List<TaxBreakDown> generateTaxBreakdown(List<LineItemDto> lineItems) {
-        Map<String, TaxBreakDown> taxBreakdownMap = new HashMap<>();
+    Map<String, TaxBreakDown> taxBreakdownMap = new HashMap<>();
 
-        for (LineItemDto item : lineItems) {
-            double taxableAmount = item.getTotal() - item.getTotalVAT();
-            double taxAmount = item.getTotalVAT();
-            String rateId = item.getTaxRateId();
+    // Fetch active percentage levy rates to build the exact same extraction factor
+    List<LevyDto> activeLevies = Helper.getActiveLevies();
+    double totalLevyRate = activeLevies.stream()
+            .filter(l -> "PERCENTAGE".equalsIgnoreCase(l.getChargeMode()))
+            .mapToDouble(LevyDto::getRate)
+            .sum(); // e.g., 1.0 for DTL, or 0.0 if empty
 
-            if (taxBreakdownMap.containsKey(rateId)) {
-                TaxBreakDown existing = taxBreakdownMap.get(rateId);
-                existing.setTaxableAmount(existing.getTaxableAmount() + taxableAmount);
-                existing.setTaxAmount(existing.getTaxAmount() + taxAmount);
-            } else {
-                TaxBreakDown newBreakdown = new TaxBreakDown();
-                newBreakdown.setRateId(rateId);
-                newBreakdown.setTaxableAmount(taxableAmount);
-                newBreakdown.setTaxAmount(taxAmount);
+    for (LineItemDto item : lineItems) {
+        double taxRate = Helper.getTaxRateById(item.getTaxRateId());
+        double taxAmount = item.getTotalVAT();
+        double taxableAmount;
 
-                taxBreakdownMap.put(rateId, newBreakdown);
-            }
+        if (taxRate > 0) {
+            // MATCH LINE ITEM EXTRACTION EXACTLY: 
+            // Combined factor includes 1.0 + Tax % + Levy %
+            double combinedFactor = 1.0 + (taxRate / 100.0) + (totalLevyRate / 100.0);
+            
+            // Taxable base is exactly (Gross Total / Combined Factor)
+            taxableAmount = item.getTotal() / combinedFactor;
+        } else {
+            // For 0% or Exempt items
+            taxableAmount = item.getTotal() / (1.0 + (totalLevyRate / 100.0));
         }
 
-        return new ArrayList<>(taxBreakdownMap.values());
+        // Round final taxable amount to 2 decimal places to match exact server calculations
+        taxableAmount = Math.round(taxableAmount * 100.0) / 100.0;
+        String rateId = item.getTaxRateId();
+
+        if (taxBreakdownMap.containsKey(rateId)) {
+            TaxBreakDown existing = taxBreakdownMap.get(rateId);
+            existing.setTaxableAmount(Math.round((existing.getTaxableAmount() + taxableAmount) * 100.0) / 100.0);
+            existing.setTaxAmount(Math.round((existing.getTaxAmount() + taxAmount) * 100.0) / 100.0);
+        } else {
+            TaxBreakDown newBreakdown = new TaxBreakDown();
+            newBreakdown.setRateId(rateId);
+            newBreakdown.setTaxableAmount(taxableAmount);
+            newBreakdown.setTaxAmount(taxAmount);
+
+            taxBreakdownMap.put(rateId, newBreakdown);
+        }
     }
+
+    return new ArrayList<>(taxBreakdownMap.values());
+}
 public static List<LevyBreakDownDto> getLevyBreakdowns(String invoiceNumber) {
     List<LevyBreakDownDto> levyBreakDowns = new ArrayList<>();
     
@@ -1056,6 +1079,7 @@ public static List<LevyBreakDownDto> getLevyBreakdowns(String invoiceNumber) {
 
     return levyBreakDowns;
 }
+
 public static boolean saveTransaction(
         InvoiceHeader invoice,
         List<LineItemDto> lineItems,

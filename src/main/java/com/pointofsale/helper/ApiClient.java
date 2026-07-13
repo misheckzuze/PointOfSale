@@ -35,6 +35,7 @@ import com.pointofsale.model.InvoicePayload;
 import com.pointofsale.model.TaxBreakDown;
 import com.pointofsale.data.Database;
 import com.pointofsale.model.LevyBreakDownDto;
+import com.pointofsale.model.LevyDto;
 
 
 
@@ -602,17 +603,46 @@ public boolean fetchLatestConfig(String bearerToken) {
 
             InvoiceHeader header = Helper.getInvoiceHeader(invoiceNumber, "", "", paymentId);
             List<LineItemDto> lineItems = Helper.getLineItems(invoiceNumber);
+            
+            // 1. RECALCULATE LINE ITEMS ON THE FLY TO FIX HISTORICAL DB MISMATCHES
+            for (LineItemDto item : lineItems) {
+                double grossTotal = item.getUnitPrice() * item.getQuantity();
+                double discountedTotal = grossTotal - item.getDiscount(); // Accounting for the whole line item discount
+                item.setTotal(discountedTotal);
+
+                // Dynamically fetch tax details to align line totals with tax math
+                double taxRate = Helper.getTaxRateById(item.getTaxRateId());
+                double totalLevyRate = Helper.getActiveLevies().stream()
+                        .filter(l -> "PERCENTAGE".equalsIgnoreCase(l.getChargeMode()))
+                        .mapToDouble(LevyDto::getRate)
+                        .sum();
+
+                double combinedFactor = 1.0 + (taxRate / 100.0) + (totalLevyRate / 100.0);
+                double taxableAmount = discountedTotal / combinedFactor;
+                double totalVat = discountedTotal - taxableAmount;
+                
+                item.setTotalVAT(Math.round(totalVat * 100.0) / 100.0);
+            }
+
             // Fetch levy breakdowns and round amounts to 2dp
             List<LevyBreakDownDto> levyBreakDowns = Helper.getLevyBreakdowns(invoiceNumber);
             levyBreakDowns.forEach(l ->
                 l.setLevyAmount(Math.round(l.getLevyAmount() * 100.0) / 100.0)
             );
+            
             InvoiceSummary invoiceSummary = new InvoiceSummary();
+            
+            // 2. Generate breakdown using the freshly cleaned line items
             List<TaxBreakDown> taxBreakdowns = Helper.generateTaxBreakdown(lineItems);
             invoiceSummary.setTaxBreakDown(taxBreakdowns);
-            invoiceSummary.setLevyBreakDown(levyBreakDowns); // ← set on summary
-            invoiceSummary.setTotalVAT(rs.getDouble("TotalVAT"));
-            invoiceSummary.setInvoiceTotal(rs.getDouble("InvoiceTotal"));
+            invoiceSummary.setLevyBreakDown(levyBreakDowns); 
+            
+            // 3. Match the Summary totals directly to the newly computed line items
+            double recalculatedInvoiceTotal = lineItems.stream().mapToDouble(LineItemDto::getTotal).sum();
+            double recalculatedTotalVat = lineItems.stream().mapToDouble(LineItemDto::getTotalVAT).sum();
+
+            invoiceSummary.setTotalVAT(recalculatedTotalVat);
+            invoiceSummary.setInvoiceTotal(recalculatedInvoiceTotal);
             invoiceSummary.setOfflineSignature(rs.getString("OfflineTransactionSignature"));
 
             InvoicePayload payload = new InvoicePayload();

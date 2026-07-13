@@ -2,6 +2,8 @@ package com.pointofsale.model;
 
 import javafx.beans.property.SimpleDoubleProperty;
 import javafx.beans.property.SimpleStringProperty;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 public class Product implements Cloneable {
     private final SimpleStringProperty barcode;
@@ -48,9 +50,28 @@ public class Product implements Cloneable {
     }
 
     public void updateTotal() {
-        this.total.set(this.price.get() * this.quantity.get());
-        this.totalVAT.set(calculateVAT(this.total.get(), getTaxRate()));
-    }
+    // 1. Calculate the raw subtotal using the original price
+    double rawSubtotal = this.getOriginalPrice() * this.quantity.get();
+    
+    // 2. Subtract the total flat discount from the line item subtotal
+    double calculatedTotal = rawSubtotal - this.getDiscount();
+    
+    // 3. Round the final line total to 2 decimal places
+    double roundedTotal = BigDecimal.valueOf(calculatedTotal)
+            .setScale(2, RoundingMode.HALF_UP)
+            .doubleValue();
+            
+    // 4. Update your properties
+    this.total.set(roundedTotal);
+    
+    // 5. Calculate VAT based on the final discounted total
+    double calculatedVAT = calculateVAT(roundedTotal, getTaxRate());
+    double roundedVAT = BigDecimal.valueOf(calculatedVAT)
+            .setScale(2, RoundingMode.HALF_UP)
+            .doubleValue();
+            
+    this.totalVAT.set(roundedVAT);
+}
 
     // Getters
     public long getId() { return id; }

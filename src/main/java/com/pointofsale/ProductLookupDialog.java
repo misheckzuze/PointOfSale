@@ -588,6 +588,16 @@ private void performSearch() {
     
     ObservableList<Product> filteredData = FXCollections.observableArrayList();
     
+    // Parse the search text as a double once for numeric price checking
+    Double searchPriceValue = null;
+    try {
+        if (!searchText.isEmpty()) {
+            searchPriceValue = Double.parseDouble(searchText);
+        }
+    } catch (NumberFormatException e) {
+        // Not a valid number, so searchPriceValue stays null
+    }
+    
     for (Product product : productData) {
         // If search text is completely empty, pass all items automatically
         if (searchText.isEmpty()) {
@@ -600,12 +610,14 @@ private void performSearch() {
         // Grab values cleanly to prevent unexpected NullPointerExceptions
         String name = product.getName() != null ? product.getName().toLowerCase() : "";
         String barcode = product.getBarcode() != null ? product.getBarcode().toLowerCase() : "";
-        String price = String.valueOf(product.getPrice());
+        double productPrice = product.getPrice();
         
         switch (searchCriteria) {
             case "All":
-                // Searches across all three attributes at the same time
-                if (name.contains(searchText) || barcode.contains(searchText) || price.contains(searchText)) {
+                // Text match on name/barcode, or exact numeric match on price
+                if (name.contains(searchText) || barcode.contains(searchText)) {
+                    isMatch = true;
+                } else if (searchPriceValue != null && productPrice == searchPriceValue) {
                     isMatch = true;
                 }
                 break;
@@ -623,7 +635,8 @@ private void performSearch() {
                 break;
                 
             case "Price":
-                if (price.contains(searchText)) {
+                // Must be an exact numeric match
+                if (searchPriceValue != null && productPrice == searchPriceValue) {
                     isMatch = true;
                 }
                 break;
@@ -737,8 +750,11 @@ private void performSearch() {
      * Shows the product lookup dialog
      */
     public void show() {
-        // Run later ensures the window has completed initialization before forcing focus
-        Platform.runLater(() -> searchField.requestFocus());
+        // Enforce maximization and focus AFTER the window starts rendering
+        Platform.runLater(() -> {
+            stage.setMaximized(true);
+            searchField.requestFocus();
+        });
         stage.showAndWait();
     }
     
@@ -751,8 +767,11 @@ private void performSearch() {
         // Make sure the detail panel is hidden initially
         hideDetailPanel();
         
-        // Focus the search field when the UI comes alive
-        Platform.runLater(() -> searchField.requestFocus());
+        // Enforce maximization and focus AFTER the window starts rendering
+        Platform.runLater(() -> {
+            stage.setMaximized(true);
+            searchField.requestFocus();
+        });
         
         // Show the dialog
         stage.showAndWait();

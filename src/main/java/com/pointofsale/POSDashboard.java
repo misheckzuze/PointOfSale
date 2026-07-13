@@ -9,6 +9,8 @@ import javafx.geometry.Pos;
 import com.google.gson.Gson;
 import javafx.scene.Scene;
 import javafx.scene.Cursor;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import javafx.geometry.HPos;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
@@ -1713,7 +1715,7 @@ private void addProductToCart() {
     
 /**
  * Updates the total amounts in the checkout panel and refreshes the change calculation
-*/
+ */
 private void updateTotals() {
     double subtotal = 0.0;
     double totalTax = 0.0;
@@ -1733,11 +1735,8 @@ private void updateTotals() {
 
     // Step 1: Item-level totals
     for (Product item : cartItems) {
-        double discount = item.getDiscount();
-
-        if (discount > 0 && !isVat5Exempt) {
-            applyDiscountToItem(item, discount, false);
-        }
+        // READ the single source of truth discount applied to this whole line item
+        double discount = item.getDiscount(); 
 
         double itemPriceGross = item.getPrice(); // Net + VAT + Levies inclusive
         double itemQuantity = item.getQuantity();
@@ -1755,11 +1754,10 @@ private void updateTotals() {
         double itemNetOnly = (itemPriceGross * itemQuantity) / (1 + taxRate / 100.0 + totalLevyRate / 100.0);
         netOnlyTotal += itemNetOnly;
 
-        // Track item-level discount (UI only, not applied again)
+        // Track item-level discount from the line item directly
         double discountPerItem = 0.0;
         if (discount > 0 && !isVat5Exempt) {
-            double originalPrice = item.getOriginalPrice();
-            discountPerItem = (originalPrice - item.getPrice()) * itemQuantity;
+            discountPerItem = discount; // Since discount is already the flat total for the whole line item
         }
 
         itemLevelDiscountTotal += discountPerItem;
@@ -1773,8 +1771,6 @@ private void updateTotals() {
         cartLevelDiscount = Math.min(cartDiscountAmount, subtotal);
     }
 
-    double discountedSubtotal = subtotal - cartLevelDiscount;
-
     // Step 3: VAT extraction (only if NOT VAT5)
     if (!isVat5Exempt && isVATRegistered) {
         for (Product item : cartItems) {
@@ -1783,7 +1779,9 @@ private void updateTotals() {
 
             double proportion = subtotal == 0 ? 0 : itemGross / subtotal;
             double itemDiscountShare = cartLevelDiscount * proportion;
-            double itemDiscountedGross = itemGross - itemDiscountShare;
+            
+            // FIXED: Deduct both the item's custom discount and its cart share variant
+            double itemDiscountedGross = itemGross - itemDiscountShare - item.getDiscount();
 
             // Back-calculate net using VAT + ALL levy rates combined
             double itemNet = itemDiscountedGross / (1 + taxRate / 100.0 + totalLevyRate / 100.0);
@@ -1816,11 +1814,17 @@ private void updateTotals() {
 
     // Step 5: Totals
     double totalDiscount = itemLevelDiscountTotal + cartLevelDiscount;
-    double total = discountedSubtotal; // Already includes Net + VAT + Levies, no need to add again
+    
+    // FIXED: Subtract the full combined discount from subtotal and apply rounding
+    double total = Math.round((subtotal - totalDiscount) * 100.0) / 100.0;
+    totalDiscount = Math.round(totalDiscount * 100.0) / 100.0;
+    totalTax = Math.round(totalTax * 100.0) / 100.0;
+    totalLevies = Math.round(totalLevies * 100.0) / 100.0;
+    netOnlyTotal = Math.round(netOnlyTotal * 100.0) / 100.0;
 
-    // Step 6: UI
+    // Step 6: UI Update
     if (isVat5Exempt) {
-        subtotalValueLabel.setText(formatCurrency(discountedSubtotal));
+        subtotalValueLabel.setText(formatCurrency(total));
         taxValueLabel.setText(formatCurrency(0.0));
     } else {
         subtotalValueLabel.setText(formatCurrency(netOnlyTotal));
@@ -1832,7 +1836,7 @@ private void updateTotals() {
     totalAmountLabel.setText(formatCurrency(total));
     balanceDueValueLabel.setText(formatCurrency(total));
 
-    totalAmount = total;
+    totalAmount = total; // Assign clean rounded amount back to global state
 
     ((Label) ((HBox) ((VBox) cartTable.getParent()).getChildren().get(0)).getChildren().get(1))
         .setText("(" + totalQuantity + " item" + (totalQuantity == 1 ? "" : "s") + ")");
@@ -2398,49 +2402,74 @@ private void applyDiscount() {
     });
 }
 
-// Method to apply discount to a specific item
+// Method to apply discount to a specific line item as a whole
 private void applyDiscountToItem(Product product, double discountValue, boolean isPercentage) {
     double originalPrice = product.getOriginalPrice();
     if (originalPrice == 0) {
-        // If original price isn't set, store it now
+        // If original price isn't set, capture the baseline price now
         originalPrice = product.getPrice();
         product.setOriginalPrice(originalPrice);
+    } else {
+        // Ensure the base price remains clean and unaffected by previous line item calculations
+        product.setPrice(originalPrice);
     }
+
+    // Calculate the raw line item subtotal (price * quantity)
+    double quantity = product.getQuantity(); // Assuming getQuantity() exists on your Product model
+    double lineSubtotal = originalPrice * quantity;
 
     double flatDiscountAmount;
 
     if (isPercentage) {
-        // Convert percentage to an equivalent flat amount — "discount" is
-        // always stored/displayed as a flat rate, regardless of how it was entered.
-        flatDiscountAmount = originalPrice * (discountValue / 100.0);
-        product.setPrice(originalPrice - flatDiscountAmount);
+        // Percentage applies to the entire line item subtotal
+        double rawFlatDiscount = lineSubtotal * (discountValue / 100.0);
+        
+        // Round flat discount to 2 decimal places
+        flatDiscountAmount = BigDecimal.valueOf(rawFlatDiscount)
+                .setScale(2, RoundingMode.HALF_UP)
+                .doubleValue();
+        
         product.setDiscountPercent(discountValue);
-        product.setDiscountAmount(0);
-    } else {
-        // Ensure discount doesn't exceed item price
-        flatDiscountAmount = Math.min(discountValue, originalPrice);
-        product.setPrice(originalPrice - flatDiscountAmount);
         product.setDiscountAmount(flatDiscountAmount);
-        product.setDiscountPercent(0);
+    } else {
+        // Flat discount applies to the entire line item; capped by the subtotal
+        double rawFlatDiscount = Math.min(discountValue, lineSubtotal);
+        
+        flatDiscountAmount = BigDecimal.valueOf(rawFlatDiscount)
+                .setScale(2, RoundingMode.HALF_UP)
+                .doubleValue();
+        
+        product.setDiscountAmount(flatDiscountAmount);
+        
+        // Back-calculate the relative percentage based on the total line subtotal
+        double relativePercent = lineSubtotal > 0 ? (flatDiscountAmount / lineSubtotal) * 100.0 : 0;
+        product.setDiscountPercent(relativePercent);
     }
 
     // Single source of truth read by updateTotals() and the inline Discount column —
-    // always the flat amount, never the raw percentage.
+    // Represents the absolute flat amount deducted from this entire line item.
     product.setDiscount(flatDiscountAmount);
 
-    product.updateTotal();
+    // Recalculate totals and refresh view
+    product.updateTotal(); 
     cartTable.refresh();
 }
 
 // Method to apply discount to the entire cart  
 private void applyDiscountToCart(double discountValue, boolean isPercentage) {
-    if (isPercentage) {
-        cartDiscountPercent = discountValue;
-        cartDiscountAmount = 0;
-    } else {
-        cartDiscountAmount = discountValue;
-        cartDiscountPercent = 0;
+    // Apply the SAME discount (percentage or flat) to every line item individually,
+    // so each row's Discount column and price reflect it — not just a single
+    // lump-sum subtracted from the overall subtotal.
+    for (Product item : cartItems) {
+        applyDiscountToItem(item, discountValue, isPercentage);
     }
+
+    // No longer used as a separate cart-level discount — each item already
+    // carries its own discount via applyDiscountToItem() above.
+    cartDiscountAmount = 0;
+    cartDiscountPercent = 0;
+
+    cartTable.refresh();
 }
 
 /**
@@ -4836,48 +4865,87 @@ private void backspaceActiveField() {
 private List<LineItemDto> createLineItems() {
     List<LineItemDto> lineItems = new ArrayList<>();
 
-    for (Product product : cartItems) {
-        // Convert product to LineItemDto, passing VAT5 exemption flag
-        LineItemDto lineItemDto = Helper.convertProductToLineItemDto(product, isVat5Exempt);
+    // Fetch active percentage levy rates to build the combined extraction factor
+    List<LevyDto> activeLevies = Helper.getActiveLevies();
+    double totalLevyRate = activeLevies.stream()
+            .filter(l -> "PERCENTAGE".equalsIgnoreCase(l.getChargeMode()))
+            .mapToDouble(LevyDto::getRate)
+            .sum(); // e.g., 1.0 for DTL
 
-        // Apply any discount
-        double discountPercent = product.getDiscountPercent();
-        double discountAmount = product.getDiscountAmount();
+    for (Product product : cartItems) {
+        // 1. Convert product to LineItemDto
+        LineItemDto lineItemDto = Helper.convertProductToLineItemDto(product, isVat5Exempt);
 
         double unitPrice = lineItemDto.getUnitPrice(); // VAT-inclusive price
         double quantity = lineItemDto.getQuantity();
+        
+        // Calculate the base gross total
+        double grossTotal = unitPrice * quantity;
         double total;
 
-        if (discountPercent > 0) {
-            total = (unitPrice * quantity) * (1 - discountPercent / 100.0);
-        } else if (discountAmount > 0) {
-            total = (unitPrice * quantity) - discountAmount;
-        } else {
-            total = unitPrice * quantity;
-        }
+        // 2. Read the discount directly from the DTO populated by the Helper
+        double appliedDiscount = lineItemDto.getDiscount(); 
 
-        // If VAT5 exempt, subtract VAT from total
+        // Fall back to product metrics if the DTO discount wasn't set yet
+        if (appliedDiscount <= 0) {
+            double discountPercent = product.getDiscountPercent();
+            double discountAmount = product.getDiscountAmount();
+
+            if (discountPercent > 0) {
+                appliedDiscount = grossTotal * (discountPercent / 100.0);
+            } else if (discountAmount > 0) {
+                appliedDiscount = discountAmount;
+            }
+        }
+        
+        // Force discount to 2 decimal places
+        appliedDiscount = Math.round(appliedDiscount * 100.0) / 100.0;
+
+        // 3. Apply the discount to the line total and round it
+        total = Math.round((grossTotal - appliedDiscount) * 100.0) / 100.0;
+        lineItemDto.setDiscount(appliedDiscount);
+
+        double taxRate = Helper.getTaxRateById(lineItemDto.getTaxRateId()); // e.g., 16.5 or 18.5
+        
+        // 4. Handle VAT5 Exemption vs Regular VAT back-calculations (MRA Compliant)
         if (isVat5Exempt) {
-            double taxRate = Helper.getTaxRateById(lineItemDto.getTaxRateId());
-            double vatPortionPerUnit = (unitPrice * taxRate) / (100 + taxRate);
-            double netUnitPrice = unitPrice - vatPortionPerUnit;
-
+            // FIXED FOR LEVIES: Net is back-calculated using (100 + taxRate + totalLevyRate)
+            double vatPortionPerUnit = (unitPrice * taxRate) / (100.0 + taxRate + totalLevyRate);
+            
+            // Round the clean net unit price (Levy stays intact, VAT is stripped)
+            double netUnitPrice = Math.round((unitPrice - vatPortionPerUnit) * 100.0) / 100.0;
             lineItemDto.setUnitPrice(netUnitPrice);
-            double totalVAT = (total * taxRate) / (100 + taxRate); // VAT portion of VAT-inclusive total
-            total -= totalVAT;
+            
+            // Calculate and round the actual VAT portion to strip away from the line total
+            double totalVAT = (total * taxRate) / (100.0 + taxRate + totalLevyRate); 
+            totalVAT = Math.round(totalVAT * 100.0) / 100.0;
+            
+            // Deduct rounded VAT from total and round again
+            total = Math.round((total - totalVAT) * 100.0) / 100.0;
             lineItemDto.setTotalVAT(0.0);
+        } else {
+            // REGULAR TRANSACTION VAT CALCULATION
+            // 1. Extract the clean Net Base by removing VAT and Levies simultaneously
+            double combinedFactor = 1.0 + (taxRate / 100.0) + (totalLevyRate / 100.0);
+            double netTotal = total / combinedFactor;
+
+            // 2. Calculate VAT directly from that clean net base
+            double calculatedLineVat = netTotal * (taxRate / 100.0);
+            
+            // Round to 2 decimal places and save directly into the DTO
+            calculatedLineVat = Math.round(calculatedLineVat * 100.0) / 100.0;
+            lineItemDto.setTotalVAT(calculatedLineVat);
         }
 
+        // 5. Assign clean, rounded values back to the DTO
         lineItemDto.setTotal(total);
         lineItemDto.setIsProduct(product.isProduct());
 
         lineItems.add(lineItemDto);
-        
     }
 
     return lineItems;
 }
-
 // Method to check if there's a note
 public boolean hasTransactionNote() {
     return !transactionNote.isEmpty();
