@@ -132,6 +132,12 @@ public class EscPosReceiptPrinter {
                 String taxRateDisplay = Helper.isVATRegistered() ? totalAmount + " " + item.getTaxRateId() : totalAmount;
                 
                 printFormattedLine(output, quantityPrice, taxRateDisplay, 0);
+                // If a discount exists for this item, add an explicit deduction row right below it
+                if (item.getDiscount() > 0) {
+                    String discountLabel = "(Discount)";
+                    String discountValue = "-" + formatCurrency(item.getDiscount());
+                    printFormattedLine(output, discountLabel, discountValue, 0);
+                }
             }
             
             // Divider before totals
@@ -332,31 +338,51 @@ if (change > 0) {
     }
 
     /**
-     * Send print data to default printer
-     */
-    private static void sendToPrinter(byte[] data) throws PrintException {
-        PrintService printService = findPrintService();
-        DocFlavor flavor = DocFlavor.BYTE_ARRAY.AUTOSENSE;
-        Doc doc = new SimpleDoc(data, flavor, null);
-        
-        PrintRequestAttributeSet attrs = new HashPrintRequestAttributeSet();
-        attrs.add(new Copies(1));
-        
-        DocPrintJob job = printService.createPrintJob();
-        job.print(doc, attrs);
+ * Send print data to default printer
+ */
+private static void sendToPrinter(byte[] data) throws PrintException {
+    PrintService printService = findPrintService();
+    String printerName = (printService != null) ? printService.getName() : "Unknown Printer";
+    DocFlavor flavor = DocFlavor.BYTE_ARRAY.AUTOSENSE;
+    Doc doc = new SimpleDoc(data, flavor, null);
+
+    PrintRequestAttributeSet attrs = new HashPrintRequestAttributeSet();
+    attrs.add(new Copies(1));
+
+    DocPrintJob job = printService.createPrintJob();
+    job.print(doc, attrs);
+}
+
+   /**
+ * Find the default receipt printer.
+ * Tries the OS-registered default first (respects Windows "Set as default printer"),
+ * falls back to enumeration only if that fails, and retries briefly to give the
+ * Windows spooler time to finish resolving printer capabilities after a cold boot.
+ */
+private static PrintService findPrintService() throws PrintException {
+    PrintService service = PrintServiceLookup.lookupDefaultPrintService();
+    if (service != null) {
+        return service;
     }
 
-    /**
-     * Find the default receipt printer
-     */
-    private static PrintService findPrintService() {
+    // Fallback: enumerate, with a short retry loop for cold-boot spooler warm-up
+    int maxAttempts = 5;
+    long retryDelayMs = 500;
+
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
         PrintService[] services = PrintServiceLookup.lookupPrintServices(null, null);
-        if (services.length == 0) {
-            throw new RuntimeException("No printer found!");
+        if (services.length > 0) {
+            return services[0];
         }
-        
-        // Use first available printer
-        // You can improve this by implementing printer selection logic
-        return services[0];
+
+        try {
+            Thread.sleep(retryDelayMs);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            break;
+        }
     }
+
+    throw new PrintException("No printer found! Ensure a default printer is set in Windows.");
+  }
 }

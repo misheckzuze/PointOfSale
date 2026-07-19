@@ -1774,32 +1774,31 @@ public static double fetchTotalVAT(String startDate, String endDate) {
     }
 
     public static double fetchStandardRateVAT(String startDate, String endDate) {
-        String query = "SELECT SUM(TotalVAT) AS totalVAT " +
-                       "FROM Invoices i " +
-                       "JOIN LineItems li ON i.InvoiceNumber = li.InvoiceNumber " +
-                       "JOIN TaxRates tr ON li.TaxRateID = tr.Id " +
-                       "WHERE tr.Rate = 16.5 AND i.InvoiceDateTime BETWEEN ? AND ?";
-        return fetchDouble(query, startDate, endDate);
-    }
+    String query = "SELECT SUM(li.TotalPrice) " +
+                   "FROM Invoices i " +
+                   "JOIN LineItems li ON i.InvoiceNumber = li.InvoiceNumber " +
+                   "WHERE li.TaxRateID = 'A' " +
+                   "AND substr(i.InvoiceDateTime, 1, 10) BETWEEN ? AND ?";
+    return fetchDouble(query, startDate, endDate);
+}
 
-    public static double fetchZeroRatedVAT(String startDate, String endDate) {
-        String query = "SELECT SUM(TotalVAT) AS totalVAT " +
-                       "FROM Invoices i " +
-                       "JOIN LineItems li ON i.InvoiceNumber = li.InvoiceNumber " +
-                       "JOIN TaxRates tr ON li.TaxRateID = tr.Id " +
-                       "WHERE tr.Rate = 0 AND i.InvoiceDateTime BETWEEN ? AND ?";
-        return fetchDouble(query, startDate, endDate);
-    }
+public static double fetchZeroRatedVAT(String startDate, String endDate) {
+    String query = "SELECT SUM(li.TotalPrice) " +
+                   "FROM Invoices i " +
+                   "JOIN LineItems li ON i.InvoiceNumber = li.InvoiceNumber " +
+                   "WHERE li.TaxRateID = 'B' " +
+                   "AND substr(i.InvoiceDateTime, 1, 10) BETWEEN ? AND ?";
+    return fetchDouble(query, startDate, endDate);
+}
 
-    public static double fetchExemptSales(String startDate, String endDate) {
-        String query = "SELECT SUM(TotalVAT) AS totalVAT " +
-                       "FROM Invoices i " +
-                       "JOIN LineItems li ON i.InvoiceNumber = li.InvoiceNumber " +
-                       "JOIN TaxRates tr ON li.TaxRateID = tr.Id " +
-                       "WHERE tr.Name = 'Exempt' AND i.InvoiceDateTime BETWEEN ? AND ?";
-        return fetchDouble(query, startDate, endDate);
-    }
-
+public static double fetchExemptSales(String startDate, String endDate) {
+    String query = "SELECT SUM(li.TotalPrice) " +
+                   "FROM Invoices i " +
+                   "JOIN LineItems li ON i.InvoiceNumber = li.InvoiceNumber " +
+                   "WHERE li.TaxRateID = 'E' " +
+                   "AND substr(i.InvoiceDateTime, 1, 10) BETWEEN ? AND ?";
+    return fetchDouble(query, startDate, endDate);
+}
     public static double fetchDouble(String query, Object... params) {
         try (Connection conn = Database.createConnection();
              PreparedStatement stmt = conn.prepareStatement(query)) {
@@ -1845,17 +1844,17 @@ public static double fetchTotalVAT(String startDate, String endDate) {
 }
     
 public static double getSalesTotalByDateRange(String startDate, String endDate) {
-    String query = "SELECT SUM(InvoiceTotal) FROM Invoices WHERE DATE(InvoiceDateTime) BETWEEN ? AND ?";
+    String query = "SELECT SUM(InvoiceTotal) FROM Invoices WHERE substr(InvoiceDateTime, 1, 10) BETWEEN ? AND ?";
     return fetchDouble(query, startDate, endDate);
 }
 
 public static int getTransactionCountByDateRange(String startDate, String endDate) {
-    String query = "SELECT COUNT(*) FROM Invoices WHERE DATE(InvoiceDateTime) BETWEEN ? AND ?";
+    String query = "SELECT COUNT(*) FROM Invoices WHERE substr(InvoiceDateTime, 1, 10) BETWEEN ? AND ?";
     return (int) fetchDouble(query, startDate, endDate);
 }
 
 public static double getTaxTotalByDateRange(String startDate, String endDate) {
-    String query = "SELECT SUM(TotalVAT) FROM Invoices WHERE DATE(InvoiceDateTime) BETWEEN ? AND ?";
+    String query = "SELECT SUM(TotalVAT) FROM Invoices WHERE substr(InvoiceDateTime, 1, 10) BETWEEN ? AND ?";
     return fetchDouble(query, startDate, endDate);
 }
 private static double fetchDouble(String query, String startDate, String endDate) {
@@ -1920,6 +1919,34 @@ public static List<ProductSale> getTop10ProductSalesByDateRange(String fromDate,
         e.printStackTrace();
     }
 
+    return sales;
+}
+
+public static List<ProductSale> getAllProductSalesByDateRange(String fromDate, String toDate) {
+    String query = "SELECT li.ProductCode, p.ProductName, " +
+                   "SUM(li.Quantity) AS TotalQuantity, SUM(li.TotalPrice) AS TotalRevenue " +
+                   "FROM LineItems li " +
+                   "JOIN Invoices i ON li.InvoiceNumber = i.InvoiceNumber " +
+                   "JOIN Products p ON li.ProductCode = p.ProductCode " +
+                   "WHERE DATE(i.InvoiceDateTime) BETWEEN ? AND ? " +
+                   "GROUP BY li.ProductCode " +
+                   "ORDER BY TotalRevenue DESC";
+    List<ProductSale> sales = new ArrayList<>();
+    try (var conn = Database.createConnection();
+         var stmt = conn.prepareStatement(query)) {
+        stmt.setString(1, fromDate);
+        stmt.setString(2, toDate);
+        var rs = stmt.executeQuery();
+        while (rs.next()) {
+            String name = rs.getString("ProductName");
+            int quantity = rs.getInt("TotalQuantity");
+            double revenue = rs.getDouble("TotalRevenue");
+            double profit = revenue * 0.25; // estimated
+            sales.add(new ProductSale(name, quantity, revenue, profit));
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
     return sales;
 }
 
@@ -1990,14 +2017,14 @@ public static ObservableList<TaxSummary> fetchTaxBreakdownByDateRange(String fro
 }
 public static List<SaleSummary> getSalesSummaryByDateRange(String fromDate, String toDate) {
     String query = "SELECT " +
-            "DATE(InvoiceDateTime) as SaleDate, " +
+            "substr(InvoiceDateTime, 1, 10) as SaleDate, " +
             "COUNT(*) as Transactions, " +
             "SUM(InvoiceTotal) as TotalRevenue, " +
             "SUM(TotalVAT) as TotalTax " +
             "FROM Invoices " +
-            "WHERE DATE(InvoiceDateTime) BETWEEN ? AND ? " +
-            "GROUP BY DATE(InvoiceDateTime) " +
-            "ORDER BY DATE(InvoiceDateTime) ASC";
+            "WHERE substr(InvoiceDateTime, 1, 10) BETWEEN ? AND ? " +
+            "GROUP BY substr(InvoiceDateTime, 1, 10) " +
+            "ORDER BY substr(InvoiceDateTime, 1, 10) ASC";
 
     List<SaleSummary> summaries = new ArrayList<>();
     try (var conn = Database.createConnection();

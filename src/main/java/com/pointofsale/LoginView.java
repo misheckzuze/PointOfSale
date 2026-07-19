@@ -382,7 +382,13 @@ public class LoginView extends Application {
                 ex.printStackTrace();
             }
         }
-    });     
+    }); 
+        
+        // ─── ENTER SHORTCUT LINES ───
+    usernameField.setOnAction(e -> loginButton.fire());
+    passwordField.setOnAction(e -> loginButton.fire());
+    passwordVisible.setOnAction(e -> loginButton.fire());
+    // ───────────────────────────────────────────────
         
         // Contact support text
         HBox supportBox = new HBox();

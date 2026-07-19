@@ -656,7 +656,6 @@ public boolean fetchLatestConfig(String bearerToken) {
             ApiClient apiClient = new ApiClient();
             apiClient.submitTransactions(jsonPayload, token, (success, returnedValidationUrl) -> {
                 if (success) {
-                    Helper.updateValidationUrl(invoiceNumber, returnedValidationUrl);
                     Helper.markAsTransmitted(invoiceNumber);
                     System.out.println("✅ Auto-resend success for: " + invoiceNumber);
                 } else {

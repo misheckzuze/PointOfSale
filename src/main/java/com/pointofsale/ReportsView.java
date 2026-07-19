@@ -42,6 +42,14 @@ import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
 import javafx.event.ActionEvent;
 import javafx.event.EventHandler;
+import javax.print.Doc;
+import javax.print.DocFlavor;
+import javax.print.DocPrintJob;
+import javax.print.PrintService;
+import javax.print.PrintServiceLookup;
+import javax.print.SimpleDoc;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 
 public class ReportsView {
 
@@ -174,7 +182,15 @@ public class ReportsView {
         
         Button printReportButton = new Button("Print Report");
         printReportButton.setStyle("-fx-background-color: white; -fx-text-fill: #0277bd; " +
-                               "-fx-border-color: #0277bd; -fx-border-radius: 5px; -fx-background-radius: 5px;");
+                               "-fx-border-color: #0277bd; -fx-border-radius: 5px; -fx-background-radius: 5px; -fx-cursor: hand;");
+       
+        printReportButton.setOnAction(e -> {
+          String fromDate = fromDatePicker.getValue().toString();
+          String toDate = toDatePicker.getValue().toString();
+    
+          // Trigger thermal print routine
+          printThermalZReport(fromDate, toDate);
+        });
         
         exportOptionsBox.getChildren().addAll(spacer, exportPdfButton, exportExcelButton, printReportButton);
         
@@ -186,9 +202,153 @@ public class ReportsView {
         
         return headerSection;
     }
+    
+    private void printThermalZReport(String fromDate, String toDate) {
+    // 1. Gather dataset metrics
+    double totalSales = Helper.getSalesTotalByDateRange(fromDate, toDate);
+    int totalTransactions = Helper.getTransactionCountByDateRange(fromDate, toDate);
+    double totalTax = Helper.getTaxTotalByDateRange(fromDate, toDate);
+    
+    double standardRateVAT = Helper.fetchStandardRateVAT(fromDate, toDate);
+    double zeroRatedVAT = Helper.fetchZeroRatedVAT(fromDate, toDate);
+    double exemptSales = Helper.fetchExemptSales(fromDate, toDate);
+    
+    List<ProductSale> topProducts = Helper.getAllProductSalesByDateRange(fromDate, toDate);
+    // CONSOLE DEBUGGING LOGS (Now printing all products explicitly)
+    System.out.println("=========================================");
+    System.out.println("DEBUG: TAX BREAKDOWN FOR " + fromDate + " TO " + toDate);
+    System.out.println("Gross Sales Revenue: " + totalSales);
+    System.out.println("Total Transactions : " + totalTransactions);
+    System.out.println("Net Tax Collected  : " + totalTax);
+    System.out.println("-----------------------------------------");
+    System.out.println("Standard Rate (A)  : " + standardRateVAT);
+    System.out.println("Zero-Rated (B)     : " + zeroRatedVAT);
+    System.out.println("Exempt Sales (E)   : " + exemptSales);
+    System.out.println("-----------------------------------------");
+    System.out.println(fromDate);
+    System.out.println("DEBUG: ALL PRODUCTS PERFORMING IN DATASET:");
+    
+    if (topProducts == null || topProducts.isEmpty()) {
+        System.out.println("   [!] No product records found for this date range.");
+    } else {
+        for (int i = 0; i < topProducts.size(); i++) {
+            ProductSale p = topProducts.get(i);
+            System.out.println(String.format("   [%d] Name: %-25s | Qty: %-4d | Revenue: MWK %,.2f", 
+                (i + 1), 
+                p.getProductName(), 
+                p.getQuantity(), 
+                p.getRevenue()
+            ));
+        }
+    }
+    System.out.println("=========================================");
+    // 2. Align with your working EscPosReceiptPrinter setup
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    String charset = "CP437"; 
+    int receiptWidth = 48; // Explicitly matches your receipt widths
 
-    // Method to update date pickers based on selected preset
-    private void updateDatePickersBasedOnPreset(String preset) {
+    try {
+        // Initialize Printer using your working command tokens
+        output.write(new byte[]{0x1B, 0x40}); // ESC_INIT
+        output.write(new byte[]{0x0A});       // LF
+        
+        // Header
+        output.write(new byte[]{0x1B, 0x61, 0x01}); // ESC_ALIGN_CENTER
+        output.write(new byte[]{0x1B, 0x45, 0x01}); // ESC_EMPHASIZE_ON
+        output.write("REPORT SUMMARY\n".getBytes(charset));
+        output.write(new byte[]{0x1B, 0x45, 0x00}); // ESC_EMPHASIZE_OFF
+        
+        // Dividers
+        output.write("================================================\n".getBytes(charset));
+        output.write(new byte[]{0x1B, 0x61, 0x00}); // ESC_ALIGN_LEFT
+        output.write(String.format("From: %s\n", fromDate).getBytes(charset));
+        output.write(String.format("To:   %s\n", toDate).getBytes(charset));
+        output.write(String.format("Printed: %s\n", java.time.LocalDateTime.now().toString().substring(0,16)).getBytes(charset));
+        output.write("------------------------------------------------\n".getBytes(charset));
+
+        // Financial Metrics Section
+        output.write(new byte[]{0x1B, 0x45, 0x01});
+        output.write("FINANCIAL BALANCING\n".getBytes(charset));
+        output.write(new byte[]{0x1B, 0x45, 0x00});
+        
+        writeEscPosLine(output, "Total Transactions:", String.valueOf(totalTransactions), receiptWidth, charset);
+        writeEscPosLine(output, "GROSS SALES REVENUE:", String.format("MWK %,.2f", totalSales), receiptWidth, charset);
+        writeEscPosLine(output, "Net Tax Collected:", String.format("MWK %,.2f", totalTax), receiptWidth, charset);
+        writeEscPosLine(output, "NET REVENUE:", String.format("MWK %,.2f", (totalSales - totalTax)), receiptWidth, charset);
+        output.write("------------------------------------------------\n".getBytes(charset));
+
+        // Tax Categorization
+        output.write(new byte[]{0x1B, 0x45, 0x01});
+        output.write("TAX RATE BREAKDOWN\n".getBytes(charset));
+        output.write(new byte[]{0x1B, 0x45, 0x00});
+        
+        writeEscPosLine(output, "Standard Rate (17.5%):", String.format("MWK %,.2f", standardRateVAT), receiptWidth, charset);
+        writeEscPosLine(output, "Zero-Rated (0%):", String.format("MWK %,.2f", zeroRatedVAT), receiptWidth, charset);
+        writeEscPosLine(output, "Exempt Sales:", String.format("MWK %,.2f", exemptSales), receiptWidth, charset);
+        output.write("------------------------------------------------\n".getBytes(charset));
+
+        // Top Item Performance 
+        if (topProducts != null && !topProducts.isEmpty()) {
+            output.write(new byte[]{0x1B, 0x45, 0x01});
+            output.write("PRODUCT SALES\n".getBytes(charset));
+            output.write(new byte[]{0x1B, 0x45, 0x00});
+            output.write(String.format("%-26s %3s %16s\n", "Item Name", "Qty", "Revenue").getBytes(charset));
+            output.write("------------------------------------------------\n".getBytes(charset));
+            for (ProductSale item : topProducts) {
+                String name = item.getProductName();
+                if (name.length() > 24) name = name.substring(0, 22) + "..";
+                output.write(String.format("%-26s %3d %16s\n", 
+                    name, 
+                    item.getQuantity(), 
+                    String.format("%,.2f", item.getRevenue())).getBytes(charset)
+                );
+            }
+            output.write("------------------------------------------------\n".getBytes(charset));
+        }
+
+        // Native trailing feeds and hardware cut commands
+        output.write(new byte[]{0x0A});
+        output.write(new byte[]{0x0A});
+        output.write(new byte[]{0x0A});
+        output.write(new byte[]{0x1B, 0x70, 0x00, 0x32, (byte) 0xFA}); // ESC_DRAWER_KICK
+        output.write(new byte[]{0x1D, 0x56, 0x41, 0x10});             // GS_CUT_PAPER
+
+        // 3. Dispatch using the working BYTE_ARRAY lookup process
+        PrintService[] services = PrintServiceLookup.lookupPrintServices(null, null);
+        if (services.length > 0) {
+            PrintService targetService = services[0]; // Matches your working logic choice
+            DocPrintJob job = targetService.createPrintJob();
+            Doc doc = new SimpleDoc(output.toByteArray(), DocFlavor.BYTE_ARRAY.AUTOSENSE, null);
+            
+            javax.print.attribute.PrintRequestAttributeSet attrs = new javax.print.attribute.HashPrintRequestAttributeSet();
+            attrs.add(new javax.print.attribute.standard.Copies(1));
+            
+            job.print(doc, attrs);
+        } else {
+            System.err.println("No functional print services found.");
+        }
+
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
+}
+
+// Fixed spacing helper targeted specifically for 48 columns wide
+private void writeEscPosLine(ByteArrayOutputStream output, String label, String value, int width, String charset) throws java.io.IOException {
+    int totalSpacing = width - label.length() - value.length();
+    if (totalSpacing < 1) totalSpacing = 1;
+    
+    StringBuilder sb = new StringBuilder();
+    sb.append(label);
+    sb.append(" ".repeat(totalSpacing));
+    sb.append(value);
+    sb.append("\n");
+    
+    output.write(sb.toString().getBytes(charset));
+}
+
+// Method to update date pickers based on selected preset
+ private void updateDatePickersBasedOnPreset(String preset) {
         LocalDate today = LocalDate.now();
         
         switch (preset) {
@@ -272,7 +432,7 @@ public class ReportsView {
         updateSummaryCard(transactionsCard, "Transactions", String.valueOf(transactionCount), 
                           "Total for selected period", "#0277bd");
         updateSummaryCard(taxCard, "Total Tax", String.format("MWK %,.2f", taxTotal), 
-                          "16.5% VAT rate", "#c62828");
+                          "17.5% VAT rate", "#c62828");
     }
 
     // Method to update a summary card with new values
@@ -321,7 +481,7 @@ public class ReportsView {
         
         updateSummaryCard(totalTaxCard, "Total VAT Collected", formatCurrency(totalVAT), 
                           "Selected Period", "#1a237e");
-        updateSummaryCard(standardRateCard, "Standard Rate (16.5%)", formatCurrency(standardRateVAT), 
+        updateSummaryCard(standardRateCard, "Standard Rate (17.5%)", formatCurrency(standardRateVAT), 
                           calculatePercentage(standardRateVAT, totalVAT) + " of total tax", "#00796b");
         updateSummaryCard(zeroRatedCard, "Zero-Rated (0%)", formatCurrency(zeroRatedVAT), 
                           "Selected Period", "#0277bd");
@@ -469,7 +629,7 @@ public class ReportsView {
         todaySalesCard = createSummaryCard("Today's Sales", todaySalesStr, todayChange + " from yesterday", "#1a237e");
         monthlySalesCard = createSummaryCard("Monthly Sales", monthlySalesStr, monthChange + " from last month", "#00796b");
         transactionsCard = createSummaryCard("Transactions", transactionsStr, todayTransactions + " today", "#0277bd");
-        taxCard = createSummaryCard("Total Tax", taxStr, "16.5% VAT rate", "#c62828");
+        taxCard = createSummaryCard("Total Tax", taxStr, "17.5% VAT rate", "#c62828");
 
         summaryCards.getChildren().addAll(todaySalesCard, monthlySalesCard, transactionsCard, taxCard);
         HBox.setHgrow(todaySalesCard, Priority.ALWAYS);
@@ -638,7 +798,7 @@ public class ReportsView {
         double exemptSales = Helper.fetchExemptSales("2025-05-01", "2025-05-31");
 
         totalTaxCard = createSummaryCard("Total VAT Collected", formatCurrency(totalVAT), "Current Month", "#1a237e");
-        standardRateCard = createSummaryCard("Standard Rate (16.5%)", formatCurrency(standardRateVAT), "83% of total tax", "#00796b");
+        standardRateCard = createSummaryCard("Standard Rate (17.5%)", formatCurrency(standardRateVAT), "83% of total tax", "#00796b");
         zeroRatedCard = createSummaryCard("Zero-Rated (0%)", formatCurrency(zeroRatedVAT), "7% of transactions", "#0277bd");
         exemptCard = createSummaryCard("Exempt Sales", formatCurrency(exemptSales), "15% of total sales", "#c62828");
 

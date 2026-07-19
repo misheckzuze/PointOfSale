@@ -332,13 +332,15 @@ private void handleFunctionKeyShortcuts(KeyEvent event) {
             if (cartTable != null) showPrintPreview();
             event.consume();
             break;
-        case ADD:   // Numpad '+'
-        case PLUS:  // Main keyboard '+'
-            if (processPaymentButton != null && !processPaymentButton.isDisabled()) {
-                processPayment();
-            }
-            event.consume();
-            break;
+        // F-key shortcut (+/ADD/PLUS)
+        case ADD:
+        case PLUS:
+        if (processPaymentButton != null && !processPaymentButton.isDisabled()) {
+          showCheckoutPopup();
+        }
+        event.consume();
+        break;
+
         default:
             break;
     }
@@ -421,13 +423,19 @@ private void hideLoadingOverlay() {
      // Methods to load different content areas
     private void loadSalesDashboard() {
         // Clear current right panel (checkout) if any
-        root.setRight(createCheckoutPanel());
+        root.setRight(null);
         root.setBottom(createBottomActionBar());
         
         // Load sales dashboard content
         Node salesContent = createMainContent();
         setContent(salesContent);
         stage.setTitle("MQ POS System - Sales Dashboard");
+        // ───LINES TO FIX THE ENTER KEY & SCANNER ───
+        if (barcodeField != null) {
+          barcodeField.setOnAction(e -> addProductToCart());
+          Platform.runLater(() -> barcodeField.requestFocus());
+        }
+        updateTotals();
     }
     
 private void loadProductsManagement() {
@@ -848,6 +856,45 @@ private void openChangeQuantityDialog() {
         }
     });
 }
+
+/**
+ * Creates one stat-card ("Label / Value") for the breakdown strip and adds it to the given row.
+ * accentColor tints the value text and the small marker bar on the left of the card.
+ * Returns the value Label so the caller can keep updating it.
+ */
+private Label createBreakdownItem(HBox row, String labelText, String accentColor) {
+    // Small colored accent bar
+    Region accent = new Region();
+    accent.setPrefWidth(4);
+    accent.setMaxHeight(Double.MAX_VALUE);
+    accent.setStyle("-fx-background-color: " + accentColor + "; -fx-background-radius: 2px;");
+
+    Label label = new Label(labelText.toUpperCase());
+    label.setStyle("-fx-font-size: 11px; -fx-text-fill: #9e9e9e; -fx-font-weight: bold; -fx-letter-spacing: 0.5px;");
+
+    Label value = new Label(formatCurrency(0.0));
+    value.setStyle("-fx-font-size: 19px; -fx-font-weight: bold; -fx-text-fill: " + accentColor + ";");
+
+    VBox textBox = new VBox(3, label, value);
+
+    HBox card = new HBox(10, accent, textBox);
+    card.setAlignment(Pos.CENTER_LEFT);
+    HBox.setHgrow(card, Priority.ALWAYS);
+
+    row.getChildren().add(card);
+    return value;
+}
+
+/**
+ * Adds a thin vertical divider between breakdown stat-cards.
+ */
+private void addBreakdownDivider(HBox row) {
+    Separator divider = new Separator();
+    divider.setOrientation(javafx.geometry.Orientation.VERTICAL);
+    divider.setStyle("-fx-background-color: #eeeeee;");
+    HBox.setMargin(divider, new Insets(0, 20, 0, 20));
+    row.getChildren().add(divider);
+}
     /**
      * Creates the main content area with product search and cart
      */
@@ -885,7 +932,32 @@ private void openChangeQuantityDialog() {
     balanceValueBox.getChildren().add(balanceDueValueLabel);
 
     balanceDueBar.getChildren().addAll(balanceDueLabel, balanceSpacer, balanceValueBox);
+    // ===== BREAKDOWN STRIP (Subtotal / Discount / VAT / Levies) =====
+HBox breakdownStrip = new HBox();
+breakdownStrip.setAlignment(Pos.CENTER_LEFT);
+breakdownStrip.setSpacing(0);
+breakdownStrip.setPadding(new Insets(16, 25, 16, 25));
+breakdownStrip.setStyle("-fx-background-color: white; -fx-background-radius: 8px; " +
+        "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.06), 4, 0, 0, 1);");
 
+subtotalValueLabel = createBreakdownItem(breakdownStrip, "Subtotal", "#455a64");   // neutral slate
+addBreakdownDivider(breakdownStrip);
+discountValueLabel = createBreakdownItem(breakdownStrip, "Discount", "#e53935");   // red
+addBreakdownDivider(breakdownStrip);
+taxValueLabel = createBreakdownItem(breakdownStrip, "VAT", "#1e88e5");             // blue
+addBreakdownDivider(breakdownStrip);
+leviesValueLabel = createBreakdownItem(breakdownStrip, "Levies", "#8e24aa");       // purple
+// Hidden data-holder fields — these never get added to any visible layout.
+// Cash entry, customer name, TIN, and auth code are all now entered inside
+// showCheckoutPopup(); this block just makes sure the fields exist so
+// updateTotals()/updateChangeCalculation()/processPayment()/proceedWithPayment()
+// don't NPE when they read from or write to them.
+totalAmountLabel = new Label(formatCurrency(0.0));
+cashAmountField = new TextField();
+changeValueLabel = new Label(formatCurrency(0.0));
+customerNamesField = new TextField();
+tinField = new TextField();
+buyerAuthField = new TextField();
         
         // Product search section
         VBox searchSection = new VBox(10);
@@ -962,6 +1034,7 @@ private void openChangeQuantityDialog() {
         // Cart table
         cartTable = new TableView<>();
         cartTable.setItems(cartItems);
+        cartTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         cartTable.setStyle("-fx-background-color: white; -fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-font-size: 15px;");
         VBox.setVgrow(cartTable, Priority.ALWAYS);
         cartTable.setFixedCellSize(42);
@@ -1182,166 +1255,11 @@ totalCol.setCellFactory(col -> new TableCell<Product, Double>() {
         cartSection.getChildren().addAll(cartHeader, cartTable);
         
         // Add all sections to main content
-        mainContent.getChildren().addAll(balanceDueBar, searchSection, cartSection);
+        mainContent.getChildren().addAll(balanceDueBar, breakdownStrip, searchSection, cartSection);
         VBox.setVgrow(cartSection, Priority.ALWAYS);
         
         return mainContent;
     }
-    
-private VBox createCheckoutPanel() {
-    // Get screen size for responsive calculations
-    Rectangle2D screenBounds = Screen.getPrimary().getVisualBounds();
-    double screenWidth = screenBounds.getWidth();
-
-    double panelWidth;
-    if (screenWidth <= 1024) {
-        panelWidth = Math.max(screenWidth * 0.25, 250);
-    } else if (screenWidth <= 1440) {
-        panelWidth = Math.max(screenWidth * 0.22, 300);
-    } else {
-        panelWidth = Math.max(screenWidth * 0.20, 320);
-    }
-
-    VBox checkoutPanel = new VBox();
-    checkoutPanel.setPrefWidth(panelWidth);
-    checkoutPanel.setMinWidth(panelWidth);
-    checkoutPanel.setMaxWidth(panelWidth);
-    checkoutPanel.setStyle("-fx-background-color: #f5f5f7;");
-
-    double padding = Math.max(panelWidth * 0.06, 15);
-    checkoutPanel.setPadding(new Insets(padding, padding, 0, 0));   // 0 bottom padding
-
-    // ===== CARD =====
-    VBox card = new VBox(15);
-    card.setPadding(new Insets(padding));
-    card.setStyle("-fx-background-color: white; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
-            "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 10, 0, 0, 4);");
-
-    double titleFontSize = Math.max(panelWidth * 0.07, 19);
-    double labelFontSize = Math.max(panelWidth * 0.058, 16);
-    double inputHeight = Math.max(panelWidth * 0.13, 40);  
-
-    Label summaryTitle = new Label("Payment Summary");
-    summaryTitle.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #424242;", titleFontSize));
-
-    Separator separator = new Separator();
-
-    VBox customerInfoBox = new VBox(8);
-    Label customerInfoLabel = new Label("Customer Information");
-    customerInfoLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #424242;", labelFontSize));
-
-    customerNamesField = new TextField();
-    customerNamesField.setPromptText("Enter customer name");
-    customerNamesField.setPrefHeight(inputHeight);
-    customerNamesField.setStyle(String.format("-fx-font-size: %.0fpx; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
-            "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;", labelFontSize));
-
-    tinField = new TextField();
-    tinField.setPromptText("Enter TIN");
-    tinField.setPrefHeight(inputHeight);
-    tinField.setStyle(String.format("-fx-font-size: %.0fpx; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
-            "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;", labelFontSize));
-
-    buyerAuthField = new TextField();
-    buyerAuthField.setPromptText("Enter Buyer Authorization Code");
-    buyerAuthField.setPrefHeight(inputHeight);
-    buyerAuthField.setStyle(String.format("-fx-font-size: %.0fpx; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
-            "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;", labelFontSize));
-    buyerAuthField.setVisible(false);
-    buyerAuthField.setManaged(false);
-
-    tinField.textProperty().addListener((obs, oldVal, newVal) -> {
-        boolean isBusiness = newVal != null && !newVal.trim().isEmpty();
-        buyerAuthField.setVisible(isBusiness);
-        buyerAuthField.setManaged(isBusiness);
-        if (!isBusiness) buyerAuthField.clear();
-    });
-
-    customerInfoBox.getChildren().addAll(customerInfoLabel, customerNamesField, tinField, buyerAuthField);
-
-    // ===== SUMMARY GRID =====
-    GridPane summaryGrid = new GridPane();
-    summaryGrid.setVgap(12);
-    summaryGrid.setHgap(10);
-    int row = 0;
-
-    Label subtotalLabel = new Label("Subtotal:");
-    subtotalLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #757575;", labelFontSize));
-    subtotalValueLabel = new Label(formatCurrency(0.0));
-    subtotalValueLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #424242; -fx-font-weight: bold;", labelFontSize));
-    summaryGrid.add(subtotalLabel, 0, row);
-    summaryGrid.add(subtotalValueLabel, 1, row++);
-
-    Label discountLabel = new Label("Discount:");
-    discountLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #757575;", labelFontSize));
-    discountValueLabel = new Label(formatCurrency(0.0));
-    discountValueLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #c62828; -fx-font-weight: bold;", labelFontSize));
-    summaryGrid.add(discountLabel, 0, row);
-    summaryGrid.add(discountValueLabel, 1, row++);
-
-    taxLabel = new Label("VAT Amount:");
-    taxLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #757575;", labelFontSize));
-    taxValueLabel = new Label(formatCurrency(0.0));
-    taxValueLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #424242; -fx-font-weight: bold;", labelFontSize));
-    summaryGrid.add(taxLabel, 0, row);
-    summaryGrid.add(taxValueLabel, 1, row++);
-
-    Label levyLabel = new Label("Levies:");
-    levyLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #757575;", labelFontSize));
-    leviesValueLabel = new Label(formatCurrency(0.0));
-    leviesValueLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-text-fill: #424242; -fx-font-weight: bold;", labelFontSize));
-    summaryGrid.add(levyLabel, 0, row);
-    summaryGrid.add(leviesValueLabel, 1, row++);
-
-    Separator totalSeparator = new Separator();
-    GridPane.setColumnSpan(totalSeparator, 2);
-    summaryGrid.add(totalSeparator, 0, row++);
-
-    Label totalLabel = new Label("Total:");
-    totalLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #424242;", titleFontSize));
-    totalAmountLabel = new Label(formatCurrency(0.0));
-    totalAmountLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #1a237e;", titleFontSize * 1.1));
-    summaryGrid.add(totalLabel, 0, row);
-    summaryGrid.add(totalAmountLabel, 1, row);
-
-    ColumnConstraints col1 = new ColumnConstraints();
-    col1.setHgrow(Priority.ALWAYS);
-    ColumnConstraints col2 = new ColumnConstraints();
-    col2.setHalignment(HPos.RIGHT);
-    summaryGrid.getColumnConstraints().addAll(col1, col2);
-
-    // ===== PAYMENT METHOD =====
-    VBox paymentMethodBox = new VBox(8);
-    Label paymentMethodLabel = new Label("Payment Method");
-    paymentMethodLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #424242;", labelFontSize));
-
-    paymentMethodComboBox = new ComboBox<>();
-    paymentMethodComboBox.getItems().addAll("Cash", "Credit Card", "Debit Card", "Invoice", "Cheque", "Mobile Payment", "Mixed Payment");
-    paymentMethodComboBox.setValue("Cash");
-    paymentMethodComboBox.setPrefWidth(Double.MAX_VALUE);
-    paymentMethodComboBox.setPrefHeight(inputHeight);
-    paymentMethodComboBox.setStyle(String.format("-fx-font-size: %.0fpx; -fx-background-radius: 5px;", labelFontSize));
-
-    paymentMethodBox.getChildren().addAll(paymentMethodLabel, paymentMethodComboBox);
-
-    VBox cashAmountBox = createCashAmountSection();
-
-    card.getChildren().addAll(summaryTitle, separator, customerInfoBox, summaryGrid, paymentMethodBox, cashAmountBox);
-    card.setMaxHeight(Double.MAX_VALUE);      // NEW — allow the card to stretch vertically
-    VBox.setVgrow(card, Priority.ALWAYS); 
-    // ===== SCROLLABLE CONTENT =====
-    ScrollPane scrollPane = new ScrollPane(card);
-    scrollPane.setFitToWidth(true);
-    scrollPane.setFitToHeight(true);          // NEW — lets content stretch to fill viewport height
-    scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
-    scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-    scrollPane.setStyle("-fx-background-color: #f5f5f7; -fx-background: #f5f5f7;");
-    VBox.setVgrow(scrollPane, Priority.ALWAYS);
-
-    checkoutPanel.getChildren().add(scrollPane);
-
-    return checkoutPanel;
-}
 
 /**
  * Creates the full-width horizontal action bar pinned to the bottom of the whole screen,
@@ -1352,7 +1270,7 @@ private HBox createBottomActionBar() {
     double actionFontSize = 15;
 
     // Matches "Product Lookup" button color for consistency
-    String lookupBlueColor      = "#0277bd";
+    String lookupBlueColor      = "#1a237e";
     String lookupBlueHoverColor = "#015384";
     String redColor             = "#c62828";
     String redHoverColor        = "#8e0000";
@@ -1381,8 +1299,7 @@ private HBox createBottomActionBar() {
 
     processPaymentButton = createBottomBarButton("CHECKOUT (+)", actionFontSize, redColor, redHoverColor);
     processPaymentButton.setDisable(true);
-    processPaymentButton.setOnAction(e -> processPayment());
-
+    processPaymentButton.setOnAction(e -> showCheckoutPopup());
     List<Button> allButtons = Arrays.asList(
         addCustomerButton, addNoteButton, holdSaleButton,
         viewHeldSalesButton, validateVat5Button, printReceiptButton,
@@ -1434,6 +1351,271 @@ private Button createBottomBarButton(String text, double fontSize, String baseCo
     });
 
     return button;
+}
+
+private void showCheckoutPopup() {
+    if (cartItems.isEmpty()) {
+        showAlert("Error", "Cart is empty. Please add items before checkout.");
+        return;
+    }
+
+    Stage checkoutStage = new Stage();
+    checkoutStage.initModality(Modality.APPLICATION_MODAL);
+    checkoutStage.initOwner(stage);
+    checkoutStage.setResizable(false);
+    checkoutStage.setTitle("Complete Transaction");
+
+    VBox content = new VBox();
+    content.setStyle("-fx-background-color: #1a237e;");
+    content.setPrefWidth(560);   // widened — was 440
+
+    // ---- header bar ----
+    HBox header = new HBox();
+    header.setPadding(new Insets(16, 24, 16, 24));
+    header.setAlignment(Pos.CENTER_LEFT);
+    header.setStyle("-fx-background-color: #0d1554;");
+    Label headerLabel = new Label("COMPLETE TRANSACTION");
+    headerLabel.setStyle("-fx-text-fill: white; -fx-font-size: 18px; -fx-font-weight: bold;");
+    Region hSpacer = new Region();
+    HBox.setHgrow(hSpacer, Priority.ALWAYS);
+    Button closeX = new Button("✕");
+    closeX.setStyle("-fx-background-color: #c62828; -fx-text-fill: white; -fx-font-weight: bold; " +
+            "-fx-font-size: 14px; -fx-min-width: 32px; -fx-min-height: 32px; -fx-cursor: hand; " +
+            "-fx-background-radius: 16px;");
+    closeX.setOnAction(e -> checkoutStage.close());
+    header.getChildren().addAll(headerLabel, hSpacer, closeX);
+
+    // ---- body: compact 2-column grid ----
+    GridPane grid = new GridPane();
+    grid.setPadding(new Insets(20, 26, 22, 26));
+    grid.setHgap(16);
+    grid.setVgap(14);
+    ColumnConstraints col1 = new ColumnConstraints();
+    col1.setPercentWidth(50);
+    ColumnConstraints col2 = new ColumnConstraints();
+    col2.setPercentWidth(50);
+    grid.getColumnConstraints().addAll(col1, col2);
+
+    String labelStyle = "-fx-text-fill: #80cbc4; -fx-font-size: 16px; -fx-font-weight: bold;";
+    String fieldStyle = "-fx-font-size: 18px; -fx-background-color: black; -fx-text-fill: white; " +
+            "-fx-border-color: #37474f; -fx-border-width: 1px; -fx-background-radius: 4px; -fx-border-radius: 4px;";
+
+    int row = 0;
+
+    // ---- Row: Payment Method (full width, catchy accent) ----
+    Label paymentMethodTitle = new Label("PAYMENT METHOD");
+    paymentMethodTitle.setStyle("-fx-text-fill: #ffca28; -fx-font-size: 18px; -fx-font-weight: bold;");
+
+    if (paymentMethodComboBox == null) {
+        paymentMethodComboBox = new ComboBox<>();
+    }
+    paymentMethodComboBox.getItems().setAll("Cash", "Credit Card", "Debit Card", "Invoice", "Cheque", "Mobile Payment", "Mixed Payment");
+    if (paymentMethodComboBox.getValue() == null) paymentMethodComboBox.setValue("Cash");
+    paymentMethodComboBox.setPrefWidth(Double.MAX_VALUE);
+    paymentMethodComboBox.setPrefHeight(48);
+    paymentMethodComboBox.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-background-radius: 4px; " +
+            "-fx-background-color: white;");
+
+    VBox pmBox = new VBox(7, paymentMethodTitle, paymentMethodComboBox);
+    grid.add(pmBox, 0, row, 2, 1);
+    row++;
+
+    Separator sep1 = new Separator();
+    sep1.setStyle("-fx-background-color: #3949ab;");
+    GridPane.setMargin(sep1, new Insets(3, 0, 3, 0));
+    grid.add(sep1, 0, row, 2, 1);
+    row++;
+
+    // ---- Row: Balance Due | Cash Tendered ----
+    Label balanceTitle = new Label("BALANCE DUE");
+    balanceTitle.setStyle(labelStyle);
+    Label balanceValue = new Label(formatCurrency(totalAmount));
+    balanceValue.setStyle("-fx-text-fill: #00e676; -fx-font-size: 26px; -fx-font-weight: bold; " +
+            "-fx-font-family: 'Consolas','Courier New', monospace;");
+    balanceValue.setMinWidth(Region.USE_PREF_SIZE);   // never truncate with "..."
+    balanceValue.setWrapText(false);
+    DropShadow glow = new DropShadow();
+    glow.setColor(Color.web("#00e676", 0.6));
+    glow.setRadius(8);
+    balanceValue.setEffect(glow);
+    StackPane balanceBox = new StackPane(balanceValue);
+    balanceBox.setAlignment(Pos.CENTER_LEFT);
+    balanceBox.setStyle("-fx-background-color: black; -fx-background-radius: 4px;");
+    balanceBox.setPadding(new Insets(10, 14, 10, 14));
+    balanceBox.setMinWidth(Region.USE_PREF_SIZE);     // grow with content, never clip
+    VBox balanceCol = new VBox(7, balanceTitle, balanceBox);
+
+    Label cashTitle = new Label("CASH TENDERED");
+    cashTitle.setStyle(labelStyle);
+    TextField cashTenderedField = new TextField(cashAmountField.getText());
+    cashTenderedField.setPrefHeight(44);
+    cashTenderedField.setStyle(fieldStyle + " -fx-text-fill: #00e676; -fx-font-weight: bold;");
+    cashTenderedField.textProperty().addListener((obs, oldV, newV) -> {
+        if (!newV.matches("\\d*\\.?\\d*")) cashTenderedField.setText(oldV);
+    });
+    VBox cashCol = new VBox(7, cashTitle, cashTenderedField);
+
+    grid.add(balanceCol, 0, row);
+    grid.add(cashCol, 1, row);
+    row++;
+
+    // ---- Row: Change Due ----
+    Label changeTitle = new Label("CHANGE DUE");
+    changeTitle.setStyle(labelStyle);
+    Label changeValue = new Label(formatCurrency(0.0));
+    changeValue.setStyle("-fx-text-fill: #00e676; -fx-font-size: 20px; -fx-font-weight: bold;");
+    changeValue.setMinWidth(Region.USE_PREF_SIZE);
+    HBox changeRow = new HBox(10, changeTitle, changeValue);
+    changeRow.setAlignment(Pos.CENTER_RIGHT);
+
+    Runnable recalcChange = () -> {
+        double tendered = 0;
+        try { tendered = Double.parseDouble(cashTenderedField.getText()); } catch (Exception ignored) {}
+        changeValue.setText(formatCurrency(Math.max(0, tendered - totalAmount)));
+    };
+    cashTenderedField.textProperty().addListener((o, ov, nv) -> recalcChange.run());
+    recalcChange.run();
+
+    VBox cashSection = new VBox(changeRow);
+    grid.add(cashSection, 0, row, 2, 1);
+    row++;
+
+    Runnable updateCashVisibility = () -> {
+        boolean isCash = "Cash".equals(paymentMethodComboBox.getValue());
+        cashCol.setVisible(isCash);
+        cashCol.setManaged(isCash);
+        cashSection.setVisible(isCash);
+        cashSection.setManaged(isCash);
+        if (isCash) {
+            recalcChange.run();
+        } else {
+            cashTenderedField.setText(formatPlainAmount(totalAmount));
+            changeValue.setText(formatCurrency(0.0));
+        }
+        checkoutStage.sizeToScene();
+    };
+    paymentMethodComboBox.setOnAction(e -> updateCashVisibility.run());
+    updateCashVisibility.run();
+
+    Separator sep2 = new Separator();
+    sep2.setStyle("-fx-background-color: #3949ab;");
+    GridPane.setMargin(sep2, new Insets(3, 0, 3, 0));
+    grid.add(sep2, 0, row, 2, 1);
+    row++;
+
+    // ---- Row: Customer Name | TIN ----
+    Label nameTitle = new Label("CUSTOMER NAME");
+    nameTitle.setStyle(labelStyle);
+    TextField nameField = new TextField(customerNamesField.getText());
+    nameField.setPrefHeight(44);
+    nameField.setStyle(fieldStyle);
+    VBox nameCol = new VBox(7, nameTitle, nameField);
+
+    Label tinTitle = new Label("TIN (BUSINESS ONLY)");
+    tinTitle.setStyle(labelStyle);
+    TextField tinInputField = new TextField(tinField.getText());
+    tinInputField.setPrefHeight(44);
+    tinInputField.setPromptText("Leave blank for individual");
+    tinInputField.setStyle(fieldStyle);
+    VBox tinCol = new VBox(7, tinTitle, tinInputField);
+
+    grid.add(nameCol, 0, row);
+    grid.add(tinCol, 1, row);
+    row++;
+
+    // ---- Row: Auth Code — always visible, full width ----
+    Label authTitle = new Label("BUYER AUTHORIZATION CODE");
+    authTitle.setStyle(labelStyle);
+    TextField authInputField = new TextField(buyerAuthField.getText());
+    authInputField.setPrefHeight(44);
+    authInputField.setPromptText("Required for business purchases");
+    authInputField.setStyle(fieldStyle);
+    VBox authCol = new VBox(7, authTitle, authInputField);
+
+    grid.add(authCol, 0, row, 2, 1);
+    row++;
+
+    // ---- Buttons ----
+    Button printButton = new Button("CONFIRM PAYMENT");
+    printButton.setPrefHeight(50);
+    printButton.setMaxWidth(Double.MAX_VALUE);
+    printButton.setStyle("-fx-background-color: #29b6f6; -fx-text-fill: white; -fx-font-size: 17px; " +
+            "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 4px;");
+
+    Button cancelButton = new Button("CANCEL");
+    cancelButton.setPrefHeight(50);
+    cancelButton.setMaxWidth(Double.MAX_VALUE);
+    cancelButton.setStyle("-fx-background-color: #c62828; -fx-text-fill: white; -fx-font-size: 17px; " +
+            "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 4px;");
+    cancelButton.setOnAction(e -> checkoutStage.close());
+
+    HBox buttonRow = new HBox(14, printButton, cancelButton);
+    HBox.setHgrow(printButton, Priority.ALWAYS);
+    HBox.setHgrow(cancelButton, Priority.ALWAYS);
+    GridPane.setMargin(buttonRow, new Insets(10, 0, 0, 0));
+    grid.add(buttonRow, 0, row, 2, 1);
+
+    printButton.setOnAction(e -> {
+        boolean isCash = "Cash".equals(paymentMethodComboBox.getValue());
+        double tendered;
+        try {
+            tendered = Double.parseDouble(cashTenderedField.getText().trim());
+        } catch (Exception ex) {
+            showAlert("Invalid Amount", "Please enter a valid cash amount.");
+            return;
+        }
+        if (isCash && tendered < totalAmount) {
+            showAlert("Insufficient Payment", "Cash tendered is less than the balance due.");
+            return;
+        }
+
+        boolean isBusiness = !tinInputField.getText().trim().isEmpty();
+        if (isBusiness && authInputField.getText().trim().isEmpty()) {
+            showAlert("Authorization Required", "Business purchase requires a buyer authorization code.");
+            authInputField.requestFocus();
+            return;
+        }
+
+        cashAmountField.setText(formatPlainAmount(tendered));
+        customerNamesField.setText(nameField.getText());
+        tinField.setText(tinInputField.getText());
+        buyerAuthField.setText(authInputField.getText());
+
+        checkoutStage.close();
+        processPayment();
+    });
+
+    content.getChildren().addAll(header, grid);
+    Scene scene = new Scene(content);
+    checkoutStage.setScene(scene);
+    // ─── ADD KEYBOARD SHORTCUTS HERE ───
+    scene.setOnKeyPressed(event -> {
+        switch (event.getCode()) {
+            case ENTER:
+                // Programmatically fires the printButton's action logic
+                printButton.fire();
+                event.consume();
+                break;
+                
+            case ESCAPE:
+                // Instantly drops the modal window out of view
+                checkoutStage.close();
+                event.consume();
+                break;
+                
+            default:
+                break;
+        }
+    });
+    //BLOCK TO FORCE FOCUS ON OPEN ----
+    javafx.application.Platform.runLater(() -> {
+        if ("Cash".equals(paymentMethodComboBox.getValue())) {
+            cashTenderedField.requestFocus();
+            cashTenderedField.selectAll(); // Optional: Selects text so they can type over it immediately
+        }
+    });
+    // ----------------------------------------------
+    checkoutStage.showAndWait();
 }
 
 private Double promptForServicePrice(Product service) {
@@ -1623,67 +1805,58 @@ private Button createResponsiveSecondaryActionButton(String text, double fontSiz
     /**
      * Adds a product to the cart based on barcode input
     */
-   // 2. Update your method to guard against double-firing
-private void addProductToCart() {
-    // If we are already running this method, ignore the duplicate phantom event
-    if (isProcessingBarcode) {
+  private void addProductToCart() {
+    // 1. Quick check on the UI thread
+    String barcode = barcodeField.getText().trim();
+    if (barcode.isEmpty()) {
+        showAlert("Error", "Please enter a product barcode or search term.");
         return;
     }
 
-    try {
-        isProcessingBarcode = true; // Lock the method
-        
-        String barcode = barcodeField.getText().trim();
+    // 2. Fetch product directly from DB
+    Product newItem = Helper.fetchProductByBarcode(barcode);
 
-        if (barcode.isEmpty()) {
-            showAlert("Error", "Please enter a product barcode or search term.");
-            return;
-        }
+    // 3. Handle UI results
+    if (newItem == null) {
+        showAlert("Error", "Product not found for barcode: " + barcode);
+        Platform.runLater(() -> barcodeField.requestFocus());
+        return;
+    }
 
-        // Fetch product from DB
-        Product newItem = Helper.fetchProductByBarcode(barcode);
-
-        if (newItem == null) {
-            showAlert("Error", "Product not found for barcode: " + barcode);
-            return;
-        }
-
-        // Check if item already exists in cart
-        boolean found = false;
-        for (Product item : cartItems) {
-            if (item.getBarcode().equals(newItem.getBarcode())) {
-                // Check available stock
-                if (item.getQuantity() + 1 > newItem.getQuantity()) {
-                    showAlert("Out of Stock", "Cannot add more. Only " + newItem.getQuantity() + " available in stock.");
-                    return;
-                }
-
-                item.setQuantity(item.getQuantity() + 1);
-                item.updateTotal();
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            if (newItem.getQuantity() < 1) {
-                showAlert("Out of Stock", "This product is currently out of stock.");
+    // Check if item already exists in cart
+    boolean found = false;
+    for (Product item : cartItems) {
+        if (item.getBarcode().equals(newItem.getBarcode())) {
+            // Check available stock
+            if (item.getQuantity() + 1 > newItem.getQuantity()) {
+                showAlert("Out of Stock", "Cannot add more. Only " + newItem.getQuantity() + " available in stock.");
+                Platform.runLater(() -> barcodeField.requestFocus());
                 return;
             }
-            newItem.setQuantity(1);
-            newItem.updateTotal();
-            cartItems.add(newItem);
+
+            item.setQuantity(item.getQuantity() + 1);
+            item.updateTotal();
+            found = true;
+            break;
         }
-
-        cartTable.refresh();
-        updateTotals();
-        barcodeField.clear();
-        
-        // Use Platform.runLater here to ensure focus requests don't conflict with key releases
-        Platform.runLater(() -> barcodeField.requestFocus());
-
-    } finally {
-        isProcessingBarcode = false; // Release the lock when done
     }
+
+    if (!found) {
+        if (newItem.getQuantity() < 1) {
+            showAlert("Out of Stock", "This product is currently out of stock.");
+            Platform.runLater(() -> barcodeField.requestFocus());
+            return;
+        }
+        newItem.setQuantity(1);
+        newItem.updateTotal();
+        cartItems.add(newItem);
+    }
+
+    cartTable.refresh();
+    updateTotals();
+    barcodeField.clear();
+    
+    Platform.runLater(() -> barcodeField.requestFocus());
 }
 
     /**
@@ -1750,8 +1923,9 @@ private void updateTotals() {
 
         double itemSubtotal = itemPriceNet * itemQuantity;
 
-        // Back-calculate net only (strip VAT + all levies) per item for display
-        double itemNetOnly = (itemPriceGross * itemQuantity) / (1 + taxRate / 100.0 + totalLevyRate / 100.0);
+        // FIXED: Deduct the flat whole line item discount before pulling the net display base
+        double itemDiscountedGrossForDisplay = (itemPriceGross * itemQuantity) - discount;
+        double itemNetOnly = itemDiscountedGrossForDisplay / (1 + taxRate / 100.0 + totalLevyRate / 100.0);
         netOnlyTotal += itemNetOnly;
 
         // Track item-level discount from the line item directly
@@ -1771,7 +1945,7 @@ private void updateTotals() {
         cartLevelDiscount = Math.min(cartDiscountAmount, subtotal);
     }
 
-    // Step 3: VAT extraction (only if NOT VAT5)
+    // Step 3: VAT extraction (only if NOT VAT5) - FIXED LINE LEVEL ROUNDING MATCHING MRA BACKEND
     if (!isVat5Exempt && isVATRegistered) {
         for (Product item : cartItems) {
             double itemGross = item.getPrice() * item.getQuantity(); // Net + VAT + Levies
@@ -1780,13 +1954,18 @@ private void updateTotals() {
             double proportion = subtotal == 0 ? 0 : itemGross / subtotal;
             double itemDiscountShare = cartLevelDiscount * proportion;
             
-            // FIXED: Deduct both the item's custom discount and its cart share variant
+            // Deduct both the item's custom discount and its cart share variant
             double itemDiscountedGross = itemGross - itemDiscountShare - item.getDiscount();
 
-            // Back-calculate net using VAT + ALL levy rates combined
-            double itemNet = itemDiscountedGross / (1 + taxRate / 100.0 + totalLevyRate / 100.0);
+            // Back-calculate taxable base exactly matching the backend validation engine
+            double combinedFactor = 1.0 + (taxRate / 100.0) + (totalLevyRate / 100.0);
+            double lineTaxable = itemDiscountedGross / combinedFactor;
+            lineTaxable = Math.round(lineTaxable * 100.0) / 100.0; // Round line base first
 
-            double itemVAT = itemNet * (taxRate / 100.0);
+            // Extract line VAT exactly matching MRA item rules
+            double itemVAT = itemDiscountedGross - lineTaxable;
+            itemVAT = Math.round(itemVAT * 100.0) / 100.0;
+
             totalTax += itemVAT;
         }
     }
@@ -1815,7 +1994,7 @@ private void updateTotals() {
     // Step 5: Totals
     double totalDiscount = itemLevelDiscountTotal + cartLevelDiscount;
     
-    // FIXED: Subtract the full combined discount from subtotal and apply rounding
+    // Calculate final clean parameters rounded down to 2 decimal places
     double total = Math.round((subtotal - totalDiscount) * 100.0) / 100.0;
     totalDiscount = Math.round(totalDiscount * 100.0) / 100.0;
     totalTax = Math.round(totalTax * 100.0) / 100.0;
@@ -1827,7 +2006,8 @@ private void updateTotals() {
         subtotalValueLabel.setText(formatCurrency(total));
         taxValueLabel.setText(formatCurrency(0.0));
     } else {
-        subtotalValueLabel.setText(formatCurrency(netOnlyTotal));
+        // FIXED: Displays the true Net Base (Gross - Discount - VAT/Levies)
+        subtotalValueLabel.setText(formatCurrency(netOnlyTotal)); 
         taxValueLabel.setText(formatCurrency(totalTax));
     }
 
@@ -1853,7 +2033,6 @@ private void updateTotals() {
 
     updateChangeCalculation();
 }
-
 /**
  * Formats a double as a plain decimal string (no currency symbol) for populating input fields
  */
@@ -1911,32 +2090,6 @@ private void updateChangeCalculation() {
     }
 
     String selectedPaymentMethod = paymentMethodComboBox.getValue();
-
-    Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
-    confirmAlert.setTitle("Confirm Payment");
-    confirmAlert.setHeaderText("Proceed with Payment?");
-
-    String confirmMessage = "Do you want to continue with "
-        + selectedPaymentMethod + " payment for " + formatCurrency(totalAmount) + "?";
-
-    if (isVat5Exempt && currentVat5Data != null) {
-        confirmMessage += "\n\n✓ VAT5 Certificate Applied"
-            + "\nProject: " + currentVat5Data.projectNumber
-            + "\nCertificate: " + currentVat5Data.vat5CertificateNumber
-            + "\n\nVAT has been exempted for this transaction.";
-    }
-
-    confirmAlert.setContentText(confirmMessage);
-
-    ButtonType okButton = new ButtonType("Proceed", ButtonBar.ButtonData.OK_DONE);
-    ButtonType cancelButton = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
-    confirmAlert.getButtonTypes().setAll(okButton, cancelButton);
-
-    Optional<ButtonType> result = confirmAlert.showAndWait();
-    if (result.isEmpty() || result.get() == cancelButton) {
-        System.out.println("❌ Payment cancelled by user.");
-        return;
-    }
 
     // Cashier confirmed — now show the spinner and begin actual processing
     showLoadingOverlay();
@@ -2057,8 +2210,12 @@ private void updateChangeCalculation() {
     List<TaxBreakDown> taxBreakdowns = Helper.generateTaxBreakdown(lineItems);
     
     // Calculate totals from line items (which already have VAT exemption applied)
-    double totalVATAmount = lineItems.stream().mapToDouble(LineItemDto::getTotalVAT).sum();
-    double invoiceTotal = lineItems.stream().mapToDouble(LineItemDto::getTotal).sum();
+double totalVATAmount = lineItems.stream().mapToDouble(LineItemDto::getTotalVAT).sum();
+double invoiceTotal = lineItems.stream().mapToDouble(LineItemDto::getTotal).sum();
+
+// Clean up any binary precision issues right here
+totalVATAmount = Math.round(totalVATAmount * 100.0) / 100.0;
+invoiceTotal = Math.round(invoiceTotal * 100.0) / 100.0;
     
     //Including Levies
     //Including Levies (VAT-excluded)
@@ -2080,7 +2237,7 @@ for (LevyDto levy : activeLevies) {
     double levyAmount = 0.0;
 
     for (LineItemDto item : lineItems) {
-        double lineTotal = item.getTotal();      // Net + VAT + all Levies
+        double lineTotal = item.getTotal();     // Net + VAT + all Levies
         double totalVAT  = item.getTotalVAT();   // Actual VAT amount
 
         // Net + Levies = Total - VAT
@@ -4518,102 +4675,6 @@ private void clearNote() {
 public String getTransactionNote() {
     return transactionNote;
 }
-
-private VBox createCashAmountSection() {
-    // Match the checkout panel's font scale
-    Rectangle2D screenBounds = Screen.getPrimary().getVisualBounds();
-    double screenWidth = screenBounds.getWidth();
-    double panelWidth;
-    if (screenWidth <= 1024) {
-        panelWidth = Math.max(screenWidth * 0.25, 250);
-    } else if (screenWidth <= 1440) {
-        panelWidth = Math.max(screenWidth * 0.22, 300);
-    } else {
-        panelWidth = Math.max(screenWidth * 0.20, 320);
-    }
-
-    double titleFontSize = Math.max(panelWidth * 0.07, 19);
-    double labelFontSize = Math.max(panelWidth * 0.058, 16);
-    double inputHeight = Math.max(panelWidth * 0.13, 40);
-
-    VBox cashAmountBox = new VBox(8);
-    Label cashAmountLabel = new Label("Cash Amount");
-    cashAmountLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #424242;", labelFontSize));
-
-    // Create HBox to hold the text field and number pad button - FIXED ALIGNMENT
-    HBox cashInputBox = new HBox(8);
-    cashInputBox.setAlignment(Pos.CENTER_LEFT);
-
-    // Cash amount field
-    cashAmountField = new TextField();
-    cashAmountField.setPromptText("Enter amount");
-    cashAmountField.setPrefHeight(inputHeight);
-    cashAmountField.setStyle(String.format(
-        "-fx-font-size: %.0fpx; -fx-background-radius: 5px; -fx-border-radius: 5px; " +
-        "-fx-border-color: #e0e0e0; -fx-border-width: 1px; -fx-background-color: white;", labelFontSize));
-
-    // Number pad button - scales with the same input height
-    Button numberPadButton = new Button("🔢");
-    numberPadButton.setPrefHeight(inputHeight);
-    numberPadButton.setPrefWidth(inputHeight + 5);
-    numberPadButton.setMinWidth(inputHeight + 5);
-    numberPadButton.setMaxWidth(inputHeight + 5);
-    numberPadButton.setStyle(String.format(
-        "-fx-background-color: #2196f3; -fx-text-fill: white; " +
-        "-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-cursor: hand; " +
-        "-fx-background-radius: 5px; -fx-border-radius: 5px;", labelFontSize + 1));
-
-    // Hover effects
-    numberPadButton.setOnMouseEntered(e ->
-        numberPadButton.setStyle(String.format(
-            "-fx-background-color: #1976d2; -fx-text-fill: white; " +
-            "-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-cursor: hand; " +
-            "-fx-background-radius: 5px; -fx-border-radius: 5px;", labelFontSize + 1))
-    );
-
-    numberPadButton.setOnMouseExited(e ->
-        numberPadButton.setStyle(String.format(
-            "-fx-background-color: #2196f3; -fx-text-fill: white; " +
-            "-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-cursor: hand; " +
-            "-fx-background-radius: 5px; -fx-border-radius: 5px;", labelFontSize + 1))
-    );
-
-    numberPadButton.setOnAction(e -> {
-        activeField = cashAmountField;
-        showNumberPadDialog();
-    });
-
-    // Add field and button to HBox - FIELD TAKES REMAINING SPACE
-    cashInputBox.getChildren().addAll(cashAmountField, numberPadButton);
-    HBox.setHgrow(cashAmountField, Priority.ALWAYS);
-    HBox.setHgrow(numberPadButton, Priority.NEVER);
-
-    // Validation listener
-    cashAmountField.textProperty().addListener((observable, oldValue, newValue) -> {
-        if (!newValue.matches("\\d*\\.?\\d*")) {
-            cashAmountField.setText(oldValue);
-        } else {
-            updateChangeCalculation();
-        }
-    });
-
-    // Change display — bigger, eye-catching
-    Label changeLabel = new Label("Change:");
-    changeLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #424242;", labelFontSize));
-
-    changeValueLabel = new Label(formatCurrency(0.0));
-    changeValueLabel.setStyle(String.format("-fx-font-size: %.0fpx; -fx-font-weight: bold; -fx-text-fill: #009688;", titleFontSize));
-
-    HBox changeBox = new HBox(10);
-    changeBox.setAlignment(Pos.CENTER_LEFT);
-    Region spacer = new Region();
-    HBox.setHgrow(spacer, Priority.ALWAYS);
-    changeBox.getChildren().addAll(spacer, changeLabel, changeValueLabel);
-
-    // Add all components
-    cashAmountBox.getChildren().addAll(cashAmountLabel, cashInputBox, changeBox);
-    return cashAmountBox;
-}
 /**
  * STEP 3: Shows the number pad dialog - FIXED CENTERING
  */
@@ -4769,9 +4830,10 @@ private void createNumberPadDialog() {
                        "-fx-font-size: 14px; -fx-font-weight: bold; " +
                        "-fx-border-color: #4caf50; -fx-border-width: 2px; " +
                        "-fx-background-radius: 8px; -fx-border-radius: 8px; -fx-cursor: hand;");
-    doneButton.setOnAction(e -> {
-    processPayment();
+    // numpad "PROCESS PAYMENT" button
+doneButton.setOnAction(e -> {
     numberPadDialog.hide();
+    showCheckoutPopup();
 });
      doneButton.setDisable(true);
 
