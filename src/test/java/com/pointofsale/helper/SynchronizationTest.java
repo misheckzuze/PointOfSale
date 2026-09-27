@@ -93,6 +93,46 @@ public class SynchronizationTest {
         return "{\"invoiceHeader\":{\"invoiceNumber\":\""+number+"\",\"invoiceDateTime\":\"2025-03-01T12:00:00\"},\"invoiceLineItems\":[{\"unitPrice\":10.25,\"quantity\":2,\"discount\":0.5,\"total\":20}],\"invoiceSummary\":{\"invoiceTotal\":20,\"totalVAT\":2.45,\"amountTendered\":25},\"futureField\":{\"preserved\":true}}";
     }
 
+    @Test public void cartDraftRestoresValuesWithoutCreatingSale() throws Exception {
+        CartDraft d = new CartDraft();
+        Product p = new Product("draft", "Item", "Description", 123.45, "A", 2.5, "Each", true);
+        p.setOriginalPrice(130); p.setDiscount(12.34); p.setDiscountAmount(12.34); p.setDiscountPercent(3);
+        d.lines.add(new CartDraft.Line(p)); d.customer = "Customer"; d.tin = "123";
+        d.discountAmount = 5; d.note = "Delivery"; d.tendered = "400.00";
+        d.vat5 = true; d.vat5Data = new Vat5Data(); d.vat5Data.projectNumber = "project";
+        new CartDraftStore("cashier-a").save(new com.google.gson.Gson().toJson(d)).get(5, TimeUnit.SECONDS);
+        CartDraft restored = new CartDraftStore("cashier-a").load().get(5, TimeUnit.SECONDS);
+        Product item = restored.lines.get(0).toProduct();
+        assertEquals(123.45, item.getPrice(), 0); assertEquals(130, item.getOriginalPrice(), 0);
+        assertEquals(2.5, item.getQuantity(), 0); assertEquals(12.34, item.getDiscount(), 0);
+        assertEquals(p.getTotal(), item.getTotal(), 0); assertEquals("Customer", restored.customer);
+        assertEquals("400.00", restored.tendered); assertEquals("project", restored.vat5Data.projectNumber);
+        assertEquals("0", scalar("SELECT COUNT(*) FROM Invoices"));
+        assertNull(new CartDraftStore("different-cashier").load().get(5, TimeUnit.SECONDS));
+    }
+
+    @Test public void completedInvoiceCannotReappearAsRecoveredCart() throws Exception {
+        CartDraft d = new CartDraft(); d.invoiceNumber = "draft-completed"; d.checkoutStarted = true;
+        d.lines.add(new CartDraft.Line(new Product("x", "x", "x", 10, "A", 1, "Each", true)));
+        CartDraftStore store = new CartDraftStore("completed-cashier");
+        String json = new com.google.gson.Gson().toJson(d);
+        store.save(json).get(5, TimeUnit.SECONDS);
+        invoice("draft-completed", null);
+        // Even a stale write after invoice commit must not resurrect the sale.
+        store.save(json).get(5, TimeUnit.SECONDS);
+        assertNull(store.load().get(5, TimeUnit.SECONDS));
+    }
+
+    @Test public void latestCartWinsAndInterruptedCheckoutRemainsIdentifiable() throws Exception {
+        CartDraftStore store = new CartDraftStore("ordered-cashier");
+        CartDraft d = new CartDraft(); d.invoiceNumber = "uncertain"; d.checkoutStarted = true; d.tin = "123";
+        store.save(new com.google.gson.Gson().toJson(d));
+        CartDraft restored = store.load().get(5, TimeUnit.SECONDS);
+        assertTrue(restored.checkoutStarted); assertEquals("uncertain", restored.invoiceNumber);
+        store.save(new com.google.gson.Gson().toJson(new CartDraft())).get(5, TimeUnit.SECONDS);
+        assertTrue(store.load().get(5, TimeUnit.SECONDS).lines.isEmpty());
+        assertNull(store.load().get(5, TimeUnit.SECONDS).invoiceNumber);
+    }
     @Test public void migrationIsRepeatableAndLeavesLegacyRowsNull() throws Exception {
         invoice("old", null); Database.initializeDatabase();
         assertNull(scalar("SELECT Payload FROM Invoices WHERE InvoiceNumber='old'"));

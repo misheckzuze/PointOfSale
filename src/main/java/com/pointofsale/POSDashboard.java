@@ -145,18 +145,87 @@ public class POSDashboard extends Application {
     private Button toggleBarsButton;
     private boolean barsVisible = true;
     private boolean isProcessingBarcode = false;
+    private com.pointofsale.helper.CartDraftStore draftStore;
+    private Timeline draftTimer;
+    private String lastDraftJson;
+    private boolean draftWritePending, draftReady, checkoutStarted, recoveredCheckout;
+    private String checkoutInvoiceNumber;
     
 
     @Override
     public void start(Stage primaryStage) {
         this.stage = primaryStage;
         createDashboard();
+        startCartRecovery();
         barcodeField.setOnAction(e -> addProductToCart());
         Platform.runLater(() -> barcodeField.requestFocus());
         startTimeUpdater();
         stage.show();
     }
 
+    private com.pointofsale.model.CartDraft snapshotCart() {
+        com.pointofsale.model.CartDraft d = new com.pointofsale.model.CartDraft();
+        for (Product p : cartItems) d.lines.add(new com.pointofsale.model.CartDraft.Line(p));
+        d.customer = customerNamesField.getText(); d.tin = tinField.getText();
+        d.authorization = buyerAuthField.getText(); d.tendered = cashAmountField.getText();
+        d.note = transactionNote; d.discountAmount = cartDiscountAmount; d.discountPercent = cartDiscountPercent;
+        d.payment = paymentMethodComboBox == null ? "Cash" : paymentMethodComboBox.getValue();
+        d.vat5 = isVat5Exempt; d.vat5Data = currentVat5Data;
+        d.invoiceNumber = checkoutInvoiceNumber; d.checkoutStarted = checkoutStarted;
+        return d;
+    }
+
+    private void startCartRecovery() {
+        root.setDisable(true);
+        try {
+            draftStore = new com.pointofsale.helper.CartDraftStore(Session.currentUsername);
+        } catch (Exception ex) {
+            showAlert("Cart recovery unavailable", "Sign in as a cashier before selling.");
+            return;
+        }
+        draftStore.load().whenComplete((d, error) -> Platform.runLater(() -> {
+            if (error != null) {
+                showAlert("Cart recovery failed", "The saved cart could not be read. Restart or contact support; it has not been overwritten.");
+                return;
+            }
+            if (d != null && !d.lines.isEmpty()) {
+                cartItems.setAll(d.lines.stream().map(com.pointofsale.model.CartDraft.Line::toProduct)
+                        .collect(java.util.stream.Collectors.toList()));
+                cartDiscountAmount = d.discountAmount; cartDiscountPercent = d.discountPercent;
+                customerNamesField.setText(d.customer); tinField.setText(d.tin); buyerAuthField.setText(d.authorization);
+                transactionNote = d.note; isVat5Exempt = d.vat5; currentVat5Data = d.vat5Data;
+                if (paymentMethodComboBox == null) paymentMethodComboBox = new ComboBox<>();
+                paymentMethodComboBox.setValue(d.payment);
+                updateTotals(); cashAmountField.setText(d.tendered); updateChangeCalculation(); updateNoteIndicator();
+                // B2B may have reached the server before power failed. Never silently submit a new invoice.
+                recoveredCheckout = d.checkoutStarted && d.tin != null && !d.tin.isBlank();
+                checkoutStarted = recoveredCheckout; checkoutInvoiceNumber = d.invoiceNumber;
+            }
+            draftReady = true;
+            root.setDisable(false);
+            draftTimer = new Timeline(new KeyFrame(Duration.millis(500), e -> autoSaveCart()));
+            draftTimer.setCycleCount(Timeline.INDEFINITE); draftTimer.play();
+            stage.addEventHandler(javafx.stage.WindowEvent.WINDOW_HIDDEN, e -> {
+                if (draftReady && !checkoutStarted && !recoveredCheckout) draftStore.save(new Gson().toJson(snapshotCart())); draftTimer.stop();
+            });
+            if (d != null && !d.lines.isEmpty()) showAlert("Cart recovered", recoveredCheckout
+                    ? "Your cart was restored, but B2B invoice " + d.invoiceNumber
+                      + " may already be accepted. Ask your supervisor to reconcile it before processing another payment."
+                    : "Your unfinished sale has been restored. You can continue serving this customer.");
+        }));
+    }
+
+    private void autoSaveCart() {
+        if (!draftReady || draftWritePending || checkoutStarted || recoveredCheckout) return;
+        String json = new Gson().toJson(snapshotCart());
+        if (json.equals(lastDraftJson)) return;
+        draftWritePending = true;
+        draftStore.save(json).whenComplete((ignored, error) -> Platform.runLater(() -> {
+            draftWritePending = false;
+            if (error == null) { lastDraftJson = json; stage.setTitle("MQ POS System - Cart saved"); }
+            else stage.setTitle("MQ POS System - CART NOT SAVED: check disk space / database access");
+        }));
+    }
    private void createDashboard() {
     // Initialize cart items list if needed
     cartItems = FXCollections.observableArrayList();
@@ -1481,6 +1550,7 @@ private void showCheckoutPopup() {
     Label cashTitle = new Label("CASH TENDERED");
     cashTitle.setStyle(labelStyle);
     TextField cashTenderedField = new TextField(cashAmountField.getText());
+    cashTenderedField.textProperty().addListener((o, old, value) -> cashAmountField.setText(value));
     cashTenderedField.setPrefHeight(44);
     cashTenderedField.setStyle(fieldStyle + " -fx-text-fill: #00e676; -fx-font-weight: bold;");
     cashTenderedField.textProperty().addListener((obs, oldV, newV) -> {
@@ -1540,6 +1610,7 @@ private void showCheckoutPopup() {
     Label nameTitle = new Label("CUSTOMER NAME");
     nameTitle.setStyle(labelStyle);
     TextField nameField = new TextField(customerNamesField.getText());
+    nameField.textProperty().addListener((o, old, value) -> customerNamesField.setText(value));
     nameField.setPrefHeight(44);
     nameField.setStyle(fieldStyle);
     VBox nameCol = new VBox(7, nameTitle, nameField);
@@ -1547,6 +1618,7 @@ private void showCheckoutPopup() {
     Label tinTitle = new Label("TIN (BUSINESS ONLY)");
     tinTitle.setStyle(labelStyle);
     TextField tinInputField = new TextField(tinField.getText());
+    tinInputField.textProperty().addListener((o, old, value) -> tinField.setText(value));
     tinInputField.setPrefHeight(44);
     tinInputField.setPromptText("Leave blank for individual");
     tinInputField.setStyle(fieldStyle);
@@ -1560,6 +1632,7 @@ private void showCheckoutPopup() {
     Label authTitle = new Label("BUYER AUTHORIZATION CODE");
     authTitle.setStyle(labelStyle);
     TextField authInputField = new TextField(buyerAuthField.getText());
+    authInputField.textProperty().addListener((o, old, value) -> buyerAuthField.setText(value));
     authInputField.setPrefHeight(44);
     authInputField.setPromptText("Required for business purchases");
     authInputField.setStyle(fieldStyle);
@@ -2209,6 +2282,36 @@ private void updateChangeCalculation() {
 }
 
     private void proceedWithPayment() {
+        if (!draftReady || recoveredCheckout || checkoutStarted) {
+            hideLoadingOverlay();
+            showAlert("Payment unavailable", recoveredCheckout
+                    ? "Reconcile interrupted B2B invoice " + checkoutInvoiceNumber + " with your supervisor first. Do not create a replacement sale."
+                    : "Please wait for cart recovery or the current payment to finish.");
+            return;
+        }
+        checkoutInvoiceNumber = generateNewReceiptNumber();
+        checkoutStarted = true;
+        String json = new Gson().toJson(snapshotCart());
+        // Commit the checkout identity before any invoice save or HTTP submission.
+        draftStore.save(json).whenComplete((ignored, error) -> Platform.runLater(() -> {
+            if (error != null) {
+                checkoutStarted = false; hideLoadingOverlay();
+                showAlert("Cannot save cart", "Payment was not submitted. Check disk space and database access, then retry.");
+                return;
+            }
+            lastDraftJson = json;
+            try {
+                finishPaymentFromSavedCart();
+            } catch (RuntimeException ex) {
+                hideLoadingOverlay();
+                recoveredCheckout = true;
+                showAlert("Payment interrupted", "Keep this cart and reconcile invoice " + checkoutInvoiceNumber
+                        + " before retrying. " + ex.getMessage());
+            }
+        }));
+    }
+
+    private void finishPaymentFromSavedCart() {
 
     String selectedPaymentMethod = paymentMethodComboBox.getValue();
     String buyerTIN = tinField.getText().trim();
@@ -2227,7 +2330,7 @@ private void updateChangeCalculation() {
         return;
     }
 
-    String invoiceNumber = generateNewReceiptNumber();
+    String invoiceNumber = checkoutInvoiceNumber;
     String buyerAuthorizationCode = buyerAuthField.getText().trim();
 
     // 1. Build invoice header
@@ -2335,6 +2438,7 @@ private void processOfflineFirstB2C(InvoiceHeader invoiceHeader, String buyerNam
         invoiceSummary.setOfflineSignature(validationUrl.split("S=", 2)[1]);
     } catch (Exception ex) {
         hideLoadingOverlay();
+        checkoutStarted = false;
         showAlert("Error", "Could not sign the offline invoice. No transaction was saved.");
         return;
     }
@@ -2360,6 +2464,7 @@ private void processOfflineFirstB2C(InvoiceHeader invoiceHeader, String buyerNam
     } else {
         System.err.println("Failed to save transaction locally.");
         hideLoadingOverlay();
+        checkoutStarted = false;
         showAlert("Error", "Could not save the transaction. Please try again.");
         return;
     }
@@ -2436,7 +2541,11 @@ private void submitB2BOnlineFirst(InvoiceHeader invoiceHeader, String buyerName,
                     amountTendered
                 );
                 if (!saveSuccess) {
-                    System.err.println("Warning: B2B transaction transmitted but failed to save locally.");
+                    recoveredCheckout = true;
+                    showAlert("Invoice accepted - local save failed", "The server accepted invoice "
+                            + invoiceHeader.getInvoiceNumber()
+                            + ". Keep this cart and ask your supervisor to reconcile the invoice. Do not sell it again.");
+                    return;
                 }
                 Helper.updateValidationUrl(invoiceHeader.getInvoiceNumber(), result.validationUrl);
 
@@ -2466,6 +2575,7 @@ private void submitB2BOnlineFirst(InvoiceHeader invoiceHeader, String buyerName,
                 resetCartAndFields();
 
             } else if (!result.networkFailure) {
+                checkoutStarted = false;
                 // Hard rejection from the API (e.g. missing Purchase Authorization Code).
                 Alert rejectedAlert = new Alert(Alert.AlertType.ERROR);
                 rejectedAlert.setTitle("Transaction Rejected");
@@ -2476,13 +2586,14 @@ private void submitB2BOnlineFirst(InvoiceHeader invoiceHeader, String buyerName,
                 // Cart is left intact so the cashier can correct and retry.
 
             } else {
+                recoveredCheckout = true;
                 // Genuine network failure — B2B cannot proceed offline.
                 Alert b2bOfflineBlocked = new Alert(Alert.AlertType.ERROR);
                 b2bOfflineBlocked.setTitle("Cannot Process B2B Offline");
                 b2bOfflineBlocked.setHeaderText("🌐 No Connection — B2B Sale Requires Online Validation");
                 b2bOfflineBlocked.setContentText(
                     "This is a B2B transaction and requires a live connection to validate the " +
-                    "Purchase Authorization Code and buyer TIN. Please check your connection and try again."
+                    "Purchase Authorization Code and buyer TIN. The response was not confirmed. Ask your supervisor to reconcile invoice " + checkoutInvoiceNumber + " before retrying; it may already be accepted."
                 );
                 b2bOfflineBlocked.showAndWait();
                 // Nothing was saved, so there's nothing to delete.
@@ -2493,6 +2604,8 @@ private void submitB2BOnlineFirst(InvoiceHeader invoiceHeader, String buyerName,
 }
 
 private void resetCartAndFields() {
+    checkoutStarted = false; checkoutInvoiceNumber = null;
+    cartDiscountAmount = 0; cartDiscountPercent = 0; transactionNote = "";
     cartItems.clear();
     cashAmountField.clear();
     tinField.clear();

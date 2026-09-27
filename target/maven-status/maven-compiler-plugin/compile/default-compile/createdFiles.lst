@@ -40,6 +40,7 @@ com\pointofsale\helper\ApiClient.class
 com\pointofsale\ReportsView$3.class
 com\pointofsale\model\LevyBreakDownDto.class
 com\pointofsale\POSDashboard$2.class
+com\pointofsale\helper\CartDraftStore.class
 com\pointofsale\model\AuditLog.class
 com\pointofsale\model\ApiError.class
 com\pointofsale\App.class
@@ -69,9 +70,11 @@ com\pointofsale\model\TerminalContactInfo.class
 com\pointofsale\AuditTrailView$2.class
 com\pointofsale\helper\ApiClient$1.class
 com\pointofsale\CustomersView$PurchaseRecord.class
+com\pointofsale\model\CartDraft$Line.class
 com\pointofsale\model\Vat5ValidationResponse.class
 com\pointofsale\ProductManagement$6.class
 com\pointofsale\TransactionsView.class
+com\pointofsale\model\CartDraft.class
 com\pointofsale\helper\Helper.class
 com\pointofsale\model\SaleSummary.class
 com\pointofsale\TerminalActivationView.class
