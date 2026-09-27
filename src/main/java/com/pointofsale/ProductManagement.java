@@ -19,8 +19,14 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.layout.*;
 import javafx.util.Callback;
 import com.pointofsale.model.Session;
-
-
+import javafx.animation.Timeline;
+import javafx.animation.Timeline;
+import javafx.animation.KeyFrame;
+import javafx.animation.KeyValue;
+import javafx.scene.shape.Circle;
+import javafx.scene.paint.Color;
+import javafx.util.Duration;
+import javafx.application.Platform;
 import java.text.NumberFormat;
 import java.util.List;
 import java.util.Locale;
@@ -28,6 +34,12 @@ import java.util.Optional;
 
 public class ProductManagement {
 
+    private long displayedRevision = -1;
+    private boolean loadingProducts;
+    private final Timeline catalogueRefresh = new Timeline(new KeyFrame(Duration.seconds(3), event -> {
+        long revision = com.pointofsale.helper.ProductSyncService.getInstance().getRevision();
+        if (revision != displayedRevision) reloadProductsAsync();
+    }));
     private TableView<Product> productTable;
     private ObservableList<Product> productData;
     private TextField searchField;
@@ -40,21 +52,54 @@ public class ProductManagement {
     private Label activeProductsLabel;
     private Label outOfStockLabel;
     private Label lowStockLabel;
+    private StackPane rootStack;
+    private VBox loadingOverlay;
+    private Timeline dotsAnimation;
+    
 
     /**
      * Creates and returns the product management content to be displayed
      * @return The root node containing all product management UI
      */
     public Node createContent() {
-        // Load products from the database
-        productData = FXCollections.observableArrayList(Helper.fetchAllProductsFromDB());
-        
-        // Create main content container
-        VBox mainContent = createMainContent();
-        
-        return mainContent;
+    // Load products from the database
+    productData = FXCollections.observableArrayList();
+
+    // Create main content container
+    VBox mainContent = createMainContent();
+
+    // Create the loading overlay and stack it on top of the main content
+    loadingOverlay = createLoadingOverlay();
+    rootStack = new StackPane();
+    rootStack.getChildren().addAll(mainContent, loadingOverlay);
+
+    catalogueRefresh.setCycleCount(Timeline.INDEFINITE);
+    rootStack.sceneProperty().addListener((observable, previous, scene) -> {
+        if (scene == null) catalogueRefresh.stop();
+        else { catalogueRefresh.play(); reloadProductsAsync(); }
+    });
+    reloadProductsAsync();
+    return rootStack;
+}
+
+    private void reloadProductsAsync() {
+        if (loadingProducts) return;
+        loadingProducts = true;
+        long revision = com.pointofsale.helper.ProductSyncService.getInstance().getRevision();
+        java.util.concurrent.CompletableFuture.supplyAsync(Helper::fetchAllProductsFromDB)
+                .whenComplete((products, error) -> Platform.runLater(() -> {
+                    if (error != null) { loadingProducts = false; return; }
+                    productData.clear();
+                    appendProductBatch(products, 0, revision);
+                }));
     }
 
+    private void appendProductBatch(List<Product> products, int offset, long revision) {
+        int end = Math.min(offset + 200, products.size());
+        productData.addAll(products.subList(offset, end));
+        if (end < products.size()) Platform.runLater(() -> appendProductBatch(products, end, revision));
+        else { displayedRevision = revision; loadingProducts = false; filterProducts(); updateProductStats(); }
+    }
     private VBox createMainContent() {
         VBox mainContent = new VBox(20);
         mainContent.setPadding(new Insets(25));
@@ -214,29 +259,33 @@ public class ProductManagement {
         String siteId = Helper.getTerminalSiteId();
 
         addProductButton.setOnAction(e -> {
-            ApiClient apiClient = new ApiClient();
-            
-            apiClient.getTerminalSiteProducts(tin, siteId, token, productsFetched -> {
-                Alert alert = new Alert(Alert.AlertType.INFORMATION);
-                alert.setTitle("Product Fetch Status");
+    showLoadingOverlay();
+    ApiClient apiClient = new ApiClient();
 
-                if (productsFetched) {
-                    alert.setAlertType(Alert.AlertType.INFORMATION);
-                    alert.setHeaderText("✅ Success");
-                    alert.setContentText("Products fetched and saved successfully.");
-                    
-                    // Refresh the product data after fetching
-                    productData.setAll(Helper.fetchAllProductsFromDB());
-                    updateProductStats();
-                } else {
-                    alert.setAlertType(Alert.AlertType.ERROR);
-                    alert.setHeaderText("⚠ Failed");
-                    alert.setContentText("Failed to fetch products.");
-                }
+    apiClient.getTerminalSiteProducts(tin, siteId, token, productsFetched -> {
+        Platform.runLater(() -> {
+            hideLoadingOverlay();
 
-                alert.showAndWait();
-            });
+            Alert alert = new Alert(Alert.AlertType.INFORMATION);
+            alert.setTitle("Product Fetch Status");
+
+            if (productsFetched) {
+                alert.setAlertType(Alert.AlertType.INFORMATION);
+                alert.setHeaderText("✅ Success");
+                alert.setContentText("Products fetched and saved successfully.");
+
+                reloadProductsAsync();
+                updateProductStats();
+            } else {
+                alert.setAlertType(Alert.AlertType.ERROR);
+                alert.setHeaderText("⚠ Failed");
+                alert.setContentText("Failed to fetch products.");
+            }
+
+            alert.showAndWait();
         });
+    });
+});
         
         // Import button
         Button importButton = new Button("Import");
@@ -438,6 +487,63 @@ public class ProductManagement {
             };
         }
     };
+}
+   
+   private VBox createLoadingOverlay() {
+    VBox overlay = new VBox(20);
+    overlay.setAlignment(Pos.CENTER);
+    overlay.setStyle("-fx-background-color: rgba(0,0,0,0.45);");
+    overlay.setVisible(false);
+    overlay.setManaged(false);
+    overlay.setPickOnBounds(true);
+
+    HBox dotsBox = new HBox(14);
+    dotsBox.setAlignment(Pos.CENTER);
+
+    Circle dot1 = new Circle(11, Color.web("#3949ab"));
+    Circle dot2 = new Circle(11, Color.web("#3949ab"));
+    Circle dot3 = new Circle(11, Color.web("#3949ab"));
+    dotsBox.getChildren().addAll(dot1, dot2, dot3);
+
+    Label processingLabel = new Label("Fetching Products...");
+    processingLabel.setStyle("-fx-text-fill: white; -fx-font-size: 16px; -fx-font-weight: bold;");
+
+    overlay.getChildren().addAll(dotsBox, processingLabel);
+
+    dotsAnimation = new Timeline(
+        new KeyFrame(Duration.ZERO,
+            new KeyValue(dot1.opacityProperty(), 1.0), new KeyValue(dot1.scaleXProperty(), 1.3), new KeyValue(dot1.scaleYProperty(), 1.3),
+            new KeyValue(dot2.opacityProperty(), 0.3), new KeyValue(dot2.scaleXProperty(), 0.8), new KeyValue(dot2.scaleYProperty(), 0.8),
+            new KeyValue(dot3.opacityProperty(), 0.3), new KeyValue(dot3.scaleXProperty(), 0.8), new KeyValue(dot3.scaleYProperty(), 0.8)),
+        new KeyFrame(Duration.millis(300),
+            new KeyValue(dot1.opacityProperty(), 0.3), new KeyValue(dot1.scaleXProperty(), 0.8), new KeyValue(dot1.scaleYProperty(), 0.8),
+            new KeyValue(dot2.opacityProperty(), 1.0), new KeyValue(dot2.scaleXProperty(), 1.3), new KeyValue(dot2.scaleYProperty(), 1.3),
+            new KeyValue(dot3.opacityProperty(), 0.3), new KeyValue(dot3.scaleXProperty(), 0.8), new KeyValue(dot3.scaleYProperty(), 0.8)),
+        new KeyFrame(Duration.millis(600),
+            new KeyValue(dot1.opacityProperty(), 0.3), new KeyValue(dot1.scaleXProperty(), 0.8), new KeyValue(dot1.scaleYProperty(), 0.8),
+            new KeyValue(dot2.opacityProperty(), 0.3), new KeyValue(dot2.scaleXProperty(), 0.8), new KeyValue(dot2.scaleYProperty(), 0.8),
+            new KeyValue(dot3.opacityProperty(), 1.0), new KeyValue(dot3.scaleXProperty(), 1.3), new KeyValue(dot3.scaleYProperty(), 1.3)),
+        new KeyFrame(Duration.millis(900),
+            new KeyValue(dot1.opacityProperty(), 1.0), new KeyValue(dot1.scaleXProperty(), 1.3), new KeyValue(dot1.scaleYProperty(), 1.3),
+            new KeyValue(dot2.opacityProperty(), 0.3), new KeyValue(dot2.scaleXProperty(), 0.8), new KeyValue(dot2.scaleYProperty(), 0.8),
+            new KeyValue(dot3.opacityProperty(), 0.3), new KeyValue(dot3.scaleXProperty(), 0.8), new KeyValue(dot3.scaleYProperty(), 0.8))
+    );
+    dotsAnimation.setCycleCount(Timeline.INDEFINITE);
+
+    return overlay;
+}
+
+private void showLoadingOverlay() {
+    loadingOverlay.setVisible(true);
+    loadingOverlay.setManaged(true);
+    loadingOverlay.toFront();
+    dotsAnimation.play();
+}
+
+private void hideLoadingOverlay() {
+    dotsAnimation.stop();
+    loadingOverlay.setVisible(false);
+    loadingOverlay.setManaged(false);
 }
 
     private void filterProducts() {

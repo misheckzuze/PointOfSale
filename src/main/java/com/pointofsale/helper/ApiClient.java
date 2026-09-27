@@ -36,12 +36,17 @@ import com.pointofsale.model.TaxBreakDown;
 import com.pointofsale.data.Database;
 import com.pointofsale.model.LevyBreakDownDto;
 import com.pointofsale.model.LevyDto;
+import com.pointofsale.model.SubmitResult;
 
 
 
 public class ApiClient {
 
     private final HttpClient httpClient;
+    private static final java.util.Set<String> SALES_IN_FLIGHT = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static final java.util.concurrent.ExecutorService SALES_WORKERS = new java.util.concurrent.ThreadPoolExecutor(
+            4, 4, 0, java.util.concurrent.TimeUnit.SECONDS, new java.util.concurrent.ArrayBlockingQueue<>(200),
+            task -> { Thread thread = new Thread(task, "sale-submission"); thread.setDaemon(true); return thread; });
 
     public ApiClient() {
         HttpClient client = null;
@@ -410,89 +415,41 @@ public class ApiClient {
     }
     
     public void getTerminalSiteProducts(String tin, String siteId, String bearerToken, Consumer<Boolean> callback) {
-        String url = ApiEndpoints.BASE_URL + ApiEndpoints.GET_TERMINAL_SITE_PRODUCTS;
-
-        JsonObject requestBody = Json.createObjectBuilder()
-            .add("tin", tin)
-            .add("siteId", siteId)
-            .build();
-
-        HttpRequest request = HttpRequest.newBuilder()
-            .uri(URI.create(url))
-            .header("Authorization", "Bearer " + bearerToken)
-            .header("Content-Type", "application/json")
-            .header("Accept", "text/plain")
-            .POST(HttpRequest.BodyPublishers.ofString(requestBody.toString()))
-            .build();
-
-        new Thread(() -> {
-            boolean success = false;
-
-        try {
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-            System.out.println("Status Code: " + response.statusCode());
-            System.out.println("Response Body: " + response.body());
-
-            if (response.statusCode() == 200) {
-                JsonReader reader = Json.createReader(new StringReader(response.body()));
-                JsonObject responseJson = reader.readObject();
-
-                int statusCode = responseJson.getInt("statusCode", 0);
-                if (statusCode == 1) {
-                    JsonArray dataArray = responseJson.getJsonArray("data");
-
-                    for (JsonValue value : dataArray) {
-                        if (value instanceof JsonObject) {
-                            JsonObject product = (JsonObject) value;
-                            Helper.insertOrUpdateProduct(product); // 🧠 Save to SQLite
-                        }
-                    }
-
-                    System.out.println("✅ Products saved to database.");
-                    success = true;
-                } else {
-                    System.err.println("⚠ API Error: " + responseJson.getString("remark", ""));
-                }
-            } else {
-                System.err.println("❌ HTTP Error " + response.statusCode());
-            }
-        } catch (Exception e) {
-            System.err.println("❌ Error fetching/saving products: " + e.getMessage());
-            e.printStackTrace();
-        }
-
-          boolean finalSuccess = success;
-          Platform.runLater(() -> callback.accept(finalSuccess));
-      }).start();
+        ProductSyncService.getInstance().synchronizeNow().whenComplete((count, error) ->
+                Platform.runLater(() -> callback.accept(error == null)));
     }
-    
-  public void submitTransactions(String payloadJson, String bearerToken, BiConsumer<Boolean, String> callback) {
-    String url = ApiEndpoints.BASE_URL + ApiEndpoints.SUBMIT_TRANSACTIONS;
+/** Compatibility callback: success flag and receipt validation URL, using the same guarded submission. */
+public void submitTransactions(String payloadJson, String bearerToken, BiConsumer<Boolean, String> callback) {
+    java.util.Objects.requireNonNull(callback, "callback");
+    submitTransactions(payloadJson, bearerToken, (SubmitResult result) -> callback.accept(result.success, result.validationUrl));
+}
 
+public void submitTransactions(String payloadJson, String bearerToken, Consumer<SubmitResult> callback) {
+    String url = ApiEndpoints.BASE_URL + ApiEndpoints.SUBMIT_TRANSACTIONS;
     HttpRequest request = HttpRequest.newBuilder()
             .uri(URI.create(url))
             .header("Authorization", "Bearer " + bearerToken)
             .header("Content-Type", "application/json")
+            .timeout(Duration.ofMinutes(5))
             .POST(HttpRequest.BodyPublishers.ofString(payloadJson))
             .build();
 
-    new Thread(() -> {
-        boolean success = false;
-        String validationUrl = "";
-        boolean shouldDownloadConfig = false;
+    try { SALES_WORKERS.execute(() -> {
+        SubmitResult result = new SubmitResult();
         String invoiceNumber = "";
-
+        boolean ownsSubmission = false;
         try {
-            // Extract invoice number from payload (for fallback marking)
             JsonReader payloadReader = Json.createReader(new StringReader(payloadJson));
             JsonObject payloadObj = payloadReader.readObject();
-            invoiceNumber = payloadObj
-                    .getJsonObject("invoiceHeader")
-                    .getString("invoiceNumber", "");
+            invoiceNumber = payloadObj.getJsonObject("invoiceHeader").getString("invoiceNumber", "");
+            if (invoiceNumber.isBlank()) throw new IllegalArgumentException("Invoice number is required.");
+            ownsSubmission = SALES_IN_FLIGHT.add(invoiceNumber);
+            if (!ownsSubmission) { result.remark = "Invoice submission is already in progress."; callback.accept(result); return; }
+            if (InvoiceSnapshots.isTransmitted(invoiceNumber)) {
+                result.success = true; try { callback.accept(result); } finally { SALES_IN_FLIGHT.remove(invoiceNumber); } return;
+            }
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
             System.out.println("📨 Submitting Transactions...");
             System.out.println("Status Code: " + response.statusCode());
             System.out.println("Response Body: " + response.body());
@@ -500,64 +457,68 @@ public class ApiClient {
             if (response.statusCode() == 200) {
                 JsonReader reader = Json.createReader(new StringReader(response.body()));
                 JsonObject json = reader.readObject();
+                result.statusCode = json.getInt("statusCode", 0);
+                result.remark = json.getString("remark", "");
 
-                int statusCode = json.getInt("statusCode", 0);
-                String remark = json.getString("remark", "");
-
-                if (statusCode == 1) {
-                    success = true;
-                    if (json.containsKey("data")) {
+                if (result.statusCode == 1) {
+                    result.success = true;
+                    if (json.containsKey("data") && !json.isNull("data")) {
                         JsonObject data = json.getJsonObject("data");
-                        validationUrl = data.getString("validationURL", "");
-                        shouldDownloadConfig = data.getBoolean("shouldDownloadLatestConfig", false);
+                        result.validationUrl = data.getString("validationURL", "");
                     }
-                    System.out.println("✅ Transactions submitted successfully: " + remark);
+                    System.out.println("✅ Transactions submitted successfully: " + result.remark);
                 } else {
-                    System.err.println("⚠️ Submission failed: " + remark);
+                    // Application-level rejection (bad auth code, missing fields, etc.)
+                    result.success = false;
+                    result.networkFailure = false;
+                    System.err.println("⚠️ Submission failed: " + result.remark);
                 }
-
             } else {
-                System.err.println("❌ HTTP error while submitting: " + response.statusCode());
-
-                // Try to interpret the response body
+                // Non-200 — try to read structured error body
                 try {
                     JsonReader reader = Json.createReader(new StringReader(response.body()));
                     JsonObject json = reader.readObject();
+                    result.statusCode = json.getInt("statusCode", 0);
+                    result.remark = json.getString("remark", "");
 
-                    int statusCode = json.getInt("statusCode", 0);
-                    String remark = json.getString("remark", "");
-
-                    // ✅ Invoice already exists — treat as success
-                    if (statusCode == -2 && remark.equalsIgnoreCase("Invoice Number already exists")) {
+                    if (result.statusCode == -2 && result.remark.equalsIgnoreCase("Invoice Number already exists")) {
                         System.out.println("ℹ️ Invoice already exists, marking as transmitted.");
-                        success = true;
-
-                        // Mark as transmitted
+                        result.success = true;
                         Helper.markAsTransmitted(invoiceNumber);
                     } else {
-                        System.err.println("⚠️ Submission failed: " + remark);
+                        // Any other structured rejection — a real business error, not a network issue
+                        result.success = false;
+                        result.networkFailure = false;
+                        System.err.println("⚠️ Submission failed: " + result.remark);
                     }
-
                 } catch (Exception parseEx) {
+                    // Couldn't parse body — treat as network/server issue
+                    result.success = false;
+                    result.networkFailure = true;
+                    result.remark = "HTTP error " + response.statusCode();
                     System.err.println("❌ Failed to parse error response body: " + parseEx.getMessage());
                 }
             }
-
         } catch (Exception e) {
+            // Actual exception (timeout, no connection, etc.) — this is the true "offline" case
+            result.success = false;
+            result.networkFailure = true;
+            result.remark = e.getMessage() != null ? e.getMessage() : "Network error";
             System.err.println("❌ Error during transaction submission: " + e.getMessage());
             e.printStackTrace();
         }
-
-        // Fetch the latest config if instructed
-        if (shouldDownloadConfig) {
-            fetchLatestConfig(bearerToken);
-        }
-
-        String finalValidationUrl = validationUrl;
-        boolean finalSuccess = success;
-
-        Platform.runLater(() -> callback.accept(finalSuccess, finalValidationUrl));
-    }).start();
+        try {
+            if (result.statusCode == -2 && "Invoice Number already exists".equalsIgnoreCase(result.remark)) result.success = true;
+            if (result.success) {
+                Helper.markAsTransmitted(invoiceNumber);
+                if (result.validationUrl != null && !result.validationUrl.isBlank()) Helper.updateValidationUrl(invoiceNumber, result.validationUrl);
+            }
+            callback.accept(result);
+        } finally { if (ownsSubmission) SALES_IN_FLIGHT.remove(invoiceNumber); }
+    }); } catch (java.util.concurrent.RejectedExecutionException ex) {
+        SubmitResult busy = new SubmitResult(); busy.networkFailure = true; busy.remark = "Submission queue is busy. Please retry shortly.";
+        callback.accept(busy);
+    }
 }
 
   
@@ -601,6 +562,9 @@ public boolean fetchLatestConfig(String bearerToken) {
             String invoiceNumber = rs.getString("InvoiceNumber");
             String paymentId = rs.getString("PaymentId");
 
+            String legacySignature = rs.getString("OfflineTransactionSignature");
+            try {
+            String jsonPayload = InvoiceSnapshots.forTransmission(invoiceNumber, () -> {
             InvoiceHeader header = Helper.getInvoiceHeader(invoiceNumber, "", "", paymentId);
             List<LineItemDto> lineItems = Helper.getLineItems(invoiceNumber);
             
@@ -643,7 +607,7 @@ public boolean fetchLatestConfig(String bearerToken) {
 
             invoiceSummary.setTotalVAT(recalculatedTotalVat);
             invoiceSummary.setInvoiceTotal(recalculatedInvoiceTotal);
-            invoiceSummary.setOfflineSignature(rs.getString("OfflineTransactionSignature"));
+            invoiceSummary.setOfflineSignature(legacySignature);
 
             InvoicePayload payload = new InvoicePayload();
             payload.setInvoiceHeader(header);
@@ -651,17 +615,29 @@ public boolean fetchLatestConfig(String bearerToken) {
             payload.setInvoiceSummary(invoiceSummary);
 
             Gson gson = new Gson();
-            String jsonPayload = gson.toJson(payload);
+            return gson.toJson(payload);
+            });
+
             String token = Helper.getToken();
             ApiClient apiClient = new ApiClient();
-            apiClient.submitTransactions(jsonPayload, token, (success, returnedValidationUrl) -> {
-                if (success) {
-                    Helper.markAsTransmitted(invoiceNumber);
-                    System.out.println("✅ Auto-resend success for: " + invoiceNumber);
-                } else {
-                    System.err.println("❌ Auto-resend failed for: " + invoiceNumber);
-                }
-            });
+            apiClient.submitTransactions(jsonPayload, token, result -> {
+    if (result.success) {
+        Helper.markAsTransmitted(invoiceNumber);
+        Helper.updateValidationUrl(invoiceNumber, result.validationUrl);
+        System.out.println("✅ Auto-resend success for: " + invoiceNumber);
+
+    } else if (!result.networkFailure) {
+        // Hard rejection from server — won't fix itself on retry, don't keep resubmitting blindly
+        System.err.println("🚫 Auto-resend rejected for: " + invoiceNumber
+                + " (statusCode=" + result.statusCode + "): " + result.remark);
+
+    } else {
+        // Genuine network failure — safe to leave pending, will retry again next cycle
+        System.err.println("❌ Auto-resend network failure for: " + invoiceNumber
+                + " — " + result.remark);
+    }
+});
+            } catch (Exception ex) { System.err.println("Invoice " + invoiceNumber + " remains pending: " + ex.getMessage()); }
         }
     } catch (SQLException e) {
         System.err.println("❌ Error fetching pending transactions: " + e.getMessage());

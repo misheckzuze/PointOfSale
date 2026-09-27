@@ -25,6 +25,7 @@ C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\EscPosReceiptPrinter.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\model\TerminalUnblockStatusResponse.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\model\CategoryRevenue.java
+C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\helper\ProductSyncService.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\model\InvoiceGenerationRequest.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\model\LevyDto.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\model\LineItemDto.java
@@ -39,10 +40,12 @@ C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\model\InvoiceHeader.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\PrintPreviewDialog.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\AuditLogger.java
+C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\helper\InvoiceSnapshots.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\App.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\data\Database.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\module-info.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\helper\ActivationDataInserter.java
+C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\model\SubmitResult.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\model\TaxTrend.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\ProductLookupDialog.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\SystemInfo.java

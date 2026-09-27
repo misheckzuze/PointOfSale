@@ -1,0 +1,40 @@
+name: Verify Point of Sale
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Build and test
+        run: mvn -B clean verify
+      - name: Verify packaged runtime
+        run: java -jar target/PointOfSale-1.0.jar --verify-runtime
+      - name: Verify updater syntax
+        shell: powershell
+        run: |
+          $tokens = $null; $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD 'scripts/Start-POS.ps1'), [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count) { throw ($errors | Out-String) }
+      - name: Test Git updater with a local repository
+        shell: powershell
+        run: ./scripts/Test-GitUpdater.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PointOfSale-${{ github.sha }}
+          path: |
+            target/PointOfSale-1.0.jar
+            scripts/Start-POS.ps1
+            README.md
+          if-no-files-found: error

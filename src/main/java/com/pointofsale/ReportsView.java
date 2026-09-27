@@ -76,6 +76,7 @@ public class ReportsView {
     private VBox standardRateCard;
     private VBox zeroRatedCard;
     private VBox exemptCard;
+    
 
     // Main method to create the reports view
     public Node getView() {
@@ -128,7 +129,7 @@ public class ReportsView {
         
         presetDatesComboBox = new ComboBox<>();
         presetDatesComboBox.getItems().addAll("Today", "Yesterday", "Last 7 Days", "This Month", "Last Month", "Custom Range");
-        presetDatesComboBox.setValue("This Month");
+        presetDatesComboBox.setValue("Today");
         presetDatesComboBox.setStyle("-fx-background-color: white; -fx-background-radius: 5px;");
         
         // Add listener to preset dates combo box
@@ -142,7 +143,7 @@ public class ReportsView {
         Label fromLabel = new Label("From:");
         fromLabel.setStyle("-fx-font-size: 14px;");
         
-        fromDatePicker = new DatePicker(LocalDate.now().withDayOfMonth(1)); // First day of current month
+        fromDatePicker = new DatePicker(LocalDate.now()); // Todays Date
         fromDatePicker.setStyle("-fx-background-color: white; -fx-background-radius: 5px;");
         
         Label toLabel = new Label("To:");
@@ -214,7 +215,9 @@ public class ReportsView {
     double exemptSales = Helper.fetchExemptSales(fromDate, toDate);
     
     List<ProductSale> topProducts = Helper.getAllProductSalesByDateRange(fromDate, toDate);
-    // CONSOLE DEBUGGING LOGS (Now printing all products explicitly)
+    String tillLabel = Helper.getTerminalLabel();
+
+    // CONSOLE DEBUGGING LOGS (kept for diagnostics — not printed to receipt)
     System.out.println("=========================================");
     System.out.println("DEBUG: TAX BREAKDOWN FOR " + fromDate + " TO " + toDate);
     System.out.println("Gross Sales Revenue: " + totalSales);
@@ -257,6 +260,10 @@ public class ReportsView {
         output.write(new byte[]{0x1B, 0x45, 0x01}); // ESC_EMPHASIZE_ON
         output.write("REPORT SUMMARY\n".getBytes(charset));
         output.write(new byte[]{0x1B, 0x45, 0x00}); // ESC_EMPHASIZE_OFF
+        // Till label — centered, right under the title
+        if (tillLabel != null && !tillLabel.isEmpty()) {
+            output.write(String.format("Till: %s\n", tillLabel).getBytes(charset));
+        }
         
         // Dividers
         output.write("================================================\n".getBytes(charset));
@@ -287,25 +294,6 @@ public class ReportsView {
         writeEscPosLine(output, "Exempt Sales:", String.format("MWK %,.2f", exemptSales), receiptWidth, charset);
         output.write("------------------------------------------------\n".getBytes(charset));
 
-        // Top Item Performance 
-        if (topProducts != null && !topProducts.isEmpty()) {
-            output.write(new byte[]{0x1B, 0x45, 0x01});
-            output.write("PRODUCT SALES\n".getBytes(charset));
-            output.write(new byte[]{0x1B, 0x45, 0x00});
-            output.write(String.format("%-26s %3s %16s\n", "Item Name", "Qty", "Revenue").getBytes(charset));
-            output.write("------------------------------------------------\n".getBytes(charset));
-            for (ProductSale item : topProducts) {
-                String name = item.getProductName();
-                if (name.length() > 24) name = name.substring(0, 22) + "..";
-                output.write(String.format("%-26s %3d %16s\n", 
-                    name, 
-                    item.getQuantity(), 
-                    String.format("%,.2f", item.getRevenue())).getBytes(charset)
-                );
-            }
-            output.write("------------------------------------------------\n".getBytes(charset));
-        }
-
         // Native trailing feeds and hardware cut commands
         output.write(new byte[]{0x0A});
         output.write(new byte[]{0x0A});
@@ -314,19 +302,15 @@ public class ReportsView {
         output.write(new byte[]{0x1D, 0x56, 0x41, 0x10});             // GS_CUT_PAPER
 
         // 3. Dispatch using the working BYTE_ARRAY lookup process
-        PrintService[] services = PrintServiceLookup.lookupPrintServices(null, null);
-        if (services.length > 0) {
-            PrintService targetService = services[0]; // Matches your working logic choice
-            DocPrintJob job = targetService.createPrintJob();
-            Doc doc = new SimpleDoc(output.toByteArray(), DocFlavor.BYTE_ARRAY.AUTOSENSE, null);
-            
-            javax.print.attribute.PrintRequestAttributeSet attrs = new javax.print.attribute.HashPrintRequestAttributeSet();
-            attrs.add(new javax.print.attribute.standard.Copies(1));
-            
-            job.print(doc, attrs);
-        } else {
-            System.err.println("No functional print services found.");
-        }
+        // 3. Dispatch using the same default-printer lookup as EscPosReceiptPrinter
+        PrintService targetService = EscPosReceiptPrinter.findPrintService();
+        DocPrintJob job = targetService.createPrintJob();
+        Doc doc = new SimpleDoc(output.toByteArray(), DocFlavor.BYTE_ARRAY.AUTOSENSE, null);
+
+        javax.print.attribute.PrintRequestAttributeSet attrs = new javax.print.attribute.HashPrintRequestAttributeSet();
+        attrs.add(new javax.print.attribute.standard.Copies(1));
+
+        job.print(doc, attrs);
 
     } catch (Exception e) {
         e.printStackTrace();

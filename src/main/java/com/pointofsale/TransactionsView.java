@@ -78,7 +78,7 @@ public class TransactionsView {
     
     private void initializeComponents() {
         // Initialize DatePickers
-        startDatePicker = new DatePicker(LocalDate.now().minusWeeks(1));
+        startDatePicker = new DatePicker(LocalDate.now());
         endDatePicker = new DatePicker(LocalDate.now());
         
         // Initialize search field
@@ -485,7 +485,7 @@ private Callback<TableColumn<InvoiceDetails, Void>, TableCell<InvoiceDetails, Vo
     }
     
     private void resetFilters() {
-        startDatePicker.setValue(LocalDate.now().minusWeeks(1));
+        startDatePicker.setValue(LocalDate.now());
         endDatePicker.setValue(LocalDate.now());
         searchField.clear();
         statusFilterComboBox.setValue("All");

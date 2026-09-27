@@ -15,6 +15,7 @@ com\pointofsale\model\User.class
 com\pointofsale\ProductManagement$2.class
 com\pointofsale\AuditTrailView$1.class
 com\pointofsale\model\TaxSummary.class
+com\pointofsale\POSDashboard$7.class
 com\pointofsale\model\InvoiceDetails.class
 com\pointofsale\POSDashboard$4.class
 com\pointofsale\ReportsView$1.class
@@ -30,6 +31,7 @@ com\pointofsale\POSDashboard$1.class
 com\pointofsale\model\TerminalUnblockStatusResponse.class
 com\pointofsale\ProductLookupDialog$3.class
 com\pointofsale\POSDashboard.class
+com\pointofsale\helper\ProductSyncService.class
 com\pointofsale\model\Session.class
 com\pointofsale\TransactionsView$1.class
 com\pointofsale\data\Database.class
@@ -57,6 +59,7 @@ com\pointofsale\model\LevyDto.class
 com\pointofsale\CustomersView$4.class
 com\pointofsale\PrintPreviewDialog.class
 com\pointofsale\ReportsView$8.class
+com\pointofsale\helper\InvoiceSnapshots.class
 com\pointofsale\utils\StyleUtils.class
 com\pointofsale\CustomersView$1.class
 com\pointofsale\ProductLookupDialog$2.class
@@ -76,6 +79,7 @@ com\pointofsale\model\TaxRates.class
 com\pointofsale\CustomersView.class
 com\pointofsale\ProductManagement$3.class
 com\pointofsale\model\ProductSale.class
+com\pointofsale\model\SubmitResult.class
 com\pointofsale\AuditTrailView$3.class
 com\pointofsale\model\TerminalBlockingInfo.class
 com\pointofsale\model\CategoryRevenue.class

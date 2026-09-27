@@ -288,18 +288,27 @@ private void toggleBars() {
         return;
     }
 
+    Product itemToSelect;
     if (existingItem != null) {
         existingItem.setQuantity(existingItem.getQuantity() + 1);
         existingItem.updateTotal();
+        itemToSelect = existingItem;
     } else {
         selectedProduct.setQuantity(1);
         cartItems.add(selectedProduct);
+        itemToSelect = selectedProduct;
     }
 
     cartTable.refresh();
     updateTotals();
     barcodeField.clear();
-    barcodeField.requestFocus();
+
+    final Product finalItemToSelect = itemToSelect;
+    Platform.runLater(() -> {
+        cartTable.getSelectionModel().select(finalItemToSelect);
+        cartTable.scrollTo(finalItemToSelect);
+        barcodeField.requestFocus();
+    });
 }
    
  /**
@@ -430,6 +439,30 @@ private void hideLoadingOverlay() {
         Node salesContent = createMainContent();
         setContent(salesContent);
         stage.setTitle("MQ POS System - Sales Dashboard");
+        
+        // ─── ADD THE ROW FACTORY HERE ──────────────────────────────────────
+        // Make sure cartTable is not null before setting the factory
+        if (cartTable != null) {
+            cartTable.setRowFactory(tv -> new TableRow<Product>() {
+                @Override
+                protected void updateItem(Product item, boolean empty) {
+                    super.updateItem(item, empty);
+                    
+                    if (empty || item == null) {
+                        setStyle("");
+                    } else if (isSelected()) {
+                        // Forces the vibrant mouse-click selection color 
+                        // even when focus is on the barcodeField
+                        setStyle("-fx-background: -fx-accent; " +
+                                 "-fx-background-color: -fx-selection-bar; " +
+                                 "-fx-text-fill: -fx-selection-bar-text;");
+                    } else {
+                        setStyle("");
+                    }
+                }
+            });
+        }
+        // ───────────────────────────────────────────────────────────────────
         // ───LINES TO FIX THE ENTER KEY & SCANNER ───
         if (barcodeField != null) {
           barcodeField.setOnAction(e -> addProductToCart());
@@ -1569,12 +1602,12 @@ private void showCheckoutPopup() {
             return;
         }
 
-        boolean isBusiness = !tinInputField.getText().trim().isEmpty();
+        /*boolean isBusiness = !tinInputField.getText().trim().isEmpty();
         if (isBusiness && authInputField.getText().trim().isEmpty()) {
             showAlert("Authorization Required", "Business purchase requires a buyer authorization code.");
             authInputField.requestFocus();
             return;
-        }
+        }*/
 
         cashAmountField.setText(formatPlainAmount(tendered));
         customerNamesField.setText(nameField.getText());
@@ -1824,6 +1857,7 @@ private Button createResponsiveSecondaryActionButton(String text, double fontSiz
     }
 
     // Check if item already exists in cart
+    Product selectedItem = null;
     boolean found = false;
     for (Product item : cartItems) {
         if (item.getBarcode().equals(newItem.getBarcode())) {
@@ -1837,6 +1871,7 @@ private Button createResponsiveSecondaryActionButton(String text, double fontSiz
             item.setQuantity(item.getQuantity() + 1);
             item.updateTotal();
             found = true;
+            selectedItem = item;
             break;
         }
     }
@@ -1850,13 +1885,21 @@ private Button createResponsiveSecondaryActionButton(String text, double fontSiz
         newItem.setQuantity(1);
         newItem.updateTotal();
         cartItems.add(newItem);
+        selectedItem = newItem;
     }
 
     cartTable.refresh();
     updateTotals();
     barcodeField.clear();
-    
-    Platform.runLater(() -> barcodeField.requestFocus());
+
+    // Highlight/select the row that was just added or updated, so F6/F7
+    // work on it immediately without the cashier needing to click it.
+    final Product itemToSelect = selectedItem;
+    Platform.runLater(() -> {
+        cartTable.getSelectionModel().select(itemToSelect);
+        cartTable.scrollTo(itemToSelect);
+        barcodeField.requestFocus();
+    });
 }
 
     /**
@@ -2097,7 +2140,7 @@ private void updateChangeCalculation() {
     boolean isBusiness = tinField.getText() != null && !tinField.getText().trim().isEmpty();
     String authCode = buyerAuthField.getText();
 
-    if (isBusiness) {
+    /*if (isBusiness) {
         if (authCode == null || authCode.trim().isEmpty()) {
             hideLoadingOverlay();
             Alert alert = new Alert(Alert.AlertType.WARNING);
@@ -2130,7 +2173,7 @@ private void updateChangeCalculation() {
         });
 
         return;
-    }
+    }*/
 
     continueAfterValidation();
 }
@@ -2152,133 +2195,149 @@ private void updateChangeCalculation() {
         });
         return;
     }
-
-    Helper.checkAndHandleTerminalBlocking(isAllowed -> {
-        if (isAllowed) {
-            Platform.runLater(this::proceedWithPayment);
-        }
-        else {
-            Platform.runLater(this::hideLoadingOverlay);
-        }
-    });
+    // Instant, no network call. The blocking alert itself was already shown
+    // by the background check (checkAndHandleTerminalBlocking, run periodically
+    // via refreshTerminalBlockingStatus) — this just enforces the result.
+    boolean isAllowed = Helper.isCheckoutAllowedCached();
+    if (isAllowed) {
+        Platform.runLater(this::proceedWithPayment);
+    } else {
+        Platform.runLater(this::hideLoadingOverlay);
+        // No alert here — avoids double-alerting on top of the background check's own popup.
+    }
+    
 }
 
     private void proceedWithPayment() {
-    
+
     String selectedPaymentMethod = paymentMethodComboBox.getValue();
     String buyerTIN = tinField.getText().trim();
     String buyersName = customerNamesField.getText().trim();
     String amountTenderedText = cashAmountField.getText().trim();
     double amountTendered = Double.parseDouble(amountTenderedText);
-    String changeValueText = changeValueLabel.getText();
-    changeValueText = changeValueText.replace("MK", "").replace(",", "").trim();
-    double changeValue = Double.parseDouble(changeValueText);
+    double changeValue = Math.round((amountTendered - totalAmount) * 100.0) / 100.0;
     String buyersTIN = !buyerTIN.isEmpty() ? buyerTIN : "";
+    boolean isB2BTransaction = !buyerTIN.isEmpty();
 
     String buyerName = !buyersName.isEmpty() ? buyersName : "";
-    
+
     if (cartItems.isEmpty()) {
         hideLoadingOverlay();
         showAlert("Error", "Cart is empty. Please add items before processing payment.");
         return;
-    }        
-    
-    // Confirmation already happened in processPayment() — spinner is already showing, proceed directly
+    }
+
     String invoiceNumber = generateNewReceiptNumber();
-    
     String buyerAuthorizationCode = buyerAuthField.getText().trim();
-    
+
     // 1. Build invoice header
     InvoiceHeader invoiceHeader = Helper.getInvoiceHeader(invoiceNumber, buyerTIN, buyerAuthorizationCode, selectedPaymentMethod);
-    
-    // ADD VAT5 CERTIFICATE INFO TO INVOICE HEADER IF EXEMPT
+
     if (isVat5Exempt && currentVat5Data != null) {
-    Vat5CertificateDetails vat5Details = new Vat5CertificateDetails();
-    vat5Details.projectNumber = currentVat5Data.projectNumber;
-    vat5Details.certificateNumber = currentVat5Data.vat5CertificateNumber;
-    vat5Details.quantity = currentVat5Data.quantity;
-    
-    invoiceHeader.setVat5CertificateDetails(vat5Details);
-    invoiceHeader.setReliefSupply(true);
-}
+        Vat5CertificateDetails vat5Details = new Vat5CertificateDetails();
+        vat5Details.projectNumber = currentVat5Data.projectNumber;
+        vat5Details.certificateNumber = currentVat5Data.vat5CertificateNumber;
+        vat5Details.quantity = currentVat5Data.quantity;
+
+        invoiceHeader.setVat5CertificateDetails(vat5Details);
+        invoiceHeader.setReliefSupply(true);
+    }
 
     // 2. Convert products to line items WITH VAT5 EXEMPTION APPLIED
-    List<LineItemDto> lineItems = createLineItems(); // Use new method
+    List<LineItemDto> lineItems = createLineItems();
 
     // 3. Build invoice summary WITH CORRECT VAT CALCULATION
     InvoiceSummary invoiceSummary = new InvoiceSummary();
     List<TaxBreakDown> taxBreakdowns = Helper.generateTaxBreakdown(lineItems);
-    
-    // Calculate totals from line items (which already have VAT exemption applied)
-double totalVATAmount = lineItems.stream().mapToDouble(LineItemDto::getTotalVAT).sum();
-double invoiceTotal = lineItems.stream().mapToDouble(LineItemDto::getTotal).sum();
 
-// Clean up any binary precision issues right here
-totalVATAmount = Math.round(totalVATAmount * 100.0) / 100.0;
-invoiceTotal = Math.round(invoiceTotal * 100.0) / 100.0;
-    
-    //Including Levies
-    //Including Levies (VAT-excluded)
-List<LevyDto> activeLevies = Helper.getActiveLevies();
-List<LevyBreakDownDto> levyBreakDowns = new ArrayList<>();
-double totalLevies = 0.0;
+    double totalVATAmount = lineItems.stream().mapToDouble(LineItemDto::getTotalVAT).sum();
+    double invoiceTotal = lineItems.stream().mapToDouble(LineItemDto::getTotal).sum();
+    totalVATAmount = Math.round(totalVATAmount * 100.0) / 100.0;
+    invoiceTotal = Math.round(invoiceTotal * 100.0) / 100.0;
 
-// Sum ALL percentage levy rates first so net back-calculation is accurate
-double totalLevyRate = activeLevies.stream()
-        .filter(l -> "PERCENTAGE".equalsIgnoreCase(l.getChargeMode()))
-        .mapToDouble(LevyDto::getRate)
-        .sum();
+    // Levies (VAT-excluded)
+    List<LevyDto> activeLevies = Helper.getActiveLevies();
+    List<LevyBreakDownDto> levyBreakDowns = new ArrayList<>();
 
-for (LevyDto levy : activeLevies) {
-    LevyBreakDownDto levyDto = new LevyBreakDownDto();
-    levyDto.setLevyTypeId(levy.getId());
-    levyDto.setLevyRate(levy.getRate());
+    double totalLevyRate = activeLevies.stream()
+            .filter(l -> "PERCENTAGE".equalsIgnoreCase(l.getChargeMode()))
+            .mapToDouble(LevyDto::getRate)
+            .sum();
 
-    double levyAmount = 0.0;
+    for (LevyDto levy : activeLevies) {
+        LevyBreakDownDto levyDto = new LevyBreakDownDto();
+        levyDto.setLevyTypeId(levy.getId());
+        levyDto.setLevyRate(levy.getRate());
 
-    for (LineItemDto item : lineItems) {
-        double lineTotal = item.getTotal();     // Net + VAT + all Levies
-        double totalVAT  = item.getTotalVAT();   // Actual VAT amount
+        double levyAmount = 0.0;
+        for (LineItemDto item : lineItems) {
+            double lineTotal = item.getTotal();
+            double itemVAT = item.getTotalVAT();
+            double netPlusLevies = lineTotal - itemVAT;
+            double netTotal = netPlusLevies / (1 + totalLevyRate / 100.0);
 
-        // Net + Levies = Total - VAT
-        double netPlusLevies = lineTotal - totalVAT;
+            double itemLevy = "PERCENTAGE".equalsIgnoreCase(levy.getChargeMode())
+                    ? (netTotal * levy.getRate()) / 100.0
+                    : levy.getRate() * item.getQuantity();
 
-        // Net = (Net + Levies) / (1 + totalLevyRate / 100)
-        double netTotal = netPlusLevies / (1 + totalLevyRate / 100.0);
+            levyAmount += itemLevy;
+        }
 
-        // Apply this specific levy's rate on the clean net
-        double itemLevy = "PERCENTAGE".equalsIgnoreCase(levy.getChargeMode())
-                ? (netTotal * levy.getRate()) / 100.0
-                : levy.getRate() * item.getQuantity();  // flat rate per unit
-
-        levyAmount += itemLevy;
+        levyDto.setLevyAmount(Math.round(levyAmount * 100.0) / 100.0);
+        levyBreakDowns.add(levyDto);
     }
 
-    levyDto.setLevyAmount(Math.round(levyAmount * 100.0) / 100.0);    levyBreakDowns.add(levyDto);
-    totalLevies += levyAmount;
-}
-
-invoiceSummary.setLevyBreakDown(levyBreakDowns);
-    
+    invoiceSummary.setLevyBreakDown(levyBreakDowns);
     invoiceSummary.setTaxBreakDown(taxBreakdowns);
     invoiceSummary.setTotalVAT(totalVATAmount);
     invoiceSummary.setInvoiceTotal(invoiceTotal);
     invoiceSummary.setOfflineSignature("");
-    invoiceSummary.setAmountTendered(amountTendered); 
+    invoiceSummary.setAmountTendered(amountTendered);
 
-    // 4. Put everything into the payload
-    InvoicePayload payload = new InvoicePayload();
-    payload.setInvoiceHeader(invoiceHeader);
-    payload.setInvoiceLineItems(lineItems);
-    payload.setInvoiceSummary(invoiceSummary);
-    
     double totalVAT = invoiceSummary.getTotalVAT();
-    String offlineSignature = invoiceSummary.getOfflineSignature();
-    boolean isTransmitted = false; 
-    String paymentId = paymentMethodComboBox.getValue();
     double amountPaid = totalAmount;
+    String paymentId = paymentMethodComboBox.getValue();
 
-    // Save locally before transmitting
+    if (isB2BTransaction) {
+        // B2B: requires a live online check BEFORE anything is saved or printed.
+        submitB2BOnlineFirst(invoiceHeader, buyerName, buyersTIN, buyerAuthorizationCode,
+                lineItems, taxBreakdowns, levyBreakDowns, invoiceSummary,
+                amountTendered, changeValue, totalVAT, amountPaid, paymentId);
+    } else {
+        // B2C: offline-first. Save locally and print immediately — the background
+        // sync job will transmit it to the tax authority whenever connectivity allows.
+        processOfflineFirstB2C(invoiceHeader, buyerName, buyersTIN, invoiceNumber,
+                lineItems, taxBreakdowns, levyBreakDowns, invoiceSummary,
+                amountTendered, changeValue, totalVAT, amountPaid, paymentId);
+    }
+}
+
+/**
+ * Offline-first flow for B2C sales: save locally as pending, print the offline
+ * receipt right away, and let the background sync job transmit it later.
+ * No network call happens here at all.
+ */
+private void processOfflineFirstB2C(InvoiceHeader invoiceHeader, String buyerName, String buyersTIN,
+                                     String invoiceNumber, List<LineItemDto> lineItems,
+                                     List<TaxBreakDown> taxBreakdowns, List<LevyBreakDownDto> levyBreakDowns,
+                                     InvoiceSummary invoiceSummary, double amountTendered, double changeValue,
+                                     double totalVAT, double amountPaid, String paymentId) {
+
+    String validationUrl;
+    try {
+        InvoiceGenerationRequest generationRequest = new InvoiceGenerationRequest();
+        generationRequest.numItems = lineItems.size();
+        generationRequest.transactiondate = LocalDateTime.parse(invoiceHeader.getInvoiceDateTime());
+        generationRequest.invoiceTotal = amountPaid;
+        generationRequest.vatAmount = totalVAT;
+        generationRequest.invoiceNumber = invoiceNumber;
+        validationUrl = Helper.generateOfflineReceiptSignature(generationRequest, Helper.getSecretKey());
+        invoiceSummary.setOfflineSignature(validationUrl.split("S=", 2)[1]);
+    } catch (Exception ex) {
+        hideLoadingOverlay();
+        showAlert("Error", "Could not sign the offline invoice. No transaction was saved.");
+        return;
+    }
     boolean saveSuccess = Helper.saveTransaction(
         invoiceHeader,
         lineItems,
@@ -2286,131 +2345,162 @@ invoiceSummary.setLevyBreakDown(levyBreakDowns);
         levyBreakDowns,
         totalAmount,
         totalVAT,
-        offlineSignature,
-        "",
-        isTransmitted,
+        invoiceSummary.getOfflineSignature(),
+        validationUrl,
+        false, // isTransmitted — background job will flip this once synced
         paymentId,
         amountTendered
     );
 
     if (saveSuccess) {
-        System.out.println("Transaction saved locally.");
+        System.out.println("Transaction saved locally (pending sync).");
         if (isVat5Exempt) {
             System.out.println("VAT5 Certificate Applied - VAT Amount: " + formatCurrency(totalVAT));
         }
     } else {
         System.err.println("Failed to save transaction locally.");
+        hideLoadingOverlay();
+        showAlert("Error", "Could not save the transaction. Please try again.");
+        return;
     }
-    
-    // Step 5: Convert to JSON
+
+    hideLoadingOverlay();
+
+    try {
+        EscPosReceiptPrinter.printReceipt(
+            invoiceHeader, buyerName, buyersTIN, lineItems,
+            validationUrl, amountTendered, changeValue,
+            taxBreakdowns, levyBreakDowns
+        );
+        System.out.println("Offline receipt printed.");
+    } catch (Exception e) {
+        e.printStackTrace();
+        System.err.println("Failed to print offline receipt.");
+    }
+
+    Alert savedAlert = new Alert(Alert.AlertType.INFORMATION);
+    savedAlert.setTitle("Transaction Status");
+    savedAlert.setHeaderText("✅ Transaction Processed!");
+    String savedMessage = "The transaction was processed successfully.";
+    if (isVat5Exempt) {
+        savedMessage += "\n\n✓ VAT5 Certificate Applied\nVAT Amount: " + formatCurrency(totalVAT);
+    }
+    savedAlert.setContentText(savedMessage);
+    savedAlert.showAndWait();
+
+    receiptNumberLabel.setText(generateNewReceiptNumber());
+    resetCartAndFields();
+}
+
+/**
+ * B2B flow: sale requires a live server round-trip to validate the buyer TIN and
+ * Purchase Authorization Code before anything is saved or printed. Nothing is
+ * persisted locally unless the server confirms success.
+ */
+private void submitB2BOnlineFirst(InvoiceHeader invoiceHeader, String buyerName, String buyersTIN,
+                                   String buyerAuthorizationCode, List<LineItemDto> lineItems,
+                                   List<TaxBreakDown> taxBreakdowns, List<LevyBreakDownDto> levyBreakDowns,
+                                   InvoiceSummary invoiceSummary, double amountTendered, double changeValue,
+                                   double totalVAT, double amountPaid, String paymentId) {
+
+    InvoicePayload payload = new InvoicePayload();
+    payload.setInvoiceHeader(invoiceHeader);
+    payload.setInvoiceLineItems(lineItems);
+    payload.setInvoiceSummary(invoiceSummary);
+
     Gson gson = new Gson();
     String jsonPayload = gson.toJson(payload);
     String bearerToken = Helper.getToken();
-    System.out.println("Payload: " + jsonPayload);
+    System.out.println("B2B Payload: " + jsonPayload);
 
-    // Step 6: Submit the request
     ApiClient apiClient = new ApiClient();
-    System.out.println("Payload: " + jsonPayload);
 
-    
-    apiClient.submitTransactions(jsonPayload, bearerToken, (success, returnedValidationUrl) -> {
+    apiClient.submitTransactions(jsonPayload, bearerToken, result -> {
         Platform.runLater(() -> {
-            hideLoadingOverlay();   // NEW — processing is done, hide spinner before showing result
-            if (success) {
-                Helper.updateValidationUrl(invoiceHeader.getInvoiceNumber(), returnedValidationUrl);
+            hideLoadingOverlay();
+
+            if (result.success) {
                 Helper.markAsTransmitted(invoiceHeader.getInvoiceNumber());
-                
+
+                boolean saveSuccess = Helper.saveTransaction(
+                    invoiceHeader,
+                    lineItems,
+                    taxBreakdowns,
+                    levyBreakDowns,
+                    totalAmount,
+                    totalVAT,
+                    "",
+                    result.validationUrl,
+                    true, // isTransmitted — confirmed by server already
+                    paymentId,
+                    amountTendered
+                );
+                if (!saveSuccess) {
+                    System.err.println("Warning: B2B transaction transmitted but failed to save locally.");
+                }
+                Helper.updateValidationUrl(invoiceHeader.getInvoiceNumber(), result.validationUrl);
+
                 try {
                     EscPosReceiptPrinter.printReceipt(
-                        invoiceHeader,
-                        buyerName,
-                        buyersTIN,
-                        lineItems,
-                        returnedValidationUrl, 
-                        amountTendered, 
-                        changeValue,
-                        taxBreakdowns,
-                        levyBreakDowns
+                        invoiceHeader, buyerName, buyersTIN, lineItems,
+                        result.validationUrl, amountTendered, changeValue,
+                        taxBreakdowns, levyBreakDowns
                     );
-                    System.out.println("Premium receipt printed successfully.");
+                    System.out.println("Premium B2B receipt printed successfully.");
                 } catch (Exception e) {
                     System.err.println("Failed to print receipt: " + e.getMessage());
                     e.printStackTrace();
                 }
-                
+
                 Alert successAlert = new Alert(Alert.AlertType.INFORMATION);
                 successAlert.setTitle("Transaction Status");
                 successAlert.setHeaderText("🎉 Transaction Processed!");
-                
-                String successMessage = "The transaction was processed successfully.";
+                String successMessage = "The B2B transaction was processed successfully.";
                 if (isVat5Exempt) {
-                    successMessage += "\n\n✓ VAT5 Certificate Applied"
-                        + "\nVAT Amount: " + formatCurrency(totalVAT);
+                    successMessage += "\n\n✓ VAT5 Certificate Applied\nVAT Amount: " + formatCurrency(totalVAT);
                 }
-                
                 successAlert.setContentText(successMessage);
                 successAlert.showAndWait();
+
+                receiptNumberLabel.setText(generateNewReceiptNumber());
+                resetCartAndFields();
+
+            } else if (!result.networkFailure) {
+                // Hard rejection from the API (e.g. missing Purchase Authorization Code).
+                Alert rejectedAlert = new Alert(Alert.AlertType.ERROR);
+                rejectedAlert.setTitle("Transaction Rejected");
+                rejectedAlert.setHeaderText("🚫 Submission Rejected by Server");
+                rejectedAlert.setContentText(result.remark);
+                rejectedAlert.showAndWait();
+                // Nothing was saved, so there's nothing to clean up.
+                // Cart is left intact so the cashier can correct and retry.
+
             } else {
-                Alert failureAlert = new Alert(Alert.AlertType.ERROR);
-                failureAlert.setTitle("Transaction Status");
-                failureAlert.setHeaderText("🚨 Processing Offline!");
-                failureAlert.setContentText("Saved locally. Will sync automatically when online.");
-                failureAlert.showAndWait();
-                
-                long transactionCount = 0;
-                InvoiceDetails lastDetails = Helper.getLastInvoiceDetails();
-
-                if (lastDetails != null) {
-                    transactionCount = Helper.convertSequentialToBase10(lastDetails.getInvoiceNumber()) + 1;      
-                }
-                
-                try {
-                    InvoiceGenerationRequest generationRequest = new InvoiceGenerationRequest();
-                    generationRequest.numItems = lineItems.size();
-                    generationRequest.transactiondate = LocalDateTime.now();
-                    generationRequest.transactionCount = transactionCount + 1;
-                    generationRequest.invoiceTotal = amountPaid;
-                    generationRequest.vatAmount = totalVAT;
-                    generationRequest.invoiceNumber = invoiceNumber;
-
-                    String secretKey = Helper.getSecretKey();
-                    String validationUrl = Helper.generateOfflineReceiptSignature(generationRequest, secretKey);
-
-                    invoiceSummary.setOfflineSignature(validationUrl.split("S=")[1]);
-                    
-                    Helper.updateOfflineTransactionDetails(invoiceHeader.getInvoiceNumber(), validationUrl, invoiceSummary.getOfflineSignature());
-
-                    EscPosReceiptPrinter.printReceipt(
-                        invoiceHeader,
-                        buyerName,
-                        buyersTIN,
-                        lineItems,
-                        validationUrl,
-                        amountTendered,
-                        changeValue,
-                        taxBreakdowns,
-                        levyBreakDowns
-                    );
-                    System.out.println("Offline receipt printed.");
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    System.err.println("Failed to print offline receipt.");
-                }
+                // Genuine network failure — B2B cannot proceed offline.
+                Alert b2bOfflineBlocked = new Alert(Alert.AlertType.ERROR);
+                b2bOfflineBlocked.setTitle("Cannot Process B2B Offline");
+                b2bOfflineBlocked.setHeaderText("🌐 No Connection — B2B Sale Requires Online Validation");
+                b2bOfflineBlocked.setContentText(
+                    "This is a B2B transaction and requires a live connection to validate the " +
+                    "Purchase Authorization Code and buyer TIN. Please check your connection and try again."
+                );
+                b2bOfflineBlocked.showAndWait();
+                // Nothing was saved, so there's nothing to delete.
+                // Cart is left intact so the cashier can retry once online.
             }
         });
     });
-    
-    // Reset cart and generate new receipt number
+}
+
+private void resetCartAndFields() {
     cartItems.clear();
     cashAmountField.clear();
     tinField.clear();
-    isVat5Exempt = false;  // Reset VAT5 exemption
-    currentVat5Data = null;  // Clear VAT5 data
+    isVat5Exempt = false;
+    currentVat5Data = null;
     buyerAuthField.clear();
     customerNamesField.clear();
-    cashAmountField.clear();
     lastAutoFilledCashAmount = "";
-    receiptNumberLabel.setText(generateNewReceiptNumber());
     updateTotals();
 }
     
@@ -2504,7 +2594,7 @@ private void applyDiscount() {
     cartOption.setToggleGroup(scopeGroup);
     
     if (selectedProduct != null) {
-        itemOption.setSelected(true);
+        cartOption.setSelected(true);
         scopeBox.getChildren().addAll(new Label("Discount Scope:"), itemOption, cartOption);
     } else {
         cartOption.setSelected(true);
@@ -2531,8 +2621,8 @@ private void applyDiscount() {
                 double discountValue = Double.parseDouble(discountValueField.getText());
                 boolean isPercentage = percentageOption.isSelected();
                 
-                if (discountValue <= 0) {
-                    showAlert("Invalid Discount", "Please enter a discount value greater than zero.");
+                if (discountValue < 0) {
+                    showAlert("Invalid Discount", "Discount value cannot be negative.");
                     return;
                 }
                 
@@ -4259,13 +4349,13 @@ private void restoreHeldSale(HeldSale sale) {
     cartDiscountAmount = sale.getCartDiscountAmount();
     cartDiscountPercent = sale.getCartDiscountPercent();
     
-    // Update customer info if available
+    // Restore customer name/TIN directly into the hidden data-holder fields —
+    // these get read into the checkout popup the next time it's opened.
     if (sale.getCustomerName() != null && !sale.getCustomerName().isEmpty()) {
-        VBox customerInfoBox = (VBox) ((VBox) root.getRight()).getChildren().get(0).lookup(".customer-info-box");
-        if (customerInfoBox != null) {
-            ((TextField) customerInfoBox.getChildren().get(1)).setText(sale.getCustomerName());
-            ((TextField) customerInfoBox.getChildren().get(2)).setText(sale.getCustomerTIN());
-        }
+        customerNamesField.setText(sale.getCustomerName());
+    }
+    if (sale.getCustomerTIN() != null && !sale.getCustomerTIN().isEmpty()) {
+        tinField.setText(sale.getCustomerTIN());
     }
 
     // Remove the held sale from the database

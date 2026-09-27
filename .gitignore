@@ -1,0 +1,8 @@
+/target/
+/dependency-reduced-pom.xml
+/MQPointOfSale/
+/installer/
+/hs_err_pid*.log
+/replay_pid*.log
+*.db-wal
+*.db-shm

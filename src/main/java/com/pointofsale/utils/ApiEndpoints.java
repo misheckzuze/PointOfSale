@@ -3,7 +3,7 @@ package com.pointofsale.utils;
 
 public class ApiEndpoints {
     
-    public static final String BASE_URL = "https://eis-api.mra.mw/api/v1";
+    public static final String BASE_URL = System.getProperty("pos.api.baseUrl", "https://eis-api.mra.mw/api/v1");
 
     // Onboarding
     public static final String ACTIVATE_TERMINAL = "/onboarding/activate-terminal";
@@ -28,7 +28,7 @@ public class ApiEndpoints {
     
     //OfflineSignature url
     
-    public static String OFFLINE_VALIDATION_BASE_URL = "https://eis-portal.mra.mw/ReceiptValidation/Validate";
+    public static String OFFLINE_VALIDATION_BASE_URL = System.getProperty("pos.receipts.baseUrl", "https://eis-portal.mra.mw/ReceiptValidation/Validate");
     
     //ping endpoint
     

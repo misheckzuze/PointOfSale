@@ -58,6 +58,8 @@ public class EscPosReceiptPrinter {
         String storeAddress = contact.addressLine;
         String storePhone = contact.phone;
         String vatStatus = Helper.isVATRegistered() ? "*VAT REGISTERED*" : "*NOT VAT REGISTERED*";
+        String tillLabel = Helper.getTerminalLabel();
+
         
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         String currentDateTime = LocalDateTime.now().format(formatter);
@@ -95,6 +97,12 @@ public class EscPosReceiptPrinter {
             output.write(LF);
             output.write(vatStatus.getBytes(CHARSET));
             output.write(LF);
+            // Till label
+            if (tillLabel != null && !tillLabel.isEmpty()) {
+               output.write(("Till: " + tillLabel).getBytes(CHARSET));
+               output.write(LF);
+            }
+        
             output.write(LF);
             
             // Receipt Title
@@ -359,7 +367,7 @@ private static void sendToPrinter(byte[] data) throws PrintException {
  * falls back to enumeration only if that fails, and retries briefly to give the
  * Windows spooler time to finish resolving printer capabilities after a cold boot.
  */
-private static PrintService findPrintService() throws PrintException {
+public static PrintService findPrintService() throws PrintException {
     PrintService service = PrintServiceLookup.lookupDefaultPrintService();
     if (service != null) {
         return service;

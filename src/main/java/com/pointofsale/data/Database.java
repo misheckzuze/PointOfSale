@@ -13,7 +13,9 @@ public class Database {
         boolean isDevelopment = java.lang.management.ManagementFactory.getRuntimeMXBean()
                 .getInputArguments().toString().contains("jdwp");
 
-        if (isDevelopment) {
+        if (System.getProperty("pos.database.path") != null) {
+            DB_PATH = System.getProperty("pos.database.path");
+        } else if (isDevelopment) {
             DB_PATH = System.getProperty("user.dir") + File.separator + "MQPointOfSale" + File.separator + DB_NAME;
         } else {
             DB_PATH = System.getProperty("user.home") + File.separator + "AppData" + File.separator + "Roaming"
@@ -31,12 +33,14 @@ public class Database {
     }
 
     public static Connection connOpen() throws SQLException {
-        return DriverManager.getConnection("jdbc:sqlite:" + DB_PATH);
+    return DriverManager.getConnection("jdbc:sqlite:" + DB_PATH + "?journal_mode=WAL&synchronous=NORMAL&busy_timeout=5000"); 
     }
 
     public static void initializeDatabase() {
         try (Connection conn = connOpen(); Statement stmt = conn.createStatement()) {
             stmt.execute("PRAGMA foreign_keys = ON;");
+            stmt.execute("PRAGMA journal_mode = WAL;");
+            stmt.execute("PRAGMA synchronous = NORMAL;");
 
             // Creating existing tables
             String createProductsTable = "CREATE TABLE IF NOT EXISTS Products (" +
@@ -259,6 +263,13 @@ public class Database {
             stmt.execute(createProductsTable);
             stmt.execute(createUsersTable);
             stmt.execute(createInvoicesTable);
+            boolean hasPayload = false;
+            try (ResultSet columns = stmt.executeQuery("PRAGMA table_info(Invoices)")) {
+                while (columns.next()) if ("Payload".equalsIgnoreCase(columns.getString("name"))) hasPayload = true;
+            }
+            if (!hasPayload) stmt.execute("ALTER TABLE Invoices ADD COLUMN Payload TEXT");
+            stmt.execute("CREATE TABLE IF NOT EXISTS ProductSyncState (Id INTEGER PRIMARY KEY, SalesRevision INTEGER NOT NULL DEFAULT 0)");
+            stmt.execute("INSERT OR IGNORE INTO ProductSyncState (Id, SalesRevision) VALUES (1, 0)");
             stmt.execute(createLineItemsTable);
             stmt.execute(createDiscountsTable);
             stmt.execute(createTerminalSitesTable);
@@ -280,6 +291,13 @@ public class Database {
             stmt.execute(createActivatedTaxRatesTable);
             stmt.execute(createLeviesTable);
             stmt.execute(createInvoiceLeviesTable);
+            for (String table : new String[] {"Invoices", "LineItems"}) {
+                for (String action : new String[] {"INSERT", "UPDATE", "DELETE"}) {
+                    stmt.execute("CREATE TRIGGER IF NOT EXISTS ProductSync_" + table + "_" + action
+                            + " AFTER " + action + " ON " + table
+                            + " BEGIN UPDATE ProductSyncState SET SalesRevision=SalesRevision+1 WHERE Id=1; END");
+                }
+            }
 
 
             System.out.println("All SQLite tables created and initialized at: " + DB_PATH);
@@ -292,6 +310,6 @@ public class Database {
     }
 
     public static Connection createConnection() throws SQLException {
-        return DriverManager.getConnection("jdbc:sqlite:" + DB_PATH);
+    return DriverManager.getConnection("jdbc:sqlite:" + DB_PATH + "?journal_mode=WAL&synchronous=NORMAL&busy_timeout=5000");  
     }
 }

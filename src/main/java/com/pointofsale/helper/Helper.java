@@ -66,6 +66,9 @@ import java.util.stream.Collectors;
 
 
 public class Helper {
+    private static volatile boolean terminalBlockedCache = false;
+    private static volatile boolean terminalBlockCacheInitialized = false;
+    
 
     public static void updateActivateButtonState(TextField codeField, CheckBox checkbox, Button activateBtn) {
         boolean isCodeEntered = !codeField.getText().trim().isEmpty();
@@ -870,25 +873,57 @@ public static void loadUserDetails() {
     }
     
     public static long convertSequentialToBase10(String invoiceNumber) {
-    if (invoiceNumber == null || !invoiceNumber.contains("-")) return 0;
+    if (invoiceNumber == null || invoiceNumber.isBlank() || !invoiceNumber.contains("-")) {
+        return 0;
+    }
 
-    String[] parts = invoiceNumber.split("-");
-    if (parts.length != 4) return 0;
+    // IMPORTANT: split with a limit of 4 so that any '-' characters legitimately
+    // present inside the base64 serial itself (position 62 of our alphabet) stay
+    // part of the last segment, instead of fragmenting it into extra parts.
+    String[] parts = invoiceNumber.split("-", 4);
+    if (parts.length != 4) {
+        System.err.println("❌ Unexpected invoice number format (expected 4 parts): " + invoiceNumber);
+        return 0;
+    }
 
     try {
         return base64ToBase10(parts[3]);
-       } catch (Exception e) {
-        System.err.println("❌ Failed to decode invoice serial: " + e.getMessage());
+    } catch (Exception e) {
+        System.err.println("❌ Failed to decode invoice serial '" + parts[3] + "' from '" + invoiceNumber + "': " + e.getMessage());
         return 0;
-       }
-   }
+    }
+}
 
-  public static long base64ToBase10(String base64) {
+public static long base64ToBase10(String base64) {
+    if (base64 == null || base64.isBlank()) {
+        throw new IllegalArgumentException("Base64 segment is null or empty");
+    }
+
     String base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+    // Normalize away every known source of mismatch:
+    //  - any whitespace (not just leading/trailing — covers embedded newlines/tabs too)
+    //  - standard Base64 padding ('=' / '==')
+    //  - standard Base64's '+' and '/' mapped onto URL-safe '-' and '_' (positions 62/63)
+    String normalized = base64
+            .replaceAll("\\s+", "")
+            .replace("=", "")
+            .replace('+', '-')
+            .replace('/', '_');
+
+    if (normalized.isEmpty()) {
+        throw new IllegalArgumentException("Base64 segment was empty after normalization: '" + base64 + "'");
+    }
+
     long result = 0;
-    for (int i = 0; i < base64.length(); i++) {
-        int index = base64Chars.indexOf(base64.charAt(i));
-        if (index == -1) throw new IllegalArgumentException("Invalid Base64 character: " + base64.charAt(i));
+    for (int i = 0; i < normalized.length(); i++) {
+        char c = normalized.charAt(i);
+        int index = base64Chars.indexOf(c);
+        if (index == -1) {
+            throw new IllegalArgumentException(
+                "Invalid Base64 character '" + c + "' at position " + i + " in segment: '" + base64 + "'"
+            );
+        }
         result = result * 64 + index;
     }
     return result;
@@ -1093,11 +1128,17 @@ public static boolean saveTransaction(
         String paymentId,
         double amountPaid
 ) {
+    // The invoice, signature column and signed JSON must commit together.
+    // Existing legacy rows are unaffected; this only guards new offline saves.
+    if (!isTransmitted && (offlineSignature == null || offlineSignature.isBlank())) {
+        System.err.println("Cannot save an offline invoice without its offline signature.");
+        return false;
+    }
     if (amountPaid == 0) {
         amountPaid = total;
     }
 
-    String insertInvoiceQuery = "INSERT INTO Invoices (InvoiceNumber, InvoiceDateTime, InvoiceTotal, SellerTin, BuyerTin, TotalVAT, OfflineTransactionSignature, ValidationUrl, IsReliefSupply, State, PaymentId, AmountPaid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    String insertInvoiceQuery = "INSERT INTO Invoices (InvoiceNumber, InvoiceDateTime, InvoiceTotal, SellerTin, BuyerTin, TotalVAT, OfflineTransactionSignature, ValidationUrl, IsReliefSupply, State, PaymentId, AmountPaid, Payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
     String insertLineItemQuery = "INSERT INTO LineItems (ProductCode, Description, Quantity, TaxRateID, Discount, UnitPrice, TotalPrice, DiscountAmount, VATRate, IsProduct, VATAmount, InvoiceNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
@@ -1105,7 +1146,7 @@ public static boolean saveTransaction(
     
     String insertInvoiceLeviesQuery = "INSERT INTO InvoiceLevies (InvoiceNumber, LevyId, LevyAmount) VALUES (?, ?, ?)";
 
-    String updateProductQuery = "UPDATE Products SET Quantity = ? WHERE ProductCode = ?";
+    String updateProductQuery = "UPDATE Products SET Quantity = Quantity - ? WHERE ProductCode = ?";
 
     try (Connection connection = Database.createConnection()) {
         connection.setAutoCommit(false);
@@ -1131,6 +1172,18 @@ public static boolean saveTransaction(
             invoiceStmt.setInt(10, isTransmitted ? 1 : 0);
             invoiceStmt.setString(11, paymentId);
             invoiceStmt.setDouble(12, amountPaid);
+            InvoiceSummary savedSummary = new InvoiceSummary();
+            savedSummary.setInvoiceTotal(total);
+            savedSummary.setTotalVAT(totalVAT);
+            savedSummary.setAmountTendered(amountPaid);
+            savedSummary.setTaxBreakDown(taxBreakdowns);
+            savedSummary.setLevyBreakDown(levies);
+            savedSummary.setOfflineSignature(offlineSignature);
+            InvoicePayload savedPayload = new InvoicePayload();
+            savedPayload.setInvoiceHeader(invoice);
+            savedPayload.setInvoiceLineItems(lineItems);
+            savedPayload.setInvoiceSummary(savedSummary);
+            invoiceStmt.setString(13, new Gson().toJson(savedPayload));
             invoiceStmt.executeUpdate();
 
             // Insert Payment Info
@@ -1138,9 +1191,7 @@ public static boolean saveTransaction(
             // Insert Line Items
             for (LineItemDto item : lineItems) {
                 if (item.isProduct()) {
-                    double currentQty = getProductQuantity(item.getProductCode());
-                    double newQty = currentQty - item.getQuantity();
-                    updateProductStmt.setDouble(1, newQty);
+                    updateProductStmt.setDouble(1, item.getQuantity());
                     updateProductStmt.setString(2, item.getProductCode());
                     updateProductStmt.executeUpdate();
                 }
@@ -1229,6 +1280,7 @@ public static void markAsTransmitted(String invoiceNumber) {
 }
 
 public static void updateValidationUrl(String invoiceNumber, String validationUrl) {
+    if (validationUrl == null || validationUrl.isBlank()) return; // Duplicate acknowledgements do not replace the receipt URL.
     try (Connection connection = Database.createConnection()) {
         String updateQuery = "UPDATE Invoices SET ValidationUrl = ? WHERE InvoiceNumber = ?"; 
         try (PreparedStatement stmt = connection.prepareStatement(updateQuery)) {
@@ -1369,72 +1421,146 @@ public static void deleteBlockingReason(String terminalId) {
 public static void checkAndHandleTerminalBlocking(Consumer<Boolean> onCheckComplete) {
     String terminalId = getTerminalId();
     String bearerToken = getToken();
-    final boolean[] isUnblocked = {true};
+
+    System.out.println("[TerminalBlocking] Starting check for terminalId=" + terminalId);
 
     ApiClient apiClient = new ApiClient();
 
     apiClient.checkIfTerminalIsBlocked(terminalId, bearerToken, checkResult -> {
-        if (checkResult == null || checkResult.isUnblocked == null) {
-            String existingReason = getBlockingReason(terminalId);
-            isUnblocked[0] = existingReason == null;
-        } else {
-            isUnblocked[0] = checkResult.isUnblocked;
-        }
+        System.out.println("[TerminalBlocking] checkIfTerminalIsBlocked callback fired. "
+                + "checkResult=" + checkResult
+                + ", isUnblocked field=" + (checkResult != null ? checkResult.isUnblocked : "N/A (checkResult is null)"));
 
-        if (!isUnblocked[0]) {
-            createTerminalBlockingReasonsTable();
-            String existingReason = getBlockingReason(terminalId);
+        boolean serverReachable = (checkResult != null && checkResult.isUnblocked != null);
 
-            if (existingReason == null) {
+        if (serverReachable) {
+            boolean isUnblocked = checkResult.isUnblocked;
+            System.out.println("[TerminalBlocking] Server reachable. Live isUnblocked=" + isUnblocked);
+
+            if (isUnblocked) {
+                System.out.println("[TerminalBlocking] BRANCH: server confirms UNBLOCKED -> deleting any cached reason, allowing payment.");
+                deleteBlockingReason(terminalId);
+                onCheckComplete.accept(true); // allow payment
+            } else {
+                System.out.println("[TerminalBlocking] BRANCH: server confirms BLOCKED -> fetching fresh reason from server (not trusting stale cache).");
+                createTerminalBlockingReasonsTable();
+
                 apiClient.fetchBlockingMessage(terminalId, bearerToken, blockingInfo -> {
-                    if (blockingInfo != null) {
-                        if (blockingInfo.isBlocked) {
-                            String reason = blockingInfo.blockingReason != null
-                                    ? blockingInfo.blockingReason
-                                    : "No reason provided by server.";
+                    System.out.println("[TerminalBlocking] fetchBlockingMessage callback fired. "
+                            + "blockingInfo=" + blockingInfo
+                            + ", isBlocked=" + (blockingInfo != null ? blockingInfo.isBlocked : "N/A (blockingInfo is null)"));
 
-                            saveBlockingReason(terminalId, reason, false);
+                    if (blockingInfo != null && blockingInfo.isBlocked) {
+                        String reason = blockingInfo.blockingReason != null
+                                ? blockingInfo.blockingReason
+                                : "No reason provided by server.";
 
-                            Platform.runLater(() -> {
-                                Alert alert = new Alert(Alert.AlertType.WARNING,
-                                        "Terminal is blocked. Reason: " + reason, ButtonType.OK);
-                                alert.setTitle("Terminal Blocked");
-                                alert.showAndWait();
-                            });
+                        System.out.println("[TerminalBlocking] Fresh reason from server: \"" + reason + "\" -> saving and alerting.");
+                        saveBlockingReason(terminalId, reason, false);
 
-                            onCheckComplete.accept(false); // block payment
-                        } else {
-                            // Terminal is NOT blocked, override incorrect isUnblocked==false
-                            deleteBlockingReason(terminalId);
-                            onCheckComplete.accept(true); // allow payment
-                        }
-                    } else {
                         Platform.runLater(() -> {
                             Alert alert = new Alert(Alert.AlertType.WARNING,
-                                    "Unable to verify terminal status. Please check your connection and try again.",
-                                    ButtonType.OK);
-                            alert.setTitle("Connection Error");
+                                    "Terminal is blocked. Reason: " + reason, ButtonType.OK);
+                            alert.setTitle("Terminal Blocked");
                             alert.showAndWait();
                         });
 
                         onCheckComplete.accept(false); // block payment
+
+                    } else if (blockingInfo != null) {
+                        // Server's detailed check now says not actually blocked — trust it over the earlier flag.
+                        System.out.println("[TerminalBlocking] BRANCH: fetchBlockingMessage says NOT blocked (overrides earlier flag) -> clearing, allowing payment.");
+                        deleteBlockingReason(terminalId);
+                        onCheckComplete.accept(true); // allow payment
+
+                    } else {
+                        // Couldn't fetch details even though the initial check said blocked —
+                        // fall back to whatever reason is already cached, if any.
+                        String existingReason = getBlockingReason(terminalId);
+                        System.out.println("[TerminalBlocking] BRANCH: fetchBlockingMessage failed -> falling back to cached reason=" + existingReason);
+
+                        if (existingReason != null) {
+                            Platform.runLater(() -> {
+                                Alert alert = new Alert(Alert.AlertType.WARNING,
+                                        "Terminal is blocked. Reason: " + existingReason, ButtonType.OK);
+                                alert.setTitle("Terminal Blocked");
+                                alert.showAndWait();
+                            });
+                        } else {
+                            Platform.runLater(() -> {
+                                Alert alert = new Alert(Alert.AlertType.WARNING,
+                                        "Unable to verify terminal status. Please check your connection and try again.",
+                                        ButtonType.OK);
+                                alert.setTitle("Connection Error");
+                                alert.showAndWait();
+                            });
+                        }
+                        onCheckComplete.accept(false); // fail closed — we know it's blocked, just not the exact reason
                     }
                 });
-            } else {
+            }
+        } else {
+            // Server unreachable / no usable response at all — this is the ONLY case
+            // where we trust the DB cache, since it's all we have.
+            String existingReason = getBlockingReason(terminalId);
+            boolean isUnblocked = existingReason == null;
+            System.out.println("[TerminalBlocking] BRANCH: server UNREACHABLE -> falling back to DB cache. "
+                    + "existingReason=" + existingReason + " -> isUnblocked=" + isUnblocked);
+
+            if (!isUnblocked) {
                 Platform.runLater(() -> {
                     Alert alert = new Alert(Alert.AlertType.WARNING,
                             "Terminal is blocked. Reason: " + existingReason, ButtonType.OK);
                     alert.setTitle("Terminal Blocked");
                     alert.showAndWait();
                 });
-
-                onCheckComplete.accept(false); // block payment
             }
-        } else {
-            deleteBlockingReason(terminalId);
-            onCheckComplete.accept(true); // allow payment
+            onCheckComplete.accept(isUnblocked);
         }
     });
+}
+
+/**
+ * Calls the existing checkAndHandleTerminalBlocking (which does the actual
+ * network call, reason fetching, and DB save/delete) and caches its result.
+ * Only reacts (e.g. logs a transition) when the state actually changes,
+ * rather than repeating on every poll.
+ */
+public static void refreshTerminalBlockingStatus() {
+    boolean wasBlocked = terminalBlockedCache;
+    boolean wasInitialized = terminalBlockCacheInitialized;
+
+    checkAndHandleTerminalBlocking(isAllowed -> {
+        boolean isNowBlocked = !isAllowed;
+        terminalBlockedCache = isNowBlocked;
+        terminalBlockCacheInitialized = true;
+
+        // Only report on the transition, not on every poll while state is unchanged.
+        boolean stateChanged = !wasInitialized || (wasBlocked != isNowBlocked);
+
+        if (stateChanged) {
+            if (isNowBlocked) {
+                System.err.println("⚠️ Terminal transitioned to BLOCKED.");
+            } else if (wasBlocked) {
+                // Was blocked, now unblocked — this is the reverse case.
+                System.out.println("✅ Terminal transitioned to UNBLOCKED. Sales may resume.");
+                Platform.runLater(() -> {
+                    Alert alert = new Alert(Alert.AlertType.INFORMATION,
+                            "This terminal has been unblocked. You may resume processing sales.",
+                            ButtonType.OK);
+                    alert.setTitle("Terminal Unblocked");
+                    alert.showAndWait();
+                });
+            }
+        }
+    });
+}
+
+public static boolean isCheckoutAllowedCached() {
+    if (!terminalBlockCacheInitialized) {
+        return true;
+    }
+    return !terminalBlockedCache;
 }
 
 public static boolean transmitInvoice(String invoiceNumber) {
@@ -1446,14 +1572,17 @@ public static boolean transmitInvoice(String invoiceNumber) {
         try (var rs = stmt.executeQuery()) {
             if (rs.next()) {
                 String paymentId = rs.getString("PaymentId");
+                double legacyVat=rs.getDouble("TotalVAT"), legacyTotal=rs.getDouble("InvoiceTotal"), legacyPaid=rs.getDouble("AmountPaid");
+                String jsonPayload = InvoiceSnapshots.forTransmission(invoiceNumber, () -> {
+                
                 InvoiceHeader header = Helper.getInvoiceHeader(invoiceNumber, "", "", paymentId);
                 List<LineItemDto> lineItems = Helper.getLineItems(invoiceNumber);
 
                 InvoiceSummary invoiceSummary = new InvoiceSummary();
                 invoiceSummary.setTaxBreakDown(Helper.generateTaxBreakdown(lineItems));
-                invoiceSummary.setTotalVAT(rs.getDouble("TotalVAT"));
-                invoiceSummary.setInvoiceTotal(rs.getDouble("InvoiceTotal"));
-                invoiceSummary.setAmountTendered(rs.getDouble("AmountPaid"));
+                invoiceSummary.setTotalVAT(legacyVat);
+                invoiceSummary.setInvoiceTotal(legacyTotal);
+                invoiceSummary.setAmountTendered(legacyPaid);
                 invoiceSummary.setOfflineSignature("");
 
                 InvoicePayload payload = new InvoicePayload();
@@ -1461,30 +1590,30 @@ public static boolean transmitInvoice(String invoiceNumber) {
                 payload.setInvoiceLineItems(lineItems);
                 payload.setInvoiceSummary(invoiceSummary);
 
-                String jsonPayload = new Gson().toJson(payload);
+                return new Gson().toJson(payload);
+                });
                 String token = Helper.getToken();
 
                 // Use a blocking mechanism to get result
                 final boolean[] resultHolder = {false};
-                final boolean[] completed = {false};
+                final java.util.concurrent.CountDownLatch completed = new java.util.concurrent.CountDownLatch(1);
 
                 ApiClient apiClient = new ApiClient();
-                apiClient.submitTransactions(jsonPayload, token, (success, returnedValidationUrl) -> {
-                    resultHolder[0] = success;
-                    completed[0] = true;
-                    if (success) {
-                        Helper.updateValidationUrl(invoiceNumber, returnedValidationUrl);
-                        Helper.markAsTransmitted(invoiceNumber);
-                    }
-                });
+                apiClient.submitTransactions(jsonPayload, token, result -> {
+    resultHolder[0] = result.success;
+    completed.countDown();
+    if (result.success) {
+        Helper.updateValidationUrl(invoiceNumber, result.validationUrl);
+        Helper.markAsTransmitted(invoiceNumber);
+    } else if (!result.networkFailure) {
+        System.err.println("🚫 Rejected for " + invoiceNumber + ": " + result.remark);
+    } else {
+        System.err.println("❌ Network failure for " + invoiceNumber + ": " + result.remark);
+    }
+});
 
                 // Wait for callback completion (simple way)
-                int waitMs = 0;
-                while (!completed[0] && waitMs < 5000) {
-                    Thread.sleep(100); // max wait: 5s
-                    waitMs += 100;
-                }
-
+                completed.await();
                 return resultHolder[0];
             }
         }
@@ -1520,6 +1649,7 @@ public static void retryPendingTransactions(
         }
 
         int total = pendingInvoices.size();
+        if (total == 0) { if (onComplete != null) onComplete.accept(failedInvoices); return; }
         AtomicInteger counter = new AtomicInteger(0);
         String token = Helper.getToken(); // ✅ fetch once
 
@@ -1528,6 +1658,7 @@ public static void retryPendingTransactions(
         for (String invoiceNumber : pendingInvoices) {
             executor.submit(() -> {
                 try {
+                    String jsonPayload = InvoiceSnapshots.forTransmission(invoiceNumber, () -> {
                     String paymentId = paymentMap.get(invoiceNumber);
                     InvoiceHeader header = Helper.getInvoiceHeader(invoiceNumber, "", "", paymentId);
                     List<LineItemDto> lineItems = Helper.getLineItems(invoiceNumber);
@@ -1546,27 +1677,36 @@ public static void retryPendingTransactions(
                     payload.setInvoiceLineItems(lineItems);
                     payload.setInvoiceSummary(invoiceSummary);
 
-                    String jsonPayload = new Gson().toJson(payload);
+                    return new Gson().toJson(payload);
 
-                    ApiClient apiClient = new ApiClient();
-                    apiClient.submitTransactions(jsonPayload, token, (success, returnedValidationUrl) -> {
-                        if (success) {
-                            Helper.updateValidationUrl(invoiceNumber, returnedValidationUrl);
-                            Helper.markAsTransmitted(invoiceNumber);
-                            System.out.println("✅ Synced: " + invoiceNumber);
-                        } else {
-                            failedInvoices.add(invoiceNumber);
-                            System.err.println("❌ Failed: " + invoiceNumber);
-                        }
-
-                        int current = counter.incrementAndGet();
-                        if (progressCallback != null) {
-                            progressCallback.accept(new Pair<>(current, invoiceNumber));
-                        }
-                        if (current == total && onComplete != null) {
-                            onComplete.accept(failedInvoices);
-                        }
                     });
+                    ApiClient apiClient = new ApiClient();
+                    java.util.concurrent.CountDownLatch submitted = new java.util.concurrent.CountDownLatch(1);
+                    apiClient.submitTransactions(jsonPayload, token, result -> {
+    if (result.success) {
+        Helper.updateValidationUrl(invoiceNumber, result.validationUrl);
+        Helper.markAsTransmitted(invoiceNumber);
+        System.out.println("✅ Synced: " + invoiceNumber);
+    } else if (!result.networkFailure) {
+        // Hard rejection — won't succeed on a plain resync, needs manual attention
+        failedInvoices.add(invoiceNumber);
+        System.err.println("🚫 Rejected: " + invoiceNumber + " — " + result.remark);
+    } else {
+        // Genuine network failure — still counts as failed for this sync pass
+        failedInvoices.add(invoiceNumber);
+        System.err.println("❌ Network failure: " + invoiceNumber + " — " + result.remark);
+    }
+
+    submitted.countDown();
+    int current = counter.incrementAndGet();
+    if (progressCallback != null) {
+        progressCallback.accept(new Pair<>(current, invoiceNumber));
+    }
+    if (current == total && onComplete != null) {
+        onComplete.accept(failedInvoices);
+    }
+});
+                    submitted.await();
 
                 } catch (Exception e) {
                     failedInvoices.add(invoiceNumber);
@@ -1627,6 +1767,81 @@ public static void retryPendingTransactions(
     }
 
     return summaries;
+}
+    
+    public static boolean deleteTransaction(String invoiceNumber) {
+
+    String selectLineItemsQuery = "SELECT ProductCode, Quantity, IsProduct FROM LineItems WHERE InvoiceNumber = ?";
+    String selectProductQtyQuery = "SELECT Quantity FROM Products WHERE ProductCode = ?";
+    String restoreProductQtyQuery = "UPDATE Products SET Quantity = ? WHERE ProductCode = ?";
+
+    String deleteLineItemsQuery = "DELETE FROM LineItems WHERE InvoiceNumber = ?";
+    String deleteTaxBreakdownQuery = "DELETE FROM InvoiceTaxBreakDown WHERE InvoiceNumber = ?";
+    String deleteLeviesQuery = "DELETE FROM InvoiceLevies WHERE InvoiceNumber = ?";
+    String deleteInvoiceQuery = "DELETE FROM Invoices WHERE InvoiceNumber = ?";
+
+    try (Connection connection = Database.createConnection()) {
+        connection.setAutoCommit(false);
+
+        try (
+            PreparedStatement selectLineItemsStmt = connection.prepareStatement(selectLineItemsQuery);
+            PreparedStatement selectProductQtyStmt = connection.prepareStatement(selectProductQtyQuery);
+            PreparedStatement restoreProductQtyStmt = connection.prepareStatement(restoreProductQtyQuery);
+            PreparedStatement deleteLineItemsStmt = connection.prepareStatement(deleteLineItemsQuery);
+            PreparedStatement deleteTaxBreakdownStmt = connection.prepareStatement(deleteTaxBreakdownQuery);
+            PreparedStatement deleteLeviesStmt = connection.prepareStatement(deleteLeviesQuery);
+            PreparedStatement deleteInvoiceStmt = connection.prepareStatement(deleteInvoiceQuery)
+        ) {
+            // 1. Restore product stock for any product line items on this invoice
+            //    (mirrors the decrement done in saveTransaction)
+            selectLineItemsStmt.setString(1, invoiceNumber);
+            try (var rs = selectLineItemsStmt.executeQuery()) {
+                while (rs.next()) {
+                    boolean isProduct = rs.getBoolean("IsProduct");
+                    if (!isProduct) continue;
+
+                    String productCode = rs.getString("ProductCode");
+                    double soldQty = rs.getDouble("Quantity");
+
+                    selectProductQtyStmt.setString(1, productCode);
+                    try (var pqRs = selectProductQtyStmt.executeQuery()) {
+                        if (pqRs.next()) {
+                            double currentQty = pqRs.getDouble("Quantity");
+                            double restoredQty = currentQty + soldQty;
+
+                            restoreProductQtyStmt.setDouble(1, restoredQty);
+                            restoreProductQtyStmt.setString(2, productCode);
+                            restoreProductQtyStmt.executeUpdate();
+                        }
+                    }
+                }
+            }
+
+            // 2. Delete child rows first (FK dependencies), then the invoice itself
+            deleteTaxBreakdownStmt.setString(1, invoiceNumber);
+            deleteTaxBreakdownStmt.executeUpdate();
+
+            deleteLeviesStmt.setString(1, invoiceNumber);
+            deleteLeviesStmt.executeUpdate();
+
+            deleteLineItemsStmt.setString(1, invoiceNumber);
+            deleteLineItemsStmt.executeUpdate();
+
+            deleteInvoiceStmt.setString(1, invoiceNumber);
+            int rowsDeleted = deleteInvoiceStmt.executeUpdate();
+
+            connection.commit();
+            return rowsDeleted > 0;
+
+        } catch (SQLException ex) {
+            connection.rollback();
+            System.err.println("❌ Error during transaction delete: " + ex.getMessage());
+            return false;
+        }
+    } catch (SQLException e) {
+        System.err.println("❌ DB Connection error during delete: " + e.getMessage());
+        return false;
+    }
 }
     
   public static double getTodaySalesTotal() {
