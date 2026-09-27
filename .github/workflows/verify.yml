@@ -20,7 +20,13 @@ jobs:
       - name: Build and test
         run: mvn -B clean verify
       - name: Verify packaged runtime
-        run: java -jar target/PointOfSale-1.0.jar --verify-runtime
+        shell: powershell
+        run: |
+          $jars = @(Get-ChildItem target -Filter '*.jar' -File | Where-Object { $_.Name -notmatch '^original-|-(sources|javadoc|tests|shaded)\.jar$' })
+          if ($jars.Count -ne 1) { throw 'Expected exactly one packaged application JAR.' }
+          java -jar $jars[0].FullName --verify-runtime
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged runtime verification failed.' }
+          "POS_JAR=$($jars[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Verify updater syntax
         shell: powershell
         run: |
@@ -34,7 +40,7 @@ jobs:
         with:
           name: PointOfSale-${{ github.sha }}
           path: |
-            target/PointOfSale-1.0.jar
+            ${{ env.POS_JAR }}
             scripts/Start-POS.ps1
             README.md
           if-no-files-found: error

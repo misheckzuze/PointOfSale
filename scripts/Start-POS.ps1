@@ -33,7 +33,10 @@ function Read-Current {
     if (!(Test-Path -LiteralPath $pointer)) { return $null }
     $current = Get-Content -LiteralPath $pointer -Raw | ConvertFrom-Json
     if ($current.commit -notmatch '^[0-9a-f]{40}$') { throw 'Invalid installed version pointer.' }
-    $jar = Join-Path $InstallRoot ('versions\' + $current.commit + '\target\PointOfSale-1.0.jar')
+    # Old installation pointers did not record a filename and always used 1.0.
+    $jarName = if ($current.jar) { [string]$current.jar } else { 'PointOfSale-1.0.jar' }
+    if ($jarName -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*\.jar$') { throw 'Invalid installed JAR filename.' }
+    $jar = Join-Path $InstallRoot ('versions\' + $current.commit + '\target\' + $jarName)
     if (!(Test-Path -LiteralPath $jar) -or (Get-FileHash -LiteralPath $jar -Algorithm SHA256).Hash -ne $current.sha256) {
         throw 'Installed application checksum does not match.'
     }
@@ -71,13 +74,17 @@ try {
                     throw 'This Git commit predates the safe updater protocol. Publish the updater-compatible release first.'
                 }
                 Run-Checked $maven @('-B', 'clean', 'verify') $version
-                $jar = Join-Path $version 'target\PointOfSale-1.0.jar'
+                # clean verify leaves one application JAR plus shade's original-* backup.
+                $jars = @(Get-ChildItem -LiteralPath (Join-Path $version 'target') -Filter '*.jar' -File |
+                    Where-Object { $_.Name -notmatch '^original-|-(sources|javadoc|tests|shaded)\.jar$' })
+                if ($jars.Count -ne 1) { throw 'Expected exactly one packaged application JAR.' }
+                $jar = $jars[0].FullName
                 Run-Checked (Get-Command java -ErrorAction Stop).Source @('-jar', $jar, '--verify-runtime') $version
                 $checksum = (Get-FileHash -LiteralPath $jar -Algorithm SHA256).Hash
                 $pointer = Join-Path $InstallRoot 'current.json'
                 if (Test-Path -LiteralPath $pointer) { Copy-Item -LiteralPath $pointer -Destination (Join-Path $InstallRoot 'previous.json') -Force }
                 $temporary = Join-Path $InstallRoot 'current.next.json'
-                @{ commit=$commit; sha256=$checksum } | ConvertTo-Json | Set-Content -LiteralPath $temporary -Encoding UTF8
+                @{ commit=$commit; sha256=$checksum; jar=[IO.Path]::GetFileName($jar) } | ConvertTo-Json | Set-Content -LiteralPath $temporary -Encoding UTF8
                 Move-Item -LiteralPath $temporary -Destination $pointer -Force
                 $current = Read-Current
             }
@@ -87,7 +94,7 @@ try {
         }
     }
     if (!$current) { throw 'No verified application is installed yet. Connect to Git and run this launcher once.' }
-    if ($CheckOnly) { Write-Output "Verified application: $($current.Commit)"; return }
+    if ($CheckOnly) { Write-Output "Verified application: $($current.Commit) ($([IO.Path]::GetFileName($current.Jar)))"; return }
     $java = (Get-Command java -ErrorAction Stop).Source
     $arguments = @()
     $settings = Join-Path $InstallRoot 'runtime.properties'

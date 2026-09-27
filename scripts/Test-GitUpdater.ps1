@@ -31,13 +31,20 @@ try {
     Launch
     $first = Get-Content -LiteralPath (Join-Path $installation 'current.json') -Raw | ConvertFrom-Json
     Check ($first.commit -match '^[0-9a-f]{40}$') 'first Git version builds, verifies and installs'
+    # Simulate a pointer written by the original launcher, before filename support.
+    @{ commit=$first.commit; sha256=$first.sha256 } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $installation 'current.json') -Encoding UTF8
+    Launch @('-Offline')
+    Check ((Get-Content -LiteralPath (Join-Path $installation 'current.json') -Raw | ConvertFrom-Json).commit -eq $first.commit) 'legacy 1.0 installation remains usable'
     Check (!(Test-Path -LiteralPath (Join-Path $installation ('versions/' + $first.commit + '/MQPointOfSale')))) 'tracked shop databases are excluded from deployment'
     'pos.api.baseUrl=https://custom.example.invalid/api/v1' | Set-Content -LiteralPath (Join-Path $installation 'runtime.properties')
     '// version two' | Add-Content -LiteralPath (Join-Path $repository 'src/main/java/FixtureApp.java')
+    $pomPath = Join-Path $repository 'pom.xml'
+    [IO.File]::WriteAllText($pomPath, [IO.File]::ReadAllText($pomPath).Replace('<version>1.0</version>', '<version>1.1</version>'))
     Invoke-FixtureGit @('add', '.'); Invoke-FixtureGit @('commit', '-m', 'Next fixture')
     Launch
     $second = Get-Content -LiteralPath (Join-Path $installation 'current.json') -Raw | ConvertFrom-Json
     Check ($second.commit -ne $first.commit) 'next Git commit updates automatically at launch'
+    Check ($second.jar -eq 'PointOfSale-1.1.jar') 'version 1.1 uses its own packaged filename'
     Check ((Get-Content -LiteralPath (Join-Path $installation 'previous.json') -Raw | ConvertFrom-Json).commit -eq $first.commit) 'previous verified version remains available'
     Check ((Get-Content -LiteralPath (Join-Path $installation 'runtime.properties') -Raw).Contains('custom.example.invalid')) 'terminal runtime settings survive code updates'
     'this is invalid Java' | Add-Content -LiteralPath (Join-Path $repository 'src/main/java/FixtureApp.java')
@@ -52,7 +59,7 @@ try {
     Invoke-FixtureGit @('add', '.'); Invoke-FixtureGit @('commit', '-m', 'Pre-updater fixture')
     Launch
     Check ((Get-Content -LiteralPath (Join-Path $installation 'current.json') -Raw | ConvertFrom-Json).commit -eq $second.commit) 'pre-updater versions are rejected before any application execution'
-    Write-Output '8 Git updater integration checks passed.'
+    Write-Output '10 Git updater integration checks passed.'
 } finally {
     $resolved = [IO.Path]::GetFullPath($testRoot)
     $temp = [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\'
