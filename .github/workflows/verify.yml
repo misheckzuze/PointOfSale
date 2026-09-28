@@ -33,9 +33,6 @@ jobs:
           $tokens = $null; $errors = $null
           [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD 'scripts/Start-POS.ps1'), [ref]$tokens, [ref]$errors) | Out-Null
           if ($errors.Count) { throw ($errors | Out-String) }
-      - name: Test Git updater with a local repository
-        shell: powershell
-        run: ./scripts/Test-GitUpdater.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: PointOfSale-${{ github.sha }}

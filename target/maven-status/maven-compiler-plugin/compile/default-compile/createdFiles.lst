@@ -1,5 +1,6 @@
 com\pointofsale\ProductManagement$6$1.class
 com\pointofsale\utils\ApiEndpoints.class
+com\pointofsale\Launcher.class
 com\pointofsale\model\InvoicePayload.class
 com\pointofsale\model\PingResponse$ApiError.class
 com\pointofsale\AuditTrailView.class

@@ -1,0 +1,32 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Build and test
+        run: mvn -B clean verify
+      - name: Verify packaged runtime
+        shell: powershell
+        run: |
+          $jars = @(Get-ChildItem target -Filter '*.jar' -File | Where-Object { $_.Name -notmatch '^original-|-(sources|javadoc|tests|shaded)\.jar$' })
+          if ($jars.Count -ne 1) { throw 'Expected exactly one packaged application JAR.' }
+          java -jar $jars[0].FullName --verify-runtime
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged runtime verification failed.' }
+          Copy-Item $jars[0].FullName PointOfSale.jar
+          (Get-FileHash PointOfSale.jar -Algorithm SHA256).Hash.ToLower() | Set-Content PointOfSale.jar.sha256 -NoNewline
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            PointOfSale.jar
+            PointOfSale.jar.sha256
