@@ -2,7 +2,12 @@
 /dependency-reduced-pom.xml
 /MQPointOfSale/
 /installer/
-/hs_err_pid*.log
-/replay_pid*.log
+/staging/
+/staging-content/
+/jdk-21.0.7+6-jre/
+hs_err_pid*.log
+hs_err_pid*.txt
+replay_pid*.log
+replay_pid*.txt
 *.db-wal
 *.db-shm
