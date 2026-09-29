@@ -97,7 +97,7 @@ public class LoginView extends Application {
     placeholderLogo.setArcWidth(20);
     placeholderLogo.setArcHeight(20);
     
-    Label logoText = new Label("MQ POS\nSYSTEM TEST");
+    Label logoText = new Label("MQ POS\nSYSTEM");
     logoText.setStyle("-fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: #3949ab;");
     logoText.setAlignment(Pos.CENTER);
     

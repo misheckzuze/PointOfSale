@@ -15,7 +15,7 @@ public class Launcher {
 
         // 1. Try to update (best effort, max 45 s)
         try {
-            Path script = appRoot == null ? null : appRoot.resolve("Start-POS.ps1");
+            Path script = appRoot == null ? null : appRoot.resolve("staging-content").resolve("Start-POS.ps1");
             if (script != null && Files.exists(script)) {
                 Process p = new ProcessBuilder("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
                         "-WindowStyle", "Hidden", "-File", script.toString(),
