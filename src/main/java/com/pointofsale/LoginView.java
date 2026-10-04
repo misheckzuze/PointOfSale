@@ -130,7 +130,7 @@ public class LoginView extends Application {
         featuresList.getChildren().addAll(feature1, feature2, feature3, feature4);
         
         // Footer with version info
-        Label versionLabel = new Label("Version 1.0.0");
+        Label versionLabel = new Label("Version " + com.pointofsale.helper.AppVersion.get());
         versionLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: white; -fx-opacity: 0.6;");
         VBox.setMargin(versionLabel, new Insets(40, 0, 20, 0));
         

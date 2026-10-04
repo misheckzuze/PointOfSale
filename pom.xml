@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com</groupId>
     <artifactId>PointOfSale</artifactId>
-    <version>1.4</version>
+    <version>1.5</version>
     <properties>
         <pos.update.protocol>1</pos.update.protocol>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -67,6 +67,10 @@
   </dependency>
     </dependencies>
     <build>
+      <resources>
+        <resource><directory>src/main/resources</directory><filtering>false</filtering><excludes><exclude>app-version.properties</exclude></excludes></resource>
+        <resource><directory>src/main/resources</directory><filtering>true</filtering><includes><include>app-version.properties</include></includes></resource>
+      </resources>
  <plugins>
   <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.2.5</version><configuration><useModulePath>false</useModulePath></configuration></plugin>
   <!-- Compiler Plugin to use Java 15 or higher -->

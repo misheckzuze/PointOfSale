@@ -210,7 +210,7 @@ public class POSDashboard extends Application {
             });
             if (d != null && !d.lines.isEmpty()) showAlert("Cart recovered", recoveredCheckout
                     ? "Your cart was restored, but B2B invoice " + d.invoiceNumber
-                      + " may already be accepted. Ask your supervisor to reconcile it before processing another payment."
+                      + " may already be accepted. Use Clear Cart to cancel this local checkout and continue selling; verify its status before replacing the sale."
                     : "Your unfinished sale has been restored. You can continue serving this customer.");
         }));
     }
@@ -1987,6 +1987,11 @@ private Button createResponsiveSecondaryActionButton(String text, double fontSiz
      * Clears all items from the cart
      */
     private void clearCart() {
+        if (recoveredCheckout) { cancelFailedCheckout(); return; }
+        if (checkoutStarted) {
+            showAlert("Payment in progress", "Wait for the current submission to finish before clearing the cart.");
+            return;
+        }
         // Confirm before clearing
         Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
         alert.setTitle("Clear Cart");
@@ -2281,12 +2286,41 @@ private void updateChangeCalculation() {
     
 }
 
+    private boolean cancellingCheckout;
+
+    private void cancelFailedCheckout() {
+        if (cancellingCheckout) return;
+        ButtonType cancelSale = new ButtonType("Cancel sale and clear cart", ButtonBar.ButtonData.OK_DONE);
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+                "Clear this local checkout (" + checkoutInvoiceNumber + ") and continue selling?\n\n"
+                + "The server may already have accepted it. This does not void a server invoice. "
+                + "Its saved details will be retained for reconciliation. Verify its status before selling the same goods again.",
+                cancelSale, ButtonType.CANCEL);
+        confirm.setHeaderText("Cancel interrupted checkout");
+        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != cancelSale) return;
+        cancellingCheckout = true;
+        root.setDisable(true);
+        draftStore.cancel().whenComplete((unused, error) -> Platform.runLater(() -> {
+            cancellingCheckout = false;
+            root.setDisable(false);
+            if (error != null) {
+                showAlert("Could not cancel checkout", "The cart has been retained. " + error.getMessage());
+                return;
+            }
+            recoveredCheckout = false;
+            resetCartAndFields();
+            lastDraftJson = null;
+            receiptNumberLabel.setText(generateNewReceiptNumber());
+            autoSaveCart();
+            showAlert("Checkout cancelled", "The cart is clear. You can start a new sale. The cancelled checkout is retained for reconciliation.");
+        }));
+    }
+
     private void proceedWithPayment() {
-        if (!draftReady || recoveredCheckout || checkoutStarted) {
+        if (recoveredCheckout) { hideLoadingOverlay(); cancelFailedCheckout(); return; }
+        if (!draftReady || checkoutStarted) {
             hideLoadingOverlay();
-            showAlert("Payment unavailable", recoveredCheckout
-                    ? "Reconcile interrupted B2B invoice " + checkoutInvoiceNumber + " with your supervisor first. Do not create a replacement sale."
-                    : "Please wait for cart recovery or the current payment to finish.");
+            showAlert("Payment unavailable", "Please wait for cart recovery or the current payment to finish.");
             return;
         }
         checkoutInvoiceNumber = generateNewReceiptNumber();
@@ -2593,7 +2627,7 @@ private void submitB2BOnlineFirst(InvoiceHeader invoiceHeader, String buyerName,
                 b2bOfflineBlocked.setHeaderText("🌐 No Connection — B2B Sale Requires Online Validation");
                 b2bOfflineBlocked.setContentText(
                     "This is a B2B transaction and requires a live connection to validate the " +
-                    "Purchase Authorization Code and buyer TIN. The response was not confirmed. Ask your supervisor to reconcile invoice " + checkoutInvoiceNumber + " before retrying; it may already be accepted."
+                    "Purchase Authorization Code and buyer TIN. The response was not confirmed. Ask your supervisor to reconcile invoice " + checkoutInvoiceNumber + " before replacing this sale; it may already be accepted. Use Clear Cart to cancel this local checkout and continue selling."
                 );
                 b2bOfflineBlocked.showAndWait();
                 // Nothing was saved, so there's nothing to delete.
@@ -2643,7 +2677,11 @@ public String generateNewReceiptNumber() {
         }
     }
 
-    return Helper.generateReceiptNumber(taxpayerId, terminalPosition, transactionDate, transactionCount);
+    String candidate = Helper.generateReceiptNumber(taxpayerId, terminalPosition, transactionDate, transactionCount);
+    while (com.pointofsale.helper.CartDraftStore.isCancelledNumber(candidate)) {
+        candidate = Helper.generateReceiptNumber(taxpayerId, terminalPosition, transactionDate, ++transactionCount);
+    }
+    return candidate;
 }
 
 

@@ -264,6 +264,32 @@ taxRateComboBox.setMaxWidth(Double.MAX_VALUE);
 systemGrid.add(taxRateComboBox, 1, 3);
 
     
+    TextField baseUrlField = createStyledTextField("https://your-server/api/v1");
+    baseUrlField.setText(com.pointofsale.helper.ConnectionSettings.load());
+    systemGrid.add(new Label("API base URL:"), 0, 4);
+    systemGrid.add(baseUrlField, 1, 4);
+    Button saveUrl = new Button("Save API URL");
+    Label urlStatus = new Label("Changes apply after restarting POS.");
+    urlStatus.setWrapText(true);
+    systemGrid.add(saveUrl, 0, 5); systemGrid.add(urlStatus, 1, 5);
+    saveUrl.setOnAction(event -> {
+        try {
+            String url = com.pointofsale.helper.ConnectionSettings.validate(baseUrlField.getText());
+            Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+                    "Use " + url + " after restart? Ensure this server belongs to this terminal; pending invoices will sync there.",
+                    ButtonType.OK, ButtonType.CANCEL);
+            confirm.setHeaderText("Change API server");
+            if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) return;
+            saveUrl.setDisable(true);
+            java.util.concurrent.CompletableFuture.runAsync(() -> {
+                try { com.pointofsale.helper.ConnectionSettings.save(url); }
+                catch (java.sql.SQLException ex) { throw new java.util.concurrent.CompletionException(ex); }
+            }).whenComplete((unused, error) -> Platform.runLater(() -> {
+                saveUrl.setDisable(false);
+                urlStatus.setText(error == null ? "Saved. Restart POS to use " + url : "Could not save URL: " + error.getMessage());
+            }));
+        } catch (IllegalArgumentException ex) { urlStatus.setText(ex.getMessage()); }
+    });
     systemSection.getChildren().add(systemGrid);
     
     // Feature Settings

@@ -52,6 +52,7 @@ C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\SystemInfo.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\model\TerminalBlockingResponse.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\Launcher.java
+C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\helper\AppVersion.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\model\SecuritySettings.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\model\Vat5Data.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\model\TaxRates.java
@@ -61,3 +62,4 @@ C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\model\ApiError.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\model\Session.java
 C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\model\TerminalBlockingInfo.java
+C:\Users\mzuze\Documents\OtherProjects\PointOfSale\src\main\java\com\pointofsale\helper\ConnectionSettings.java

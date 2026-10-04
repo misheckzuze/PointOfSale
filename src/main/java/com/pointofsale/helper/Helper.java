@@ -122,7 +122,7 @@ public class Helper {
     }
 
     public static String getAppVersion() {
-        return "MQ_POS_Version_1.0.0";
+        return "MQ_POS_Version_" + AppVersion.get();
     }
 
     public static String getOSBuild() {

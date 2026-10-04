@@ -1,6 +1,6 @@
 @echo off
 setlocal
-set VERSION=1.3
+set VERSION=1.5
 
 call mvn -B clean package || exit /b 1
 

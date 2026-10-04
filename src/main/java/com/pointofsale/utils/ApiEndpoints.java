@@ -3,7 +3,7 @@ package com.pointofsale.utils;
 
 public class ApiEndpoints {
     
-    public static final String BASE_URL = System.getProperty("pos.api.baseUrl", "https://eis-api.mra.mw/api/v1");
+    public static final String BASE_URL = com.pointofsale.helper.ConnectionSettings.load();
 
     // Onboarding
     public static final String ACTIVATE_TERMINAL = "/onboarding/activate-terminal";

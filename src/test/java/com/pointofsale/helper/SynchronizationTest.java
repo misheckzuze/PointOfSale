@@ -133,6 +133,63 @@ public class SynchronizationTest {
         assertTrue(store.load().get(5, TimeUnit.SECONDS).lines.isEmpty());
         assertNull(store.load().get(5, TimeUnit.SECONDS).invoiceNumber);
     }
+    @Test public void cancellationArchivesDraftAndDoesNotTouchInvoices() throws Exception {
+        CartDraftStore store = new CartDraftStore("cancel-cashier");
+        CartDraft draft = new CartDraft(); draft.invoiceNumber = "cancelled-sale"; draft.checkoutStarted = true;
+        draft.lines.add(new CartDraft.Line(new Product("x", "Product", "Product", 10, "A", 2, "Each", true)));
+        String json = new com.google.gson.Gson().toJson(draft);
+        store.save(json).get(5, TimeUnit.SECONDS);
+        invoice("unrelated-sale", null);
+        store.cancel().get(5, TimeUnit.SECONDS);
+        assertNull(store.load().get(5, TimeUnit.SECONDS));
+        assertEquals(json, scalar("SELECT Payload FROM CancelledCartDrafts WHERE InvoiceNumber='cancelled-sale'"));
+        assertTrue(CartDraftStore.isCancelledNumber("cancelled-sale"));
+        assertFalse(CartDraftStore.isCancelledNumber("fresh-sale"));
+        assertEquals("0", scalar("SELECT State FROM Invoices WHERE InvoiceNumber='unrelated-sale'"));
+        assertEquals("1", scalar("SELECT COUNT(*) FROM Invoices"));
+    }
+
+    @Test public void cancellationFailureRetainsRecoverableDraft() throws Exception {
+        CartDraftStore store = new CartDraftStore("cancel-failure");
+        store.save("{\"invoiceNumber\":\"retain-me\",\"lines\":[]}").get(5, TimeUnit.SECONDS);
+        sql("CREATE TRIGGER refuse_cancel BEFORE INSERT ON CancelledCartDrafts BEGIN SELECT RAISE(ABORT, 'disk failure'); END");
+        try {
+            try { store.cancel().get(5, TimeUnit.SECONDS); fail("Expected archive failure"); }
+            catch (ExecutionException expected) { }
+            assertEquals("retain-me", store.load().get(5, TimeUnit.SECONDS).invoiceNumber);
+        } finally { sql("DROP TRIGGER refuse_cancel"); }
+    }
+
+    @Test public void customBaseUrlPersistsWithoutChangingActiveEndpoint() throws Exception {
+        String active = com.pointofsale.utils.ApiEndpoints.BASE_URL;
+        try {
+            ConnectionSettings.save("  http://localhost:8088/custom/api/v1///  ");
+            assertEquals("http://localhost:8088/custom/api/v1", ConnectionSettings.load());
+            assertEquals(active, com.pointofsale.utils.ApiEndpoints.BASE_URL);
+        } finally { sql("DELETE FROM ConnectionSettings"); }
+        assertEquals(System.getProperty("pos.api.baseUrl"), ConnectionSettings.load());
+    }
+
+    @Test public void invalidBaseUrlsAreRejected() {
+        for (String value : Arrays.asList("", "server/api", "ftp://server/api", "https://user:pass@server/api", "https://server/api?key=x", "https://server/#x")) {
+            try { ConnectionSettings.validate(value); fail("Accepted invalid URL: " + value); }
+            catch (IllegalArgumentException expected) { }
+        }
+        assertEquals("https://custom.example/api/v2", ConnectionSettings.validate("https://custom.example/api/v2/"));
+    }
+
+    @Test public void versionIsPackagedFromPomAndHasThreeComponents() throws Exception {
+        java.util.Properties properties = new java.util.Properties();
+        try (InputStream input = AppVersion.class.getResourceAsStream("/app-version.properties")) {
+            assertNotNull(input); properties.load(input);
+        }
+        assertFalse(properties.getProperty("version").contains("${"));
+        assertEquals(AppVersion.normalize(properties.getProperty("version")), AppVersion.get());
+        assertEquals("1.4.0", AppVersion.normalize("1.4"));
+        assertEquals("2.10.3", AppVersion.normalize("2.10.3"));
+        assertEquals("2.0.0", AppVersion.normalize("2"));
+    }
+
     @Test public void migrationIsRepeatableAndLeavesLegacyRowsNull() throws Exception {
         invoice("old", null); Database.initializeDatabase();
         assertNull(scalar("SELECT Payload FROM Invoices WHERE InvoiceNumber='old'"));
