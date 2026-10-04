@@ -225,7 +225,7 @@ public static String getTerminalSiteId() {
             var rs = stmt.executeQuery();
             while (rs.next()) {
                 String name = rs.getString("Name");
-                int rate = rs.getInt("Rate");
+                Double rate = rs.getDouble("Rate");
                 taxRates.add(rate + "% - " + name); // format: "12% - Standard Rated"
             }
         }
